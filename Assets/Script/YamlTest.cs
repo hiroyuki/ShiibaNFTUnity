@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
-// using YamlDotNet.Serialization;
-// using YamlDotNet.Serialization.NamingConventions;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 public class YamlTest : MonoBehaviour
 {
@@ -21,23 +21,32 @@ record_format:
         //     .WithNamingConvention(CamelCaseNamingConvention.Instance)
         //     .Build();
 
-        // SensorHeader header = deserializer.Deserialize<SensorHeader>(yaml);
+        var deserializer = new DeserializerBuilder()
+            .IgnoreUnmatchedProperties()
+            .Build();
 
-        // foreach (var field in header.record_format)
-        // {
-        //     Debug.Log($"Field: {field.Name}, Type: {field.Type}, Count: {field.Count}");
-        // }
+        SensorHeader header = deserializer.Deserialize<SensorHeader>(yaml);
+
+        foreach (var field in header.RecordFormat)
+        {
+            Debug.Log($"Field: {field.Name}, Type: {field.Type}, Count: {field.Count}");
+        }
     }
 }
 
 public class SensorHeader
 {
-    public List<RecordField> record_format { get; set; }
+    [YamlMember(Alias = "record_format")]
+    public List<RecordField> RecordFormat { get; set; }
 }
-
 public class RecordField
 {
+    [YamlMember(Alias = "name")]
     public string Name { get; set; }
+
+    [YamlMember(Alias = "type")]
     public string Type { get; set; }
+
+    [YamlMember(Alias = "count")]
     public int Count { get; set; }
 }
