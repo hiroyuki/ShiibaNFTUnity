@@ -33,20 +33,3 @@ record_format:
         }
     }
 }
-
-public class SensorHeader
-{
-    [YamlMember(Alias = "record_format")]
-    public List<RecordField> RecordFormat { get; set; }
-}
-public class RecordField
-{
-    [YamlMember(Alias = "name")]
-    public string Name { get; set; }
-
-    [YamlMember(Alias = "type")]
-    public string Type { get; set; }
-
-    [YamlMember(Alias = "count")]
-    public int Count { get; set; }
-}
