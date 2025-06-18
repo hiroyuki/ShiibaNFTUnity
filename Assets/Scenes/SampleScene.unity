@@ -386,7 +386,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 574826807}
-  - component: {fileID: 574826806}
   - component: {fileID: 574826808}
   m_Layer: 0
   m_Name: BinaryDataParser
@@ -395,19 +394,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &574826806
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 574826805}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5187ccec04781454591117e3df9a4384, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  dir: D:\\20250412\\2025-04-12_20-17-26_video
 --- !u!4 &574826807
 Transform:
   m_ObjectHideFlags: 0
