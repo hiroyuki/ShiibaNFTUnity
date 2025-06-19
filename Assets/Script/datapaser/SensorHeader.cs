@@ -1,8 +1,47 @@
 using YamlDotNet.Serialization;
-using System.Collections.Generic;public class SensorHeader
+using System.Collections.Generic;
+using System.Linq;
+using System.IO;
+
+
+public class SensorHeader
 {
     public List<RecordField> record_format { get; set; }
     public CustomData custom { get; set; }
+
+    /// <summary>
+    /// メタデータサイズ（バイト単位）: 各record_formatの型サイズ×countの合計
+    /// </summary>
+    public int MetadataSize =>
+        record_format
+            .Where(f => f.name != "image") // 画像データを除外
+            .Sum(f => GetTypeSize(f.type) * f.count);
+            
+    /// <summary>
+    /// 画像サイズ（バイト単位）: image フィールドの型サイズ×ピクセル数
+    /// </summary>
+    public int ImageSize =>
+        record_format
+            .Where(f => f.name == "image")
+            .Sum(f => GetTypeSize(f.type) * f.count);
+    
+    private int GetTypeSize(string type)
+    {
+        return type switch
+        {
+            "u8" => 1,
+            "u16" => 2,
+            "u32" => 4,
+            "u64" => 8,
+            "i8" => 1,
+            "i16" => 2,
+            "i32" => 4,
+            "i64" => 8,
+            "f32" => 4,
+            "f64" => 8,
+            _ => throw new InvalidDataException($"Unknown type: {type}")
+        };
+    }
 }
 
 public class RecordField
