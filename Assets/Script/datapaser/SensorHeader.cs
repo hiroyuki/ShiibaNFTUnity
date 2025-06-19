@@ -3,28 +3,21 @@ using System.Collections.Generic;
 using System.Linq;
 using System.IO;
 
-
 public class SensorHeader
 {
     public List<RecordField> record_format { get; set; }
     public CustomData custom { get; set; }
 
-    /// <summary>
-    /// メタデータサイズ（バイト単位）: 各record_formatの型サイズ×countの合計
-    /// </summary>
     public int MetadataSize =>
         record_format
-            .Where(f => f.name != "image") // 画像データを除外
+            .Where(f => f.name != "image")
             .Sum(f => GetTypeSize(f.type) * f.count);
-            
-    /// <summary>
-    /// 画像サイズ（バイト単位）: image フィールドの型サイズ×ピクセル数
-    /// </summary>
+
     public int ImageSize =>
         record_format
             .Where(f => f.name == "image")
             .Sum(f => GetTypeSize(f.type) * f.count);
-    
+
     private int GetTypeSize(string type)
     {
         return type switch
@@ -84,4 +77,10 @@ public class AdditionalInfoMetadata
     public string orbbec_intrinsics_parameters { get; set; }
     public string orbbec_extrinsics_d2c_translation { get; set; }
     public string orbbec_sync_mode { get; set; }
+    public string ycbcr_conversion_model { get; set; }
+    public string ycbcr_chroma_filter { get; set; }
+    public string ycbcr_range { get; set; }
+    public string ycbcr_x_chroma_offset { get; set; }
+    public string ycbcr_y_chroma_offset { get; set; }
+    public bool ycbcr_force_explicit_reconstruction { get; set; }
 }
