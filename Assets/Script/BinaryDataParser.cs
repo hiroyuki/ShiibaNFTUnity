@@ -7,6 +7,7 @@ public class BinaryDataParser : MonoBehaviour
 
     [SerializeField]
     private string dir;
+    ISensorDataParser depthParser;
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
@@ -16,13 +17,16 @@ public class BinaryDataParser : MonoBehaviour
             Debug.LogError("指定されたファイルが存在しません: " + filePath);
             return;
         }
-        ISensorDataParser parser = SensorDataParserFactory.Create(filePath);
-        Debug.Log("Header loaded from: " + filePath + " " + parser.FormatIdentifier);
+        depthParser = SensorDataParserFactory.Create(filePath);
+        Debug.Log("Header loaded from: " + filePath + " " + depthParser.FormatIdentifier);
     }
 
     // Update is called once per frame
     void Update()
     {
-        
+        if (Time.frameCount == 1)
+        {
+            depthParser.ParseNextRecord();
+        }
     }
 }
