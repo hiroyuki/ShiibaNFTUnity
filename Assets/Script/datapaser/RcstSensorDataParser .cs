@@ -38,7 +38,6 @@ public class RcstSensorDataParser : AbstractSensorDataParser
       Debug.LogWarning("Record size does not match expected size");
       return false;
     }
-
     CurrentTimestamp = BitConverter.ToUInt64(recordBytes, 0);
     byte[] imageBytes = new byte[imageSize];
     Array.Copy(recordBytes, metadataSize, imageBytes, 0, imageSize);
@@ -47,10 +46,8 @@ public class RcstSensorDataParser : AbstractSensorDataParser
     {
       int pixelCount = imageBytes.Length / 2;
       _latestDepthValues = new ushort[pixelCount];
-      for (int i = 0; i < pixelCount; i++)
-      {
-        _latestDepthValues[i] = BitConverter.ToUInt16(imageBytes, i * 2);
-      }
+      Buffer.BlockCopy(imageBytes, 0, _latestDepthValues, 0, imageBytes.Length);
+
     }
     else
     {

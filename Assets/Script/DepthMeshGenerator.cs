@@ -2,16 +2,26 @@ using UnityEngine;
 using System;
 using System.Linq;
 
-public static class DepthMeshGenerator
+public class DepthMeshGenerator
 {
-    public static void UpdateMeshFromDepth(Mesh mesh, ushort[] depthValues, SensorHeader header, float depthScaleFactor)
+    int width, height;
+    float[] intrinsics;
+    float depthScaleFactor;
+
+    public void setup(SensorHeader header, float depthScaleFactor)
     {
-        int width = header.custom.camera_sensor.width;
-        int height = header.custom.camera_sensor.height;
+        this.width = header.custom.camera_sensor.width;
+        this.height = header.custom.camera_sensor.height;
+        this.intrinsics = ParseIntrinsics(header.custom.additional_info.orbbec_intrinsics_parameters);
+        this.depthScaleFactor = depthScaleFactor;
+    }
+
+    public void UpdateMeshFromDepth(Mesh mesh, ushort[] depthValues)
+    {
+        
         if (depthValues.Length != width * height)
             throw new ArgumentException("Depth size does not match header resolution");
 
-        float[] intrinsics = ParseIntrinsics(header.custom.additional_info.orbbec_intrinsics_parameters);
         float fx = intrinsics[0], fy = intrinsics[1], cx = intrinsics[2], cy = intrinsics[3];
 
         Vector3[] vertices = new Vector3[depthValues.Length];
@@ -39,8 +49,8 @@ public static class DepthMeshGenerator
         mesh.SetIndices(indices, MeshTopology.Points, 0);
         mesh.RecalculateBounds();
     }
-    
-    private static float[] ParseIntrinsics(string param)
+
+    private float[] ParseIntrinsics(string param)
     {
         return param.Trim('[', ']').Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
                     .Select(float.Parse).ToArray();

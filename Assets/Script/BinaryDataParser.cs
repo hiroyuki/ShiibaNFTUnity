@@ -6,8 +6,8 @@ public class BinaryDataParser : MonoBehaviour
     [SerializeField]
     private string dir;
 
-    ISensorDataParser depthParser;
-    ISensorDataParser colorParser;
+    RcstSensorDataParser depthParser;
+    RcsvSensorDataParser colorParser;
 
     [SerializeField]
     private float depthScaleFactor = 1000f;
@@ -16,12 +16,15 @@ public class BinaryDataParser : MonoBehaviour
     private MeshFilter depthMeshFilter;
     private Mesh depthMesh;
 
+    private DepthMeshGenerator depthMeshGenerator;
+
     private GameObject colorViewer;
     private MeshRenderer colorRenderer;
     private Texture2D currentTexture;
 
     void Start()
     {
+
         string depthFilePath = Path.Combine(dir, "dataset", "PAN-SHI", "FemtoBolt_CL8F25300C6", "camera_depth");
         string colorFilePath = Path.Combine(dir, "dataset", "PAN-SHI", "FemtoBolt_CL8F25300C6", "camera_color");
 
@@ -31,10 +34,10 @@ public class BinaryDataParser : MonoBehaviour
             return;
         }
 
-        depthParser = SensorDataParserFactory.Create(depthFilePath);
+        depthParser = (RcstSensorDataParser)SensorDataParserFactory.Create(depthFilePath);
         Debug.Log("Loaded depth header: " + depthParser.FormatIdentifier);
 
-        colorParser = SensorDataParserFactory.Create(colorFilePath);
+        colorParser = (RcsvSensorDataParser)SensorDataParserFactory.Create(colorFilePath);
         Debug.Log("Loaded color header: " + colorParser.FormatIdentifier);
 
         depthViewer = GameObject.Find("DepthViewer");
@@ -48,6 +51,8 @@ public class BinaryDataParser : MonoBehaviour
             depthRenderer.material = new Material(Shader.Find("Unlit/Color"));
         }
         depthMesh = new Mesh();
+        depthMeshGenerator = new DepthMeshGenerator();
+        depthMeshGenerator.setup(depthParser.sensorHeader, depthScaleFactor);
         depthMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
         depthMeshFilter.mesh = depthMesh;
 
@@ -65,12 +70,13 @@ public class BinaryDataParser : MonoBehaviour
 
     void Update()
     {
-        if (depthParser?.ParseNextRecord() == true && depthParser is RcstSensorDataParser rcst)
+        Debug.Log("Frame: " + Time.frameCount + ", Time: " + Time.time + ", FPS: " + Time.frameCount / Time.time);
+        if (depthParser?.ParseNextRecord() == true)
         {
-            var depth = rcst.GetLatestDepthValues();
+            var depth = depthParser.GetLatestDepthValues();
             if (depth != null && depth.Length > 0)
             {
-                DepthMeshGenerator.UpdateMeshFromDepth(depthMesh, depth, rcst.sensorHeader, depthScaleFactor);
+                depthMeshGenerator.UpdateMeshFromDepth(depthMesh, depth);
             }
         }
 
