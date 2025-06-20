@@ -18,5 +18,7 @@ public abstract class AbstractSensorDataParser : ISensorDataParser, System.IDisp
     public abstract bool ParseNextRecord();
     public abstract void Dispose();
 
+    public abstract bool PeekNextTimestamp(out ulong timestamp);
+
     // 将来的に共通ヘルパー関数などをここに追加できます
 }

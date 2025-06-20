@@ -21,4 +21,6 @@ public interface ISensorDataParser
     /// 次のレコードを読み込み、状態（タイムスタンプや画像など）を更新
     /// </summary>
     bool ParseNextRecord();
+
+    bool PeekNextTimestamp(out ulong timestamp);
 }

@@ -11,7 +11,7 @@ public class RcstSensorDataParser : AbstractSensorDataParser
   private ushort[] _latestDepthValues;
   public ushort[] GetLatestDepthValues() => _latestDepthValues;
 
-  public RcstSensorDataParser(BinaryReader reader) : base(reader) {}
+  public RcstSensorDataParser(BinaryReader reader) : base(reader) { }
 
   ~RcstSensorDataParser() => Dispose();
 
@@ -54,5 +54,32 @@ public class RcstSensorDataParser : AbstractSensorDataParser
       Debug.Log("Image data is not aligned for 16-bit conversion.");
     }
     return true;
+  }
+  
+  public override bool PeekNextTimestamp(out ulong timestamp)
+  {
+      try
+      {
+          long originalPos = reader.BaseStream.Position;
+
+          int metadataSize = sensorHeader.MetadataSize;
+          byte[] metadataBytes = reader.ReadBytes(metadataSize);
+          if (metadataBytes.Length < 8)
+          {
+              timestamp = 0;
+              reader.BaseStream.Position = originalPos;
+              return false;
+          }
+
+          timestamp = BitConverter.ToUInt64(metadataBytes, 0);
+
+          reader.BaseStream.Position = originalPos;
+          return true;
+      }
+      catch
+      {
+          timestamp = 0;
+          return false;
+      }
   }
 }
