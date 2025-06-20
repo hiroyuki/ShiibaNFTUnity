@@ -10,103 +10,75 @@ public class BinaryDataParser : MonoBehaviour
     ISensorDataParser colorParser;
 
     [SerializeField]
-    private float depthScaleFactor = 1000f; // extrinsics.yaml 由来（仮固定）
+    private float depthScaleFactor = 1000f;
 
     private GameObject depthViewer;
-    private MeshFilter depthViewerMeshFilter;
+    private MeshFilter depthMeshFilter;
+    private Mesh depthMesh;
 
     private GameObject colorViewer;
+    private MeshRenderer colorRenderer;
+    private Texture2D currentTexture;
 
     void Start()
     {
         string depthFilePath = Path.Combine(dir, "dataset", "PAN-SHI", "FemtoBolt_CL8F25300C6", "camera_depth");
         string colorFilePath = Path.Combine(dir, "dataset", "PAN-SHI", "FemtoBolt_CL8F25300C6", "camera_color");
 
-        if (!File.Exists(depthFilePath))
+        if (!File.Exists(depthFilePath) || !File.Exists(colorFilePath))
         {
-            Debug.LogError("指定されたファイルが存在しません: " + depthFilePath);
+            Debug.LogError("指定されたファイルが存在しません");
             return;
-        }
-
-        if (!File.Exists(colorFilePath))
-        {
-            Debug.LogError("指定されたファイルが存在しません: " + colorFilePath);
-            return;
-        }
-
-        string extrinsicsPath = Path.Combine(dir, "calibration", "extrinsics.yaml");
-        string serial = "CL8F25300C6"; // SensorHeader.custom.serial_number から動的取得もOK
-
-        float? loadedScale = ExtrinsicsLoader.GetDepthScaleFactor(extrinsicsPath, serial);
-        if (loadedScale.HasValue)
-        {
-            depthScaleFactor = loadedScale.Value;
-            Debug.Log("Loaded depthScaleFactor: " + depthScaleFactor);
-        }
-        else
-        {
-            Debug.LogWarning("depthScaleFactor が読み込めなかったため、既定値を使用します");
         }
 
         depthParser = SensorDataParserFactory.Create(depthFilePath);
-        colorParser = SensorDataParserFactory.Create(colorFilePath);
+        Debug.Log("Loaded depth header: " + depthParser.FormatIdentifier);
 
-        Debug.Log("Depth header loaded from: " + depthFilePath + " " + depthParser.FormatIdentifier);
-        Debug.Log("Color header loaded from: " + colorFilePath + " " + colorParser.FormatIdentifier);
+        colorParser = SensorDataParserFactory.Create(colorFilePath);
+        Debug.Log("Loaded color header: " + colorParser.FormatIdentifier);
 
         depthViewer = GameObject.Find("DepthViewer");
-        colorViewer = GameObject.Find("ColorViewer");
-
-        if (depthViewer == null || colorViewer == null)
-        {
-            Debug.LogError("DepthViewer または ColorViewer GameObject が見つかりません");
-            return;
-        }
-
-        depthViewerMeshFilter = depthViewer.GetComponent<MeshFilter>();
-        if (depthViewerMeshFilter == null)
-            depthViewerMeshFilter = depthViewer.AddComponent<MeshFilter>();
-
+        if (depthViewer == null) Debug.LogError("DepthViewer GameObject が見つかりません");
+        depthMeshFilter = depthViewer.GetComponent<MeshFilter>();
+        if (depthMeshFilter == null) depthMeshFilter = depthViewer.AddComponent<MeshFilter>();
         var depthRenderer = depthViewer.GetComponent<MeshRenderer>();
         if (depthRenderer == null)
         {
             depthRenderer = depthViewer.AddComponent<MeshRenderer>();
             depthRenderer.material = new Material(Shader.Find("Unlit/Color"));
         }
+        depthMesh = new Mesh();
+        depthMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        depthMeshFilter.mesh = depthMesh;
+
+        colorViewer = GameObject.Find("ColorViewer");
+        if (colorViewer == null) Debug.LogError("ColorViewer GameObject が見つかりません");
+        colorRenderer = colorViewer.GetComponent<MeshRenderer>();
+        if (colorRenderer == null) colorRenderer = colorViewer.AddComponent<MeshRenderer>();
+        if (colorRenderer.material == null || colorRenderer.material.shader.name != "Unlit/Texture")
+        {
+            colorRenderer.material = new Material(Shader.Find("Unlit/Texture"));
+        }
+        currentTexture = new Texture2D(2, 2);
+        colorRenderer.material.mainTexture = currentTexture;
     }
 
     void Update()
     {
-        if (depthParser == null || colorParser == null) return;
-        if (!depthParser.ParseNextRecord()) return;
-        if (!colorParser.ParseNextRecord()) return;
-
-        if (depthParser is RcstSensorDataParser rcst)
+        if (depthParser?.ParseNextRecord() == true && depthParser is RcstSensorDataParser rcst)
         {
-            ushort[] depth = rcst.GetLatestDepthValues();
-            if (depth == null || depth.Length == 0) return;
-
-            Mesh mesh = DepthMeshGenerator.CreateMeshFromDepth(depth, rcst.sensorHeader, depthScaleFactor);
-            depthViewerMeshFilter.mesh = mesh;
+            var depth = rcst.GetLatestDepthValues();
+            if (depth != null && depth.Length > 0)
+            {
+                DepthMeshGenerator.UpdateMeshFromDepth(depthMesh, depth, rcst.sensorHeader, depthScaleFactor);
+            }
         }
 
-        if (colorParser is RcsvSensorDataParser rgb && rgb.CurrentColorBytes != null)
+        if (colorParser?.ParseNextRecord() == true && colorParser is RcsvSensorDataParser rgb)
         {
-            Texture2D texture = new Texture2D(2, 2);
-            if (texture.LoadImage(rgb.CurrentColorBytes))
+            if (rgb.CurrentColorBytes != null)
             {
-                var renderer = colorViewer.GetComponent<MeshRenderer>();
-                if (renderer == null)
-                {
-                    renderer = colorViewer.AddComponent<MeshRenderer>();
-                }
-
-                // Plane に貼り付けるためのマテリアルに設定
-                if (renderer.material == null || renderer.material.shader.name != "Unlit/Texture")
-                {
-                    renderer.material = new Material(Shader.Find("Unlit/Texture"));
-                }
-                renderer.material.mainTexture = texture;
+                currentTexture.LoadImage(rgb.CurrentColorBytes);
             }
         }
     }
