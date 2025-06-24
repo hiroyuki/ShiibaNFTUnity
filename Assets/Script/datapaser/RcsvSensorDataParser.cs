@@ -16,17 +16,8 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
     public Color32[] CurrentColorPixels { get; private set; }
 
     private Texture2D _decodedTexture;
-    private int _depthWidth = -1;
-    private int _depthHeight = -1;
-
-    public void SetTargetResolution(int width, int height)
-    {
-        _depthWidth = width;
-        _depthHeight = height;
-    }
 
     public RcsvSensorDataParser(BinaryReader reader) : base(reader) { }
-
     ~RcsvSensorDataParser() => Dispose();
     public override void Dispose() => reader?.Dispose();
 
@@ -76,98 +67,54 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
 
         if (_decodedTexture.LoadImage(CurrentColorBytes))
         {
-            if (_depthWidth > 0 && _depthHeight > 0)
-            {
-                Texture2D resized = ResizeTexture(_decodedTexture, _depthWidth, _depthHeight);
-                FlipTextureVertically(resized);
-                CurrentColorPixels = resized.GetPixels32();
-                UnityEngine.Object.Destroy(resized);
-            }
-            else
-            {
-                Debug.LogWarning("Depth resolution not set — skipping color resizing.");
-                CurrentColorPixels = _decodedTexture.GetPixels32();
-            }
+            CurrentColorPixels = _decodedTexture.GetPixels32();
+        }
+        else
+        {
+            Debug.LogWarning("カラー画像の読み込みに失敗しました");
+            return false;
         }
 
         return true;
     }
 
-    private Texture2D ResizeTexture(Texture2D source, int targetWidth, int targetHeight)
-    {
-        RenderTexture rt = RenderTexture.GetTemporary(targetWidth, targetHeight);
-        RenderTexture.active = rt;
-        Graphics.Blit(source, rt);
-
-        Texture2D result = new Texture2D(targetWidth, targetHeight, TextureFormat.RGB24, false);
-        result.ReadPixels(new Rect(0, 0, targetWidth, targetHeight), 0, 0);
-        result.Apply();
-
-        RenderTexture.active = null;
-        RenderTexture.ReleaseTemporary(rt);
-
-        return result;
-    }
-
-    private void FlipTextureVertically(Texture2D tex)
-    {
-        Color[] pixels = tex.GetPixels();
-        int width = tex.width;
-        int height = tex.height;
-        for (int y = 0; y < height / 2; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                int top = y * width + x;
-                int bottom = (height - 1 - y) * width + x;
-
-                Color temp = pixels[top];
-                pixels[top] = pixels[bottom];
-                pixels[bottom] = temp;
-            }
-        }
-        tex.SetPixels(pixels);
-        tex.Apply();
-    }
-    
     public override bool PeekNextTimestamp(out ulong timestamp)
-{
-    try
     {
-        long originalPos = reader.BaseStream.Position;
-
-        var colorField = sensorHeader.record_format.FirstOrDefault(f => f.name == "image");
-        if (colorField == null)
+        try
         {
-            timestamp = 0;
-            return false;
-        }
+            long originalPos = reader.BaseStream.Position;
 
-        int sizeTypeBytes = colorField.type switch
-        {
-            "u16" => 2,
-            "u32" => 4,
-            _ => throw new InvalidDataException($"Unsupported size type: {colorField.type}")
-        };
+            var colorField = sensorHeader.record_format.FirstOrDefault(f => f.name == "image");
+            if (colorField == null)
+            {
+                timestamp = 0;
+                return false;
+            }
 
-        int metadataSize = sensorHeader.MetadataSize;
-        byte[] header = reader.ReadBytes(metadataSize);
-        if (header.Length < 8)
-        {
-            timestamp = 0;
+            int sizeTypeBytes = colorField.type switch
+            {
+                "u16" => 2,
+                "u32" => 4,
+                _ => throw new InvalidDataException($"Unsupported size type: {colorField.type}")
+            };
+
+            int metadataSize = sensorHeader.MetadataSize;
+            byte[] header = reader.ReadBytes(metadataSize);
+            if (header.Length < 8)
+            {
+                timestamp = 0;
+                reader.BaseStream.Position = originalPos;
+                return false;
+            }
+
+            timestamp = BitConverter.ToUInt64(header, 0);
             reader.BaseStream.Position = originalPos;
+            return true;
+        }
+        catch
+        {
+            timestamp = 0;
             return false;
         }
-
-        timestamp = BitConverter.ToUInt64(header, 0);
-
-        reader.BaseStream.Position = originalPos;
-        return true;
     }
-    catch
-    {
-        timestamp = 0;
-        return false;
-    }
-}
 }

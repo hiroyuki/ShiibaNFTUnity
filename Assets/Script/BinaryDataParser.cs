@@ -23,6 +23,9 @@ public class BinaryDataParser : MonoBehaviour
     private MeshRenderer colorRenderer;
     private Texture2D currentTexture;
 
+    private int savedFrameCount = 0;
+    private const int maxSavedFrames = 10;
+
     void Start()
     {
 
@@ -55,12 +58,6 @@ public class BinaryDataParser : MonoBehaviour
             Debug.LogWarning("depthScaleFactor が読み込めなかったため、既定値を使用します");
         }
 
-
-
-        int depthW = depthParser.sensorHeader.custom.camera_sensor.width;
-        int depthH = depthParser.sensorHeader.custom.camera_sensor.height;
-        colorParser.SetTargetResolution(depthW, depthH);
-
         depthViewer = GameObject.Find("DepthViewer");
         if (depthViewer == null) Debug.LogError("DepthViewer GameObject が見つかりません");
         depthMeshFilter = depthViewer.GetComponent<MeshFilter>();
@@ -74,6 +71,8 @@ public class BinaryDataParser : MonoBehaviour
         depthMesh = new Mesh();
         depthMeshGenerator = new DepthMeshGenerator();
         depthMeshGenerator.setup(depthParser.sensorHeader, depthScaleFactor);
+        depthMeshGenerator.SetupColorIntrinsics(colorParser.sensorHeader);
+
         depthMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
         depthMeshFilter.mesh = depthMesh;
 
@@ -90,7 +89,7 @@ public class BinaryDataParser : MonoBehaviour
     }
     void Update()
     {
-            // if (Time.frameCount > 2) return;
+        // if (Time.frameCount > 2) return;
         const long maxAllowableDeltaNs = 2_000; // 2ms（必要に応じて調整）
 
         while (true)
@@ -111,9 +110,26 @@ public class BinaryDataParser : MonoBehaviour
                     var depth = depthParser.GetLatestDepthValues();
                     var color = colorParser.CurrentColorPixels;
 
-                    if (depth != null && color != null && depth.Length > 0 && color.Length == depth.Length)
+                    if (depth != null && color != null && depth.Length > 0)
                     {
                         depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, depth, color);
+                        // if (savedFrameCount < maxSavedFrames)
+                        // {
+                        //     SaveDepthAndColorImages(depth, color, savedFrameCount,
+                        //         depthParser.sensorHeader.custom.camera_sensor.width,
+                        //         depthParser.sensorHeader.custom.camera_sensor.height);
+
+                        //     var projTex = depthMeshGenerator.ProjectDepthToColorImage(depth);
+                        //     if (projTex != null)
+                        //     {
+                        //         string exportDir = Path.Combine(Application.persistentDataPath, "ExportedFrames");
+                        //         byte[] bytes = projTex.EncodeToPNG();
+                        //         File.WriteAllBytes(Path.Combine(exportDir, $"frame_{savedFrameCount:D2}_projection.png"), bytes);
+                        //         Destroy(projTex);
+                        //     }
+
+                        //     savedFrameCount++;
+                        // }
                     }
                 }
                 break;
@@ -122,6 +138,8 @@ public class BinaryDataParser : MonoBehaviour
             if (delta < 0) depthParser.ParseNextRecord();  // depth is behind
             else colorParser.ParseNextRecord();            // color is behind
         }
+
+
     }
 
     // void Update()
@@ -142,5 +160,43 @@ public class BinaryDataParser : MonoBehaviour
     //         }
     //     }
     // }
+    
+    private void SaveDepthAndColorImages(ushort[] depth, Color32[] color, int frameIndex, int width, int height)
+    {
+        string exportDir = Path.Combine(Application.persistentDataPath, "ExportedFrames");
+        if (!Directory.Exists(exportDir))
+            Directory.CreateDirectory(exportDir);
+
+        // --- Save Depth as Grayscale PNG ---
+        Texture2D depthTex = new Texture2D(width, height, TextureFormat.R8, false);
+        float maxDepthMeters = 4.0f; // 調整可能
+        float scale = 255f / maxDepthMeters;
+
+        for (int i = 0; i < depth.Length; i++)
+        {
+            float meters = depth[i] * (depthScaleFactor / 1000f);
+            byte intensity = (byte)Mathf.Clamp(meters * scale, 0, 255);
+            depthTex.SetPixel(i % width, height - 1 - (i / width), new Color32(intensity, intensity, intensity, 255));
+        }
+        depthTex.Apply();
+
+        byte[] depthBytes = depthTex.EncodeToPNG();
+        File.WriteAllBytes(Path.Combine(exportDir, $"frame_{frameIndex:D2}_depth.png"), depthBytes);
+        Destroy(depthTex);
+
+        // --- Save Color as PNG ---
+        int cW = colorParser.sensorHeader.custom.camera_sensor.width;
+        int cH = colorParser.sensorHeader.custom.camera_sensor.height;
+
+        Texture2D colorTex = new Texture2D(cW, cH, TextureFormat.RGB24, false);
+        colorTex.SetPixels32(color);
+        colorTex.Apply();
+
+        byte[] colorBytes = colorTex.EncodeToPNG();
+        File.WriteAllBytes(Path.Combine(exportDir, $"frame_{frameIndex:D2}_color.png"), colorBytes);
+        Destroy(colorTex);
+
+        Debug.Log($"Saved frame {frameIndex} to {exportDir}");
+    }
 }
 
