@@ -40,7 +40,7 @@ public class MouseOrbitCamera : MonoBehaviour
 
             scrollDelta = Mouse.current.scroll.ReadValue().y;
         }
-    }
+    }   
 
     void LateUpdate()
     {

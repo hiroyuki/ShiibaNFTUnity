@@ -105,7 +105,7 @@ public class DepthMeshGenerator
 
     private Quaternion ParseRotationMatrix(string param)
     {
-        Debug.Log("Parsing rotation matrix: " + param);
+        // Debug.Log("Parsing rotation matrix: " + param);
 
         var parts = param.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
                         .Select(p => float.Parse(p.Trim())).ToArray();
@@ -128,7 +128,7 @@ public class DepthMeshGenerator
     }
     private Vector3 ParseVector3(string param)
     {
-        Debug.Log("Parsing vector3: " + param);
+        // Debug.Log("Parsing vector3: " + param);
         var parts = param.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
                         .Select(p => float.Parse(p.Trim())).ToArray();
         if (parts.Length == 3)
@@ -148,7 +148,7 @@ public class DepthMeshGenerator
         // distortion: 残り8要素（k1~k6, p1, p2）
         this.color_distortion = colorIntrinsics.Skip(4).ToArray(); // 8要素
         this.colorIntrinsics = colorIntrinsics.Take(4).ToArray(); // 4要素
-        Debug.Log($"Color intrinsics set: {string.Join(", ", this.colorIntrinsics)}, distortion={string.Join(", ", this.color_distortion)}");  
+        // Debug.Log($"Color intrinsics set: {string.Join(", ", this.colorIntrinsics)}, distortion={string.Join(", ", this.color_distortion)}");  
     }
     
     public Texture2D ProjectDepthToColorImage(ushort[] depthValues)

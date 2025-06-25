@@ -271,8 +271,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   target: {fileID: 2075022031}
   distance: 3
-  xSpeed: 1
-  ySpeed: 1
+  xSpeed: 10
+  ySpeed: 10
   yMinLimit: -20
   yMaxLimit: 80
   zoomSpeed: 2
@@ -415,7 +415,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &574826807
 Transform:
   m_ObjectHideFlags: 0
@@ -440,12 +440,14 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 574826805}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5187ccec04781454591117e3df9a4384, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   dir: D:\\20250412\\2025-04-12_20-17-26_video
+  hostname: 
+  deviceName: 
   depthScaleFactor: 1000
 --- !u!1 &832575517
 GameObject:
@@ -491,6 +493,51 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &954508062
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 954508064}
+  - component: {fileID: 954508063}
+  m_Layer: 0
+  m_Name: MultiCameraPointCloud
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &954508063
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 954508062}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9039e76ce998ee8438ea22f790141f0e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  rootDirectory: D:\\20250412\\2025-04-12_20-17-26_video
+--- !u!4 &954508064
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 954508062}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.75911, y: 6.01734, z: -0.14279}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -644,3 +691,4 @@ SceneRoots:
   - {fileID: 410087041}
   - {fileID: 832575519}
   - {fileID: 574826807}
+  - {fileID: 954508064}
