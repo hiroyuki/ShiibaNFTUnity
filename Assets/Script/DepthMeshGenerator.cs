@@ -6,10 +6,10 @@ public class DepthMeshGenerator
 {
     int width, height;
     private float[] intrinsics; // fx, fy, cx, cy
-    private float[] distortion; // k1～k6, p1, p2
     float depthScaleFactor;
 
     float[] colorIntrinsics; // fx, fy, cx, cy
+    private float[] color_distortion; // k1～k6, p1, p2
     int colorWidth, colorHeight;
     Color32[] latestColorPixels;
 
@@ -23,12 +23,7 @@ public class DepthMeshGenerator
         this.intrinsics = ParseIntrinsics(header.custom.additional_info.orbbec_intrinsics_parameters);
         this.depthScaleFactor = depthScaleFactor;
 
-                // fx, fy, cx, cy: 最初の4要素
-        // distortion: 残り8要素（k1~k6, p1, p2）
-        this.distortion = intrinsics.Skip(4).ToArray(); // 8要素
-        this.intrinsics = intrinsics.Take(4).ToArray(); // 4要素
-
-
+        // Debug.Log($"DepthMeshGenerator setup: {width}x{height}, intrinsics={string.Join(", ", intrinsics)}, distortion={string.Join(", ", distortion)}");   
         if (!string.IsNullOrEmpty(header.custom.additional_info.orbbec_extrinsics_d2c_rotation))
             rotation = ParseRotationMatrix(header.custom.additional_info.orbbec_extrinsics_d2c_rotation);
 
@@ -37,7 +32,7 @@ public class DepthMeshGenerator
             translation = ParseVector3(header.custom.additional_info.orbbec_extrinsics_d2c_translation);
             translation.y *= -1f;
         }
-        Debug.Log($"DepthMeshGenerator setup: {width}x{height}, scale={depthScaleFactor}, rotation={rotation}, translation={translation}");
+        // Debug.Log($"DepthMeshGenerator setup: {width}x{height}, scale={depthScaleFactor}, rotation={rotation}, translation={translation}");
     }
 
     public void UpdateMeshFromDepthAndColor(Mesh mesh, ushort[] depthValues, Color32[] colorPixels)
@@ -148,6 +143,12 @@ public class DepthMeshGenerator
         colorIntrinsics = ParseIntrinsics(colorHeader.custom.additional_info.orbbec_intrinsics_parameters);
         colorWidth = colorHeader.custom.camera_sensor.width;
         colorHeight = colorHeader.custom.camera_sensor.height;
+
+        // fx, fy, cx, cy: 最初の4要素
+        // distortion: 残り8要素（k1~k6, p1, p2）
+        this.color_distortion = colorIntrinsics.Skip(4).ToArray(); // 8要素
+        this.colorIntrinsics = colorIntrinsics.Take(4).ToArray(); // 4要素
+        Debug.Log($"Color intrinsics set: {string.Join(", ", this.colorIntrinsics)}, distortion={string.Join(", ", this.color_distortion)}");  
     }
     
     public Texture2D ProjectDepthToColorImage(ushort[] depthValues)

@@ -26,6 +26,9 @@ public class BinaryDataParser : MonoBehaviour
     private int savedFrameCount = 0;
     private const int maxSavedFrames = 10;
 
+    private Vector2[,] colorUndistortLUT;
+    private Vector2[,] depthUndistortLUT;
+
     void Start()
     {
 
@@ -76,16 +79,9 @@ public class BinaryDataParser : MonoBehaviour
         depthMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
         depthMeshFilter.mesh = depthMesh;
 
-        colorViewer = GameObject.Find("ColorViewer");
-        // if (colorViewer == null) Debug.LogError("ColorViewer GameObject が見つかりません");
-        // colorRenderer = colorViewer.GetComponent<MeshRenderer>();
-        // if (colorRenderer == null) colorRenderer = colorViewer.AddComponent<MeshRenderer>();
-        // if (colorRenderer.material == null || colorRenderer.material.shader.name != "Unlit/Texture")
-        // {
-        //     colorRenderer.material = new Material(Shader.Find("Unlit/Texture"));
-        // }
-        // currentTexture = new Texture2D(2, 2);
-        // colorRenderer.material.mainTexture = currentTexture;
+        // LUT生成（歪み補正マップの構築）
+        colorUndistortLUT = UndistortHelper.BuildUndistortLUTFromHeader(colorParser.sensorHeader);
+        depthUndistortLUT = UndistortHelper.BuildUndistortLUTFromHeader(depthParser.sensorHeader);
     }
     void Update()
     {
@@ -107,29 +103,45 @@ public class BinaryDataParser : MonoBehaviour
 
                 if (depthOk && colorOk)
                 {
-                    var depth = depthParser.GetLatestDepthValues();
-                    var color = colorParser.CurrentColorPixels;
+                    var _depth = depthParser.GetLatestDepthValues();
+                    var _color = colorParser.CurrentColorPixels;
 
-                    if (depth != null && color != null && depth.Length > 0)
+                    if (_depth != null && _color != null && _depth.Length > 0)
                     {
-                        depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, depth, color);
-                        // if (savedFrameCount < maxSavedFrames)
-                        // {
-                        //     SaveDepthAndColorImages(depth, color, savedFrameCount,
-                        //         depthParser.sensorHeader.custom.camera_sensor.width,
-                        //         depthParser.sensorHeader.custom.camera_sensor.height);
+                        Color32[] correctedColor = _color;
+                        // UndistortHelper.UndistortImage(
+                        //                 _color,
+                        //                 colorUndistortLUT,
+                        //                 colorParser.sensorHeader.custom.camera_sensor.width,
+                        //                 colorParser.sensorHeader.custom.camera_sensor.height
+                        //             );
 
-                        //     var projTex = depthMeshGenerator.ProjectDepthToColorImage(depth);
-                        //     if (projTex != null)
-                        //     {
-                        //         string exportDir = Path.Combine(Application.persistentDataPath, "ExportedFrames");
-                        //         byte[] bytes = projTex.EncodeToPNG();
-                        //         File.WriteAllBytes(Path.Combine(exportDir, $"frame_{savedFrameCount:D2}_projection.png"), bytes);
-                        //         Destroy(projTex);
-                        //     }
+                        // ushort[] correctedDepth = _depth;
+                        ushort[] correctedDepth = UndistortHelper.UndistortImageUShort(
+                                        _depth,
+                                        depthUndistortLUT,
+                                        depthParser.sensorHeader.custom.camera_sensor.width,
+                                        depthParser.sensorHeader.custom.camera_sensor.height
+                                    );
 
-                        //     savedFrameCount++;
-                        // }
+                        depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, correctedDepth, correctedColor);
+                        if (savedFrameCount < maxSavedFrames)
+                        {
+                            SaveDepthAndColorImages(correctedDepth, correctedColor, savedFrameCount,
+                                depthParser.sensorHeader.custom.camera_sensor.width,
+                                depthParser.sensorHeader.custom.camera_sensor.height);
+
+                            var projTex = depthMeshGenerator.ProjectDepthToColorImage(correctedDepth);
+                            if (projTex != null)
+                            {
+                                string exportDir = Path.Combine(Application.persistentDataPath, "ExportedFrames");
+                                byte[] bytes = projTex.EncodeToPNG();
+                                File.WriteAllBytes(Path.Combine(exportDir, $"frame_{savedFrameCount:D2}_projection.png"), bytes);
+                                Destroy(projTex);
+                            }
+
+                            savedFrameCount++;
+                        }
                     }
                 }
                 break;
