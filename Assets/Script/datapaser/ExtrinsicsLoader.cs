@@ -51,12 +51,13 @@ public static class ExtrinsicsLoader
 
 
         // ✅ Xのみ反転。Zは反転しない
-        position = new Vector3(-t[0], t[1], t[2]);
+        position = new Vector3(t[0], t[1], t[2]);
 
         // ✅ X軸180度回転で上下補正。Z軸回転は不要
-        var scannedQuat = new Quaternion(q[0], q[1], q[2], q[3]);
-        var coordinateFix = Quaternion.Euler(180f, 0f, 0f);
-        rotation = coordinateFix * scannedQuat;
+        // var scannedQuat = new Quaternion(q[0], q[1], q[2], q[3]);
+        // var coordinateFix = Quaternion.Euler(180f, 0f, 0f);
+        // rotation = coordinateFix * scannedQuat;
+        rotation = new Quaternion(q[0], q[1], q[2], q[3]);
 
         return true;
     }

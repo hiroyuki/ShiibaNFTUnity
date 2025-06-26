@@ -87,11 +87,11 @@ public class DepthMeshGenerator
         }
 
         mesh.Clear();
-        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
-        mesh.vertices = vertices;
-        mesh.colors32 = vertexColors;
-        mesh.SetIndices(indices, MeshTopology.Points, 0);
-        mesh.RecalculateBounds();
+        // mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        // mesh.vertices = vertices;
+        // mesh.colors32 = vertexColors;
+        // mesh.SetIndices(indices, MeshTopology.Points, 0);
+        // mesh.RecalculateBounds();
     }
 
 

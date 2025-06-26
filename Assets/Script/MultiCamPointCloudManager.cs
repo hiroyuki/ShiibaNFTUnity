@@ -48,8 +48,8 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
 
 
-            if (deviceDirName != "FemtoBolt_CL8F25300HJ" && deviceDirName != "FemtoBolt_CL8F25300EG")
-            // if (deviceDirName != "FemtoBolt_CL8F25300HJ" )
+            // if (deviceDirName != "FemtoBolt_CL8F25300HJ" && deviceDirName != "FemtoBolt_CL8F25300EG")
+            if (deviceDirName != "FemtoBolt_CL8F25300HJ" )
             // if (deviceDirName != "FemtoBolt_CL8F25300C6" )
                     continue;//center , right
 
