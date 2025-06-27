@@ -23,15 +23,6 @@ public class DepthMeshGenerator
         this.intrinsics = ParseIntrinsics(header.custom.additional_info.orbbec_intrinsics_parameters);
         this.depthScaleFactor = depthScaleFactor;
 
-        // Debug.Log($"DepthMeshGenerator setup: {width}x{height}, intrinsics={string.Join(", ", intrinsics)}, distortion={string.Join(", ", distortion)}");   
-        if (!string.IsNullOrEmpty(header.custom.additional_info.orbbec_extrinsics_d2c_rotation))
-            rotation = ParseRotationMatrix(header.custom.additional_info.orbbec_extrinsics_d2c_rotation);
-
-        if (!string.IsNullOrEmpty(header.custom.additional_info.orbbec_extrinsics_d2c_translation))
-        {
-            translation = ParseVector3(header.custom.additional_info.orbbec_extrinsics_d2c_translation);
-            translation.y *= -1f;
-        }
         // Debug.Log($"DepthMeshGenerator setup: {width}x{height}, scale={depthScaleFactor}, rotation={rotation}, translation={translation}");
     }
 
@@ -87,11 +78,11 @@ public class DepthMeshGenerator
         }
 
         mesh.Clear();
-        // mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
-        // mesh.vertices = vertices;
-        // mesh.colors32 = vertexColors;
-        // mesh.SetIndices(indices, MeshTopology.Points, 0);
-        // mesh.RecalculateBounds();
+        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        mesh.vertices = vertices;
+        mesh.colors32 = vertexColors;
+        mesh.SetIndices(indices, MeshTopology.Points, 0);
+        mesh.RecalculateBounds();
     }
 
 
@@ -121,7 +112,7 @@ public class DepthMeshGenerator
         // ✅ 左右と上下を反転（XとY軸）
         mat.SetRow(0, new Vector4(-parts[0], -parts[1], -parts[2], 0)); // X反転
         mat.SetRow(1, new Vector4(-parts[3], -parts[4], -parts[5], 0)); // Y反転
-        mat.SetRow(2, new Vector4( parts[6],  parts[7],  parts[8], 0)); // Zそのまま
+        mat.SetRow(2, new Vector4(parts[6], parts[7], parts[8], 0)); // Zそのまま
         mat.SetRow(3, new Vector4(0, 0, 0, 1));
 
         return mat.rotation;
@@ -150,7 +141,7 @@ public class DepthMeshGenerator
         this.colorIntrinsics = colorIntrinsics.Take(4).ToArray(); // 4要素
         // Debug.Log($"Color intrinsics set: {string.Join(", ", this.colorIntrinsics)}, distortion={string.Join(", ", this.color_distortion)}");  
     }
-    
+
     public Texture2D ProjectDepthToColorImage(ushort[] depthValues)
     {
         if (colorIntrinsics == null || latestColorPixels == null)
@@ -195,6 +186,12 @@ public class DepthMeshGenerator
 
         output.Apply();
         return output;
+    }
+    
+    public void ApplyDepthToColorExtrinsics(Vector3 translation, Quaternion rotation)
+    {
+        this.translation = translation;
+        this.rotation = rotation;
     }
 
 }

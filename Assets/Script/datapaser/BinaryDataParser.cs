@@ -26,6 +26,7 @@ public class BinaryDataParser : MonoBehaviour
     private Vector2[,] depthUndistortLUT;
 
     private bool firstFrameProcessed = false;
+    private ExtrinsicsLoader extrisics;
 
     void Start()
     {
@@ -45,7 +46,14 @@ public class BinaryDataParser : MonoBehaviour
         string extrinsicsPath = Path.Combine(dir, "calibration", "extrinsics.yaml");
         string serial = deviceName.Split('_')[^1];
 
-        float? loadedScale = ExtrinsicsLoader.GetDepthScaleFactor(extrinsicsPath, serial);
+        extrisics = new ExtrinsicsLoader(extrinsicsPath);
+        if (!extrisics.IsLoaded)
+        {
+            Debug.LogError("Extrinsics data could not be loaded from: " + extrinsicsPath);
+            return;
+        }
+
+        float? loadedScale = extrisics.GetDepthScaleFactor(serial);
         if (loadedScale.HasValue)
         {
             depthScaleFactor = loadedScale.Value;
@@ -61,7 +69,7 @@ public class BinaryDataParser : MonoBehaviour
         gizmo.gizmoColor = Color.red;
         gizmo.size = 0.1f;
 
-        if (ExtrinsicsLoader.TryGetGlobalTransform(extrinsicsPath, serial, out Vector3 pos, out Quaternion rot))
+        if (extrisics.TryGetGlobalTransform(serial, out Vector3 pos, out Quaternion rot))
         {
             Debug.Log($"Applying global transform for {deviceName}: position = {pos}, rotation = {rot.eulerAngles}");
 
@@ -76,8 +84,8 @@ public class BinaryDataParser : MonoBehaviour
             Vector3 unityEuler = unityRotation.eulerAngles;
             Debug.Log($"Unity Position: {unityPosition}  Rotation (Euler): {unityEuler}");
 
-            depthViewer.transform.localRotation = unityRotation;
-            depthViewer.transform.localPosition = unityPosition;
+            // depthViewer.transform.localRotation = unityRotation;
+            // depthViewer.transform.localPosition = unityPosition;
 
             // Debug.Log($"Applied inverse transform for {deviceName} → position = {-(rot * pos)}, rotation = {Quaternion.Inverse(rot).eulerAngles}");
         }
@@ -92,6 +100,18 @@ public class BinaryDataParser : MonoBehaviour
 
         depthMeshGenerator = new DepthMeshGenerator();
         depthMeshGenerator.setup(depthParser.sensorHeader, depthScaleFactor);
+        var d2cTranslation = Vector3.zero;
+        var d2cRotation = Quaternion.identity;
+        if (extrisics.TryGetDepthToColorTransform(serial, out d2cTranslation, out d2cRotation))
+        {
+            Debug.Log($"Depth to Color transform for {serial}: translation = {d2cTranslation}, rotation = {d2cRotation.eulerAngles}");
+            depthMeshGenerator.ApplyDepthToColorExtrinsics(d2cTranslation, d2cRotation);
+        }
+        else
+        {
+            Debug.LogError($"Failed to get depth to color transform for {serial}");
+            return;
+        }
         depthMeshGenerator.SetupColorIntrinsics(colorParser.sensorHeader);
 
         // colorUndistortLUT = UndistortHelper.BuildUndistortLUTFromHeader(colorParser.sensorHeader);
