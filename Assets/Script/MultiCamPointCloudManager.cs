@@ -34,19 +34,11 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             return;
         }
 
-        var deserializer = new DeserializerBuilder().IgnoreUnmatchedProperties().Build();
-        HostInfo hostInfo;
-        using (var reader = new StreamReader(hostInfoPath))
-        {
-            hostInfo = deserializer.Deserialize<HostInfo>(reader);
-        }
-
+        HostInfo hostInfo = YamlLoader.Load<HostInfo>(hostInfoPath);
         foreach (var device in hostInfo.devices)
         {
             // deviceType_serialNumber → 例: FemtoBolt_CL8F25300C6
             string deviceDirName = $"{device.deviceType}_{device.serialNumber}";
-
-
 
             // if (deviceDirName != "FemtoBolt_CL8F25300HJ" && deviceDirName != "FemtoBolt_CL8F25300EG")
             if (deviceDirName != "FemtoBolt_CL8F25300HJ" )

@@ -75,13 +75,7 @@ public class ExtrinsicsLoader
             Debug.LogError("extrinsics.yaml が見つかりません: " + extrinsicsYamlPath);
             return;
         }
-
-        var deserializer = new DeserializerBuilder()
-            .IgnoreUnmatchedProperties()
-            .Build();
-
-        using var reader = new StreamReader(extrinsicsYamlPath);
-        extrinsics = deserializer.Deserialize<ExtrinsicsRoot>(reader);
+        extrinsics = YamlLoader.Load<ExtrinsicsRoot>(extrinsicsYamlPath);
     }
 
 }
