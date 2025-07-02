@@ -39,11 +39,11 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         {
             // deviceType_serialNumber → 例: FemtoBolt_CL8F25300C6
             string deviceDirName = $"{device.deviceType}_{device.serialNumber}";
-
+// 
             // if (deviceDirName != "FemtoBolt_CL8F25300HJ" && deviceDirName != "FemtoBolt_CL8F25300EG")
-            if (deviceDirName != "FemtoBolt_CL8F25300HJ" )
+            // if (deviceDirName != "FemtoBolt_CL8F25300HJ" )
             // if (deviceDirName != "FemtoBolt_CL8F25300C6" )
-                    continue;//center , right
+                    // continue;//center , right
 
             string deviceDir = Path.Combine(hostDir, deviceDirName);
             string depthPath = Path.Combine(deviceDir, "camera_depth");

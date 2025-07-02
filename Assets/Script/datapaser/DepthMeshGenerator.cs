@@ -4,7 +4,7 @@ using System.Linq;
 
 public class DepthMeshGenerator
 {
-    int width, height;
+    int depthWidth, depthHeight;
     private float[] intrinsics; // fx, fy, cx, cy
     float depthScaleFactor;
 
@@ -18,8 +18,8 @@ public class DepthMeshGenerator
 
     public void setup(SensorHeader header, float depthScaleFactor)
     {
-        this.width = header.custom.camera_sensor.width;
-        this.height = header.custom.camera_sensor.height;
+        this.depthWidth = header.custom.camera_sensor.width;
+        this.depthHeight = header.custom.camera_sensor.height;
         this.intrinsics = ParseIntrinsics(header.custom.additional_info.orbbec_intrinsics_parameters);
         this.depthScaleFactor = depthScaleFactor;
 
@@ -28,7 +28,7 @@ public class DepthMeshGenerator
 
     public void UpdateMeshFromDepthAndColor(Mesh mesh, ushort[] depthValues, Color32[] colorPixels)
     {
-        if (depthValues.Length != width * height)
+        if (depthValues.Length != depthWidth * depthHeight)
             throw new ArgumentException("Depth size does not match resolution");
 
         if (colorPixels == null || colorIntrinsics == null)
@@ -45,15 +45,15 @@ public class DepthMeshGenerator
 
         for (int i = 0; i < depthValues.Length; i++)
         {
-            int x = i % width;
-            int y = i / width;
+            int x = i % depthWidth;
+            int y = i / depthWidth;
             float z = depthValues[i] * (depthScaleFactor / 1000f);
             if (z <= 0) z = 0.0001f;
 
             float px = (x - cx_d) * z / fx_d;
             float py = (y - cy_d) * z / fy_d;
 
-            Vector3 dPoint = new Vector3(-px, py, z);
+            Vector3 dPoint = new Vector3(px, py, z);
             Vector3 cPoint = rotation * dPoint + translation;
 
             // color画像上に再投影
@@ -61,7 +61,7 @@ public class DepthMeshGenerator
             float v = fy_c * cPoint.y / cPoint.z + cy_c;
 
             int ui = Mathf.RoundToInt(u);
-            int vi = Mathf.RoundToInt(v);
+            int vi = colorHeight - 1 - Mathf.RoundToInt(v);
 
             Color32 color = new Color32(0, 0, 0, 255); // デフォルト:黒
 
@@ -160,8 +160,8 @@ public class DepthMeshGenerator
 
         for (int i = 0; i < depthValues.Length; i++)
         {
-            int x = i % width;
-            int y = i / width;
+            int x = i % depthWidth;
+            int y = i / depthWidth;
             float z = depthValues[i] * (depthScaleFactor / 1000f);
             if (z <= 0) continue;
 

@@ -74,18 +74,17 @@ public class BinaryDataParser : MonoBehaviour
             Debug.Log($"Applying global transform for {deviceName}: position = {pos}, rotation = {rot.eulerAngles}");
 
             // Unity用に座標系変換（右手系→左手系、Y軸下→Y軸上）
-            Vector3 unityPosition = new Vector3(pos.x, pos.y, -pos.z);
+            Vector3 unityPosition = new Vector3(pos.x, pos.y, pos.z);
 
             // 回転はX軸180°回転を前掛けして上下反転と利き手系の変換を行う
-            Quaternion convert = Quaternion.Euler(0f, 0f, 180f);
-            Quaternion unityRotation = convert * rot;
+            Quaternion unityRotation = rot;
 
             // 結果を確認
             Vector3 unityEuler = unityRotation.eulerAngles;
             Debug.Log($"Unity Position: {unityPosition}  Rotation (Euler): {unityEuler}");
 
-            // depthViewer.transform.localRotation = unityRotation;
-            // depthViewer.transform.localPosition = unityPosition;
+            depthViewer.transform.localRotation = unityRotation;
+            depthViewer.transform.localPosition = unityPosition;
 
             // Debug.Log($"Applied inverse transform for {deviceName} → position = {-(rot * pos)}, rotation = {Quaternion.Inverse(rot).eulerAngles}");
         }
