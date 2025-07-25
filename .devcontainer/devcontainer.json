@@ -1,0 +1,26 @@
+{
+  "name": "Claude Code for Unity Project",
+  "image": "node:18-slim",
+  "workspaceFolder": "/workspace",
+  "postCreateCommand": "apt-get update && apt-get install -y git && echo '✅ Basic setup complete! You can manually install Claude Code with: npm install -g @anthropic-ai/claude-code'",
+  "containerEnv": {
+    "UNITY_PROJECT_PATH": "/workspace"
+  },
+  "mounts": ["source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached"],
+  "customizations": {
+    "vscode": {
+      // VS Code拡張機能の自動インストール
+      "extensions": [], 
+      // エディタ設定の適用(通常.vscode/settings.jsonに記述する内容)
+      "settings": {}
+    }
+  },
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "Claude Code Server"
+    }
+  },
+  "remoteUser": "root",
+  "shutdownAction": "stopContainer"
+}

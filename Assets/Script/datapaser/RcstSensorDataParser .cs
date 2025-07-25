@@ -24,6 +24,11 @@ public class RcstSensorDataParser : AbstractSensorDataParser
     string HeaderText = Encoding.UTF8.GetString(yamlBytes);
     var deserializer = new DeserializerBuilder().Build();
     sensorHeader = deserializer.Deserialize<SensorHeader>(HeaderText);
+
+    Debug.Log("RCST Header YAML:");
+    Debug.Log($"Header Size: {HeaderSize} bytes");
+    Debug.Log($"YAML Content:\n{HeaderText}");
+
   }
 
   public override bool ParseNextRecord()

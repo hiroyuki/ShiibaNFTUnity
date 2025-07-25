@@ -3,6 +3,7 @@ using System;
 
 public static class UndistortHelper
 {
+    // Create XY table like K4A's create_xy_table - stores normalized ray coordinates
     public static Vector2[,] BuildUndistortLUT(
         int width, int height,
         float fx, float fy, float cx, float cy,
@@ -15,25 +16,61 @@ public static class UndistortHelper
         {
             for (int x = 0; x < width; x++)
             {
-                float x_n = (x - cx) / fx;
-                float y_n = (y - cy) / fy;
-
-                float r2 = x_n * x_n + y_n * y_n;
-                float r4 = r2 * r2;
-                float r6 = r4 * r2;
-
-                float radial = 1 + k1 * r2 + k2 * r4 + k3 * r6;
-                float x_d = x_n * radial + 2 * p1 * x_n * y_n + p2 * (r2 + 2 * x_n * x_n);
-                float y_d = y_n * radial + 2 * p2 * x_n * y_n + p1 * (r2 + 2 * y_n * y_n);
-
-                float u_d = fx * x_d + cx;
-                float v_d = fy * y_d + cy;
-
-                lut[x, y] = new Vector2(u_d, v_d);
+                // Equivalent to k4a_calibration_2d_to_3d() at depth=1
+                Vector2 normalizedRay = PixelToNormalizedRay(x, y, fx, fy, cx, cy, k1, k2, k3, k4, k5, k6, p1, p2);
+                lut[x, y] = normalizedRay;
             }
         }
 
         return lut;
+    }
+
+    // Convert 2D pixel to normalized 3D ray coordinates (equivalent to k4a_calibration_2d_to_3d)
+    private static Vector2 PixelToNormalizedRay(float u, float v, 
+        float fx, float fy, float cx, float cy,
+        float k1, float k2, float k3, float k4, float k5, float k6, float p1, float p2)
+    {
+        // Step 1: Convert pixel to normalized coordinates (this is the distorted position)
+        float x_d = (u - cx) / fx;
+        float y_d = (v - cy) / fy;
+
+        // Step 2: Undistort using iterative method (Newton-Raphson)
+        float x_u = x_d;  // Initial guess
+        float y_u = y_d;
+
+        for (int iter = 0; iter < 10; iter++)
+        {
+            float r2 = x_u * x_u + y_u * y_u;
+            float r4 = r2 * r2;
+            float r6 = r4 * r2;
+
+            // Apply distortion model
+            float radial = 1 + k1 * r2 + k2 * r4 + k3 * r6;
+            float x_distorted = x_u * radial + 2 * p1 * x_u * y_u + p2 * (r2 + 2 * x_u * x_u);
+            float y_distorted = y_u * radial + 2 * p2 * x_u * y_u + p1 * (r2 + 2 * y_u * y_u);
+
+            // Calculate error
+            float ex = x_distorted - x_d;
+            float ey = y_distorted - y_d;
+
+            // Check convergence
+            if (ex * ex + ey * ey < 1e-8f) break;
+
+            // Update estimate
+            x_u -= ex * 0.9f;
+            y_u -= ey * 0.9f;
+
+            // Safety bounds
+            if (Mathf.Abs(x_u) > 10.0f || Mathf.Abs(y_u) > 10.0f)
+            {
+                x_u = x_d; // Fallback to distorted coordinates
+                y_u = y_d;
+                break;
+            }
+        }
+
+        // Return normalized ray coordinates (not pixel coordinates!)
+        return new Vector2(x_u, y_u);
     }
 
     public static Vector2[,] BuildUndistortLUTFromHeader(SensorHeader header)

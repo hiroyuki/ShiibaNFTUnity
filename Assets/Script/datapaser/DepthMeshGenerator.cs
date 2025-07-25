@@ -10,6 +10,8 @@ public class DepthMeshGenerator
 
     float[] colorIntrinsics; // fx, fy, cx, cy
     private float[] color_distortion; // k1～k6, p1, p2
+    private float[] depth_distortion; // k1～k6, p1, p2
+    private Vector2[,] depthUndistortLUT;
     int colorWidth, colorHeight;
     Color32[] latestColorPixels;
 
@@ -20,8 +22,18 @@ public class DepthMeshGenerator
     {
         this.depthWidth = header.custom.camera_sensor.width;
         this.depthHeight = header.custom.camera_sensor.height;
-        this.intrinsics = ParseIntrinsics(header.custom.additional_info.orbbec_intrinsics_parameters);
+        var allParams = ParseIntrinsics(header.custom.additional_info.orbbec_intrinsics_parameters);
+        this.intrinsics = allParams.Take(4).ToArray(); // fx, fy, cx, cy
+        this.depth_distortion = allParams.Skip(4).ToArray(); // k1~k6, p1, p2
         this.depthScaleFactor = depthScaleFactor;
+        
+        // Build depth undistortion LUT
+        this.depthUndistortLUT = UndistortHelper.BuildUndistortLUT(
+            depthWidth, depthHeight,
+            intrinsics[0], intrinsics[1], intrinsics[2], intrinsics[3], // fx, fy, cx, cy
+            depth_distortion[0], depth_distortion[1], depth_distortion[2], // k1, k2, k3
+            depth_distortion[3], depth_distortion[4], depth_distortion[5], // k4, k5, k6
+            depth_distortion[6], depth_distortion[7]); // p1, p2
 
         // Debug.Log($"DepthMeshGenerator setup: {width}x{height}, scale={depthScaleFactor}, rotation={rotation}, translation={translation}");
     }
@@ -42,7 +54,7 @@ public class DepthMeshGenerator
         Vector3[] vertices = new Vector3[depthValues.Length];
         Color32[] vertexColors = new Color32[depthValues.Length];
         int[] indices = new int[depthValues.Length];
-
+        
         for (int i = 0; i < depthValues.Length; i++)
         {
             int x = i % depthWidth;
@@ -50,18 +62,30 @@ public class DepthMeshGenerator
             float z = depthValues[i] * (depthScaleFactor / 1000f);
             if (z <= 0) z = 0.0001f;
 
-            float px = (x - cx_d) * z / fx_d;
-            float py = (y - cy_d) * z / fy_d;
+            // Step 1: Get normalized ray coordinates from LUT (like K4A xy_table)
+            Vector2 rayCoords = depthUndistortLUT[x, y];
+            // Multiply by depth to get 3D coordinates (like K4A fastpointcloud)
+            float px = rayCoords.x * z;
+            float py = rayCoords.y * z;
 
             Vector3 dPoint = new Vector3(px, py, z);
             Vector3 cPoint = rotation * dPoint + translation;
 
-            // color画像上に再投影
-            float u = fx_c * cPoint.x / cPoint.z + cx_c;
-            float v = fy_c * cPoint.y / cPoint.z + cy_c;
+            // Step 2: Project to color camera with distortion
+            if (cPoint.z <= 0)
+            {
+                vertices[i] = cPoint;
+                vertexColors[i] = new Color32(0, 0, 0, 255);
+                indices[i] = i;
+                continue;
+            }
 
-            int ui = Mathf.RoundToInt(u);
-            int vi = colorHeight - 1 - Mathf.RoundToInt(v);
+            float x_norm = cPoint.x / cPoint.z;
+            float y_norm = cPoint.y / cPoint.z;
+            Vector2 colorPixel = DistortColorProjection(x_norm, y_norm);
+
+            int ui = Mathf.RoundToInt(colorPixel.x);
+            int vi = colorHeight - 1 - Mathf.RoundToInt(colorPixel.y);
 
             Color32 color = new Color32(0, 0, 0, 255); // デフォルト:黒
 
@@ -192,6 +216,59 @@ public class DepthMeshGenerator
     {
         this.translation = translation;
         this.rotation = rotation;
+    }
+
+    // Undistort depth pixel coordinates to normalized coordinates
+    private Vector2 UndistortDepthPixel(float u, float v)
+    {
+        float fx = intrinsics[0], fy = intrinsics[1], cx = intrinsics[2], cy = intrinsics[3];
+        float k1 = depth_distortion[0], k2 = depth_distortion[1], k3 = depth_distortion[2];
+        float k4 = depth_distortion[3], k5 = depth_distortion[4], k6 = depth_distortion[5];
+        float p1 = depth_distortion[6], p2 = depth_distortion[7];
+
+        // Convert to normalized coordinates (distorted)
+        float x_d = (u - cx) / fx;
+        float y_d = (v - cy) / fy;
+
+        // Iterative undistortion using Newton-Raphson
+        float x_u = x_d, y_u = y_d;
+        for (int i = 0; i < 5; i++)
+        {
+            float r2 = x_u * x_u + y_u * y_u;
+            float r4 = r2 * r2;
+            float r6 = r4 * r2;
+
+            float radial = 1 + k1 * r2 + k2 * r4 + k3 * r6;
+            float x_distorted = x_u * radial + 2 * p1 * x_u * y_u + p2 * (r2 + 2 * x_u * x_u);
+            float y_distorted = y_u * radial + 2 * p2 * x_u * y_u + p1 * (r2 + 2 * y_u * y_u);
+
+            x_u -= (x_distorted - x_d) * 0.9f;
+            y_u -= (y_distorted - y_d) * 0.9f;
+        }
+
+        return new Vector2(x_u, y_u);
+    }
+
+    // Apply distortion to normalized coordinates for color projection
+    private Vector2 DistortColorProjection(float x_norm, float y_norm)
+    {
+        float fx = colorIntrinsics[0], fy = colorIntrinsics[1], cx = colorIntrinsics[2], cy = colorIntrinsics[3];
+        float k1 = color_distortion[0], k2 = color_distortion[1], k3 = color_distortion[2];
+        float k4 = color_distortion[3], k5 = color_distortion[4], k6 = color_distortion[5];
+        float p1 = color_distortion[6], p2 = color_distortion[7];
+
+        float r2 = x_norm * x_norm + y_norm * y_norm;
+        float r4 = r2 * r2;
+        float r6 = r4 * r2;
+
+        float radial = 1 + k1 * r2 + k2 * r4 + k3 * r6;
+        float x_d = x_norm * radial + 2 * p1 * x_norm * y_norm + p2 * (r2 + 2 * x_norm * x_norm);
+        float y_d = y_norm * radial + 2 * p2 * x_norm * y_norm + p1 * (r2 + 2 * y_norm * y_norm);
+
+        float u = fx * x_d + cx;
+        float v = fy * y_d + cy;
+
+        return new Vector2(u, v);
     }
 
 }

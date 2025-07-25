@@ -29,6 +29,10 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
         byte[] yamlBytes = reader.ReadBytes((int)HeaderSize);
         HeaderText = Encoding.UTF8.GetString(yamlBytes);
 
+        Debug.Log("RCSV Header YAML:");
+        Debug.Log($"Header Size: {HeaderSize} bytes");
+        Debug.Log($"YAML Content:\n{HeaderText}");
+
         var deserializer = new DeserializerBuilder().Build();
         sensorHeader = deserializer.Deserialize<SensorHeader>(HeaderText);
     }

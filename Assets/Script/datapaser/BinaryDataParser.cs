@@ -23,7 +23,6 @@ public class BinaryDataParser : MonoBehaviour
     private const int maxSavedFrames = 1;
 
     private Vector2[,] colorUndistortLUT;
-    private Vector2[,] depthUndistortLUT;
 
     private bool firstFrameProcessed = false;
     private ExtrinsicsLoader extrisics;
@@ -113,8 +112,7 @@ public class BinaryDataParser : MonoBehaviour
         }
         depthMeshGenerator.SetupColorIntrinsics(colorParser.sensorHeader);
 
-        // colorUndistortLUT = UndistortHelper.BuildUndistortLUTFromHeader(colorParser.sensorHeader);
-        // depthUndistortLUT = UndistortHelper.BuildUndistortLUTFromHeader(depthParser.sensorHeader);
+        colorUndistortLUT = UndistortHelper.BuildUndistortLUTFromHeader(colorParser.sensorHeader);
     }
 
     void Update()
@@ -142,25 +140,13 @@ public class BinaryDataParser : MonoBehaviour
 
                     if (_depth != null && _color != null && _depth.Length > 0)
                     {
-                        ushort[] correctedDepth = _depth;
-                        // UndistortHelper.UndistortImageUShort(
-                        //     _depth,
-                        //     depthUndistortLUT,
-                        //     depthParser.sensorHeader.custom.camera_sensor.width,
-                        //     depthParser.sensorHeader.custom.camera_sensor.height);
-
-                        Color32[] correctedColor = _color;
-                        // UndistortHelper.UndistortImage(
-                        //     _color,
-                        //     colorUndistortLUT,
-                        //     colorParser.sensorHeader.custom.camera_sensor.width,
-                        //     colorParser.sensorHeader.custom.camera_sensor.height);
-
-                        depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, correctedDepth, correctedColor);
+                        // Temporarily use original color without undistortion
+                        // TODO: Fix color undistortion LUT bounds checking
+                        depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
                         firstFrameProcessed = true;
                         if (savedFrameCount < maxSavedFrames)
                         {
-                            SaveDepthAndColorImages(correctedDepth, correctedColor, savedFrameCount,
+                            SaveDepthAndColorImages(_depth, _color, savedFrameCount,
                                 depthParser.sensorHeader.custom.camera_sensor.width,
                                 depthParser.sensorHeader.custom.camera_sensor.height);
 
@@ -176,25 +162,26 @@ public class BinaryDataParser : MonoBehaviour
         }
     }
 
-    private void SaveDepthAndColorImages(ushort[] depth, Color32[] color, int frameIndex, int width, int height)
+    private void SaveDepthAndColorImages(ushort[] originalDepth, Color32[] color, int frameIndex, int width, int height)
     {
         string exportDir = Path.Combine(Application.persistentDataPath, "ExportedFrames");
         if (!Directory.Exists(exportDir)) Directory.CreateDirectory(exportDir);
 
-        Texture2D depthTex = new Texture2D(width, height, TextureFormat.R8, false);
+        // Save original depth
+        Texture2D originalDepthTex = new Texture2D(width, height, TextureFormat.R8, false);
         float maxDepthMeters = 4.0f;
         float scale = 255f / maxDepthMeters;
 
-        for (int i = 0; i < depth.Length; i++)
+        for (int i = 0; i < originalDepth.Length; i++)
         {
-            float meters = depth[i] * (depthScaleFactor / 1000f);
+            float meters = originalDepth[i] * (depthScaleFactor / 1000f);
             byte intensity = (byte)Mathf.Clamp(meters * scale, 0, 255);
-            depthTex.SetPixel(i % width, height - 1 - (i / width), new Color32(intensity, intensity, intensity, 255));
+            originalDepthTex.SetPixel(i % width, height - 1 - (i / width), new Color32(intensity, intensity, intensity, 255));
         }
-        depthTex.Apply();
+        originalDepthTex.Apply();
 
-        File.WriteAllBytes(Path.Combine(exportDir, $"frame_{frameIndex:D2}_depth.png"), depthTex.EncodeToPNG());
-        Destroy(depthTex);
+        File.WriteAllBytes(Path.Combine(exportDir, $"frame_{frameIndex:D2}_depth_original.png"), originalDepthTex.EncodeToPNG());
+        Destroy(originalDepthTex);
 
         Texture2D colorTex = new Texture2D(colorParser.sensorHeader.custom.camera_sensor.width,
                                             colorParser.sensorHeader.custom.camera_sensor.height,
@@ -205,6 +192,6 @@ public class BinaryDataParser : MonoBehaviour
         File.WriteAllBytes(Path.Combine(exportDir, $"frame_{frameIndex:D2}_color.png"), colorTex.EncodeToPNG());
         Destroy(colorTex);
 
-        Debug.Log($"Saved frame {frameIndex} to {exportDir}");
+        Debug.Log($"Saved frame {frameIndex} (original depth + color) to {exportDir}");
     }
 }
