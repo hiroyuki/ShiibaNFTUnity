@@ -30,13 +30,8 @@ public class DepthMeshGenerator
         this.depthScaleFactor = depthScaleFactor;
         this.depthBias = depthBias;
         
-        // Build depth undistortion LUT
-        this.depthUndistortLUT = UndistortHelper.BuildUndistortLUT(
-            depthWidth, depthHeight,
-            intrinsics[0], intrinsics[1], intrinsics[2], intrinsics[3], // fx, fy, cx, cy
-            depth_distortion[0], depth_distortion[1], depth_distortion[2], // k1, k2, k3
-            depth_distortion[3], depth_distortion[4], depth_distortion[5], // k4, k5, k6
-            depth_distortion[6], depth_distortion[7]); // p1, p2
+        // Build depth undistortion LUT using OpenCV (fallback to simple pinhole for now)
+        this.depthUndistortLUT = OpenCVUndistortHelper.BuildUndistortLUTFromHeader(header);
 
         // Debug.Log($"DepthMeshGenerator setup: {width}x{height}, scale={depthScaleFactor}, rotation={rotation}, translation={translation}");
     }
@@ -221,6 +216,83 @@ public class DepthMeshGenerator
             }
         }
 
+        output.Apply();
+        return output;
+    }
+
+    public Texture2D CreateFilteredPointCloudProjection(ushort[] depthValues, Color32[] colorPixels)
+    {
+        if (colorIntrinsics == null || colorPixels == null)
+        {
+            Debug.LogWarning("Color intrinsics or color pixels not set.");
+            return null;
+        }
+
+        latestColorPixels = colorPixels; // Update latest color pixels
+
+        Texture2D output = new Texture2D(colorWidth, colorHeight, TextureFormat.RGB24, false);
+        Color32[] outputPixels = new Color32[colorWidth * colorHeight];
+        
+        // Initialize with black background
+        for (int i = 0; i < outputPixels.Length; i++) 
+            outputPixels[i] = new Color32(0, 0, 0, 255);
+
+        // float fx_d = intrinsics[0], fy_d = intrinsics[1], cx_d = intrinsics[2], cy_d = intrinsics[3];
+        // float fx_c = colorIntrinsics[0], fy_c = colorIntrinsics[1], cx_c = colorIntrinsics[2], cy_c = colorIntrinsics[3];
+
+        for (int i = 0; i < depthValues.Length; i++)
+        {
+            int x = i % depthWidth;
+            int y = i / depthWidth;
+            
+            // Apply depth bias correction and scale factor
+            float correctedDepth = depthValues[i] + depthBias;
+            float z = correctedDepth * (depthScaleFactor / 1000f);
+            if (z <= 0) continue; // Skip invalid depth
+
+            // Use OpenCV-generated undistortion LUT for accurate results
+            Vector2 rayCoords = depthUndistortLUT[x, y];
+            float px = rayCoords.x * z;
+            float py = rayCoords.y * z;
+
+            Vector3 dPoint = new Vector3(px, py, z);
+            Vector3 cPoint = rotation * dPoint + translation;
+
+            // Skip points behind camera
+            if (cPoint.z <= 0) continue;
+
+            // Project to color camera with distortion (same as point cloud generation)
+            float x_norm = cPoint.x / cPoint.z;
+            float y_norm = cPoint.y / cPoint.z;
+            Vector2 colorPixel = DistortColorProjection(x_norm, y_norm);
+
+            int ui = Mathf.RoundToInt(colorPixel.x);
+            int vi = colorHeight - 1 - Mathf.RoundToInt(colorPixel.y);
+
+            // Get the color for this point (same filtering as point cloud)
+            Color32 pointColor = new Color32(0, 0, 0, 255);
+            bool hasValidColor = false;
+
+            if (ui >= 0 && ui < colorWidth && vi >= 0 && vi < colorHeight)
+            {
+                int colorIdx = vi * colorWidth + ui;
+                if (colorIdx >= 0 && colorIdx < latestColorPixels.Length)
+                {
+                    pointColor = latestColorPixels[colorIdx];
+                    // Same black point filtering as point cloud: RGB > 5
+                    hasValidColor = pointColor.r > 5 || pointColor.g > 5 || pointColor.b > 5;
+                }
+            }
+
+            // Only draw points with valid colors (same filtering as point cloud)
+            if (hasValidColor && ui >= 0 && ui < colorWidth && vi >= 0 && vi < colorHeight)
+            {
+                int outputIdx = vi * colorWidth + ui;
+                outputPixels[outputIdx] = pointColor;
+            }
+        }
+
+        output.SetPixels32(outputPixels);
         output.Apply();
         return output;
     }
