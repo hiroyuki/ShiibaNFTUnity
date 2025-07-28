@@ -1,12 +1,14 @@
 using UnityEngine;
 using System;
 using System.Linq;
+using System.Collections.Generic;
 
 public class DepthMeshGenerator
 {
     int depthWidth, depthHeight;
     private float[] intrinsics; // fx, fy, cx, cy
     float depthScaleFactor;
+    float depthBias;
 
     float[] colorIntrinsics; // fx, fy, cx, cy
     private float[] color_distortion; // k1～k6, p1, p2
@@ -18,7 +20,7 @@ public class DepthMeshGenerator
     Quaternion rotation = Quaternion.identity;
     Vector3 translation = Vector3.zero;
 
-    public void setup(SensorHeader header, float depthScaleFactor)
+    public void setup(SensorHeader header, float depthScaleFactor, float depthBias = 0f)
     {
         this.depthWidth = header.custom.camera_sensor.width;
         this.depthHeight = header.custom.camera_sensor.height;
@@ -26,6 +28,7 @@ public class DepthMeshGenerator
         this.intrinsics = allParams.Take(4).ToArray(); // fx, fy, cx, cy
         this.depth_distortion = allParams.Skip(4).ToArray(); // k1~k6, p1, p2
         this.depthScaleFactor = depthScaleFactor;
+        this.depthBias = depthBias;
         
         // Build depth undistortion LUT
         this.depthUndistortLUT = UndistortHelper.BuildUndistortLUT(
@@ -51,16 +54,18 @@ public class DepthMeshGenerator
         float fx_d = intrinsics[0], fy_d = intrinsics[1], cx_d = intrinsics[2], cy_d = intrinsics[3];
         float fx_c = colorIntrinsics[0], fy_c = colorIntrinsics[1], cx_c = colorIntrinsics[2], cy_c = colorIntrinsics[3];
 
-        Vector3[] vertices = new Vector3[depthValues.Length];
-        Color32[] vertexColors = new Color32[depthValues.Length];
-        int[] indices = new int[depthValues.Length];
+        List<Vector3> validVertices = new List<Vector3>();
+        List<Color32> validColors = new List<Color32>();
+        List<int> validIndices = new List<int>();
         
         for (int i = 0; i < depthValues.Length; i++)
         {
             int x = i % depthWidth;
             int y = i / depthWidth;
-            float z = depthValues[i] * (depthScaleFactor / 1000f);
-            if (z <= 0) z = 0.0001f;
+            // Apply depth bias correction and scale factor  
+            float correctedDepth = depthValues[i] + depthBias;
+            float z = correctedDepth * (depthScaleFactor / 1000f);
+            if (z <= 0) continue; // Skip invalid depth
 
             // Step 1: Get normalized ray coordinates from LUT (like K4A xy_table)
             Vector2 rayCoords = depthUndistortLUT[x, y];
@@ -72,13 +77,7 @@ public class DepthMeshGenerator
             Vector3 cPoint = rotation * dPoint + translation;
 
             // Step 2: Project to color camera with distortion
-            if (cPoint.z <= 0)
-            {
-                vertices[i] = cPoint;
-                vertexColors[i] = new Color32(0, 0, 0, 255);
-                indices[i] = i;
-                continue;
-            }
+            if (cPoint.z <= 0) continue; // Skip points behind camera
 
             float x_norm = cPoint.x / cPoint.z;
             float y_norm = cPoint.y / cPoint.z;
@@ -87,19 +86,33 @@ public class DepthMeshGenerator
             int ui = Mathf.RoundToInt(colorPixel.x);
             int vi = colorHeight - 1 - Mathf.RoundToInt(colorPixel.y);
 
-            Color32 color = new Color32(0, 0, 0, 255); // デフォルト:黒
+            Color32 color = new Color32(0, 0, 0, 255); // Default: black
+            bool hasValidColor = false;
 
             if (ui >= 0 && ui < colorWidth && vi >= 0 && vi < colorHeight)
             {
                 int colorIdx = vi * colorWidth + ui;
                 if (colorIdx >= 0 && colorIdx < latestColorPixels.Length)
+                {
                     color = latestColorPixels[colorIdx];
+                    // Check if color is not completely black (allowing for slight variations)
+                    hasValidColor = color.r > 5 || color.g > 5 || color.b > 5;
+                }
             }
 
-            vertices[i] = cPoint;
-            vertexColors[i] = color;
-            indices[i] = i;
+            // Only add points with valid (non-black) colors
+            if (hasValidColor)
+            {
+                validVertices.Add(cPoint);
+                validColors.Add(color);
+                validIndices.Add(validVertices.Count - 1);
+            }
         }
+
+        // Convert lists to arrays
+        Vector3[] vertices = validVertices.ToArray();
+        Color32[] vertexColors = validColors.ToArray();
+        int[] indices = validIndices.ToArray();
 
         mesh.Clear();
         mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;

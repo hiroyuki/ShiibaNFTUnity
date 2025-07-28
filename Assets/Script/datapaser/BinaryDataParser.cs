@@ -70,7 +70,7 @@ public class BinaryDataParser : MonoBehaviour
 
         if (extrisics.TryGetGlobalTransform(serial, out Vector3 pos, out Quaternion rot))
         {
-            Debug.Log($"Applying global transform for {deviceName}: position = {pos}, rotation = {rot.eulerAngles}");
+            Debug.Log($"Applying global transform for {deviceName}: position = {pos:F6}, rotation = {rot.eulerAngles:F6}");
 
             // Unity用に座標系変換（右手系→左手系、Y軸下→Y軸上）
             Vector3 unityPosition = new Vector3(pos.x, pos.y, pos.z);
@@ -80,7 +80,7 @@ public class BinaryDataParser : MonoBehaviour
 
             // 結果を確認
             Vector3 unityEuler = unityRotation.eulerAngles;
-            Debug.Log($"Unity Position: {unityPosition}  Rotation (Euler): {unityEuler}");
+            Debug.Log($"Unity Position: {unityPosition:F6}  Rotation (Euler): {unityEuler:F6}");
 
             depthViewer.transform.localRotation = unityRotation;
             depthViewer.transform.localPosition = unityPosition;
@@ -96,8 +96,11 @@ public class BinaryDataParser : MonoBehaviour
         depthMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
         depthMeshFilter.mesh = depthMesh;
 
+        // Load depth bias from configuration.yaml
+        float depthBias = LoadDepthBias();
+        
         depthMeshGenerator = new DepthMeshGenerator();
-        depthMeshGenerator.setup(depthParser.sensorHeader, depthScaleFactor);
+        depthMeshGenerator.setup(depthParser.sensorHeader, depthScaleFactor, depthBias);
         var d2cTranslation = Vector3.zero;
         var d2cRotation = Quaternion.identity;
         if (extrisics.TryGetDepthToColorTransform(serial, out d2cTranslation, out d2cRotation))
@@ -193,5 +196,44 @@ public class BinaryDataParser : MonoBehaviour
         Destroy(colorTex);
 
         Debug.Log($"Saved frame {frameIndex} (original depth + color) to {exportDir}");
+    }
+
+    private float LoadDepthBias()
+    {
+        string configPath = Path.Combine(dir, "configuration.yaml");
+        
+        if (!File.Exists(configPath))
+        {
+            Debug.LogWarning($"configuration.yaml not found at {configPath}, using depthBias = 0");
+            return 0f;
+        }
+
+        try
+        {
+            string yamlText = File.ReadAllText(configPath);
+            
+            // Simple parsing to find depthBias value
+            string[] lines = yamlText.Split('\n');
+            foreach (string line in lines)
+            {
+                if (line.Trim().StartsWith("depthBias:"))
+                {
+                    string[] parts = line.Split(':');
+                    if (parts.Length > 1 && float.TryParse(parts[1].Trim(), out float bias))
+                    {
+                        Debug.Log($"Loaded depthBias: {bias} from {configPath}");
+                        return bias;
+                    }
+                }
+            }
+            
+            Debug.LogWarning("depthBias not found in configuration.yaml, using 0");
+            return 0f;
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"Failed to load configuration.yaml: {ex.Message}");
+            return 0f;
+        }
     }
 }
