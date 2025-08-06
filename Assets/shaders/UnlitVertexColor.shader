@@ -1,6 +1,9 @@
 Shader "Unlit/VertexColor"
 {
-    Properties { }
+    Properties 
+    { 
+        _PointSize ("Point Size", Float) = 3.0
+    }
     SubShader
     {
         Tags { "RenderType"="Opaque" }
@@ -11,7 +14,10 @@ Shader "Unlit/VertexColor"
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma target 3.0
             #include "UnityCG.cginc"
+
+            float _PointSize;
 
             struct appdata
             {
@@ -23,6 +29,7 @@ Shader "Unlit/VertexColor"
             {
                 float4 pos : SV_POSITION;
                 float4 color : COLOR;
+                float size : PSIZE;
             };
 
             v2f vert(appdata v)
@@ -30,6 +37,7 @@ Shader "Unlit/VertexColor"
                 v2f o;
                 o.pos = UnityObjectToClipPos(v.vertex);
                 o.color = v.color;
+                o.size = _PointSize;
                 return o;
             }
 

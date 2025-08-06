@@ -92,7 +92,9 @@ public class BinaryDataParser : MonoBehaviour
 
         depthMeshFilter = depthViewer.AddComponent<MeshFilter>();
         var depthRenderer = depthViewer.AddComponent<MeshRenderer>();
-        depthRenderer.material = new Material(Shader.Find("Unlit/VertexColor"));
+        var material = new Material(Shader.Find("Unlit/VertexColor"));
+        material.SetFloat("_PointSize", 3.0f); // Set point size for macOS compatibility
+        depthRenderer.material = material;
 
         depthMesh = new Mesh();
         depthMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
