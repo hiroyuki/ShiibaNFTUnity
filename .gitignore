@@ -91,3 +91,4 @@ crashlytics-build.properties
 # Each developer should import from Asset Store to get correct platform libraries
 /[Aa]ssets/OpenCVForUnity/
 /[Aa]ssets/OpenCVForUnity.meta
+/Assets/OpenCVForUnity
