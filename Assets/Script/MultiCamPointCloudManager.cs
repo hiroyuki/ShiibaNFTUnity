@@ -65,6 +65,55 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         Debug.Log($"BinaryDataParser を {parserObjects.Count} 個作成しました");
     }
 
+    // Timeline control methods
+    public void SeekToFrame(int frameIndex)
+    {
+        Debug.Log($"MultiCameraPointCloudManager.SeekToFrame: {frameIndex}");
+        
+        foreach (var parserObj in parserObjects)
+        {
+            var parser = parserObj.GetComponent<BinaryDataParser>();
+            if (parser != null)
+            {
+                parser.SeekToFrame(frameIndex);
+            }
+        }
+    }
+    
+    public void ResetToFirstFrame()
+    {
+        foreach (var parserObj in parserObjects)
+        {
+            var parser = parserObj.GetComponent<BinaryDataParser>();
+            if (parser != null)
+            {
+                parser.ResetToFirstFrame();
+            }
+        }
+    }
+    
+    public int GetTotalFrameCount()
+    {
+        // Return frame count from first parser (assuming all have same length)
+        if (parserObjects.Count > 0)
+        {
+            var parser = parserObjects[0].GetComponent<BinaryDataParser>();
+            return parser?.GetTotalFrameCount() ?? -1;
+        }
+        return -1;
+    }
+    
+    public int GetFpsFromHeader()
+    {
+        // Return FPS from first parser
+        if (parserObjects.Count > 0)
+        {
+            var parser = parserObjects[0].GetComponent<BinaryDataParser>();
+            return parser?.GetFpsFromHeader() ?? 30;
+        }
+        return 30;
+    }
+
     private void SetPrivateField(BinaryDataParser instance, string fieldName, object value)
     {
         var field = typeof(BinaryDataParser).GetField(fieldName, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
