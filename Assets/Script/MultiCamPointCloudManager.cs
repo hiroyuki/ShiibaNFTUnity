@@ -13,6 +13,14 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
     void Start()
     {
+        // Disable timeline auto-play
+        var playableDirector = FindObjectOfType<UnityEngine.Playables.PlayableDirector>();
+        if (playableDirector != null && playableDirector.playOnAwake)
+        {
+            playableDirector.Stop();
+            Debug.Log("Timeline auto-play disabled");
+        }
+        
         string datasetPath = Path.Combine(rootDirectory, "dataset");
         if (!Directory.Exists(datasetPath))
         {
@@ -39,8 +47,8 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         {
             // deviceType_serialNumber → 例: FemtoBolt_CL8F25300C6
             string deviceDirName = $"{device.deviceType}_{device.serialNumber}";
-// 
-             // (deviceDirName != "FemtoBolt_CL8F25300HJ" && deviceDirName != "FemtoBolt_CL8F25300EG")
+            // 
+            // (deviceDirName != "FemtoBolt_CL8F25300HJ" && deviceDirName != "FemtoBolt_CL8F25300EG")
             // (deviceDirName != "FemtoBolt_CL8F25300HJ" )
             // if (deviceDirName != "FemtoBolt_CL8F25300C6" )
             //      continue;//center , right
@@ -51,14 +59,22 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
             if (File.Exists(depthPath) && File.Exists(colorPath))
             {
-                GameObject parserObj = new GameObject("BinaryDataParser_" + deviceDirName);
-                var parser = parserObj.AddComponent<BinaryDataParser>();
-                parserObj.transform.parent = this.transform;
+                // if (deviceDirName != "FemtoBolt_CL8F25300F0")
+                // {
+                //     Debug.Log($"スキップ: {deviceDirName}");
+                // }
+                // else
+                {
+                    
+                    GameObject parserObj = new GameObject("BinaryDataParser_" + deviceDirName);
+                    var parser = parserObj.AddComponent<BinaryDataParser>();
+                    parserObj.transform.parent = this.transform;
 
-                SetPrivateField(parser, "dir", rootDirectory);                    // 例: /Volumes/MyDisk/CaptureSession/
-                SetPrivateField(parser, "hostname", Path.GetFileName(hostDir));  // 例: PAN-SHI
-                SetPrivateField(parser, "deviceName", deviceDirName);            // 例: FemtoBolt_CL8F25300C6
-                parserObjects.Add(parserObj);
+                    SetPrivateField(parser, "dir", rootDirectory);                    // 例: /Volumes/MyDisk/CaptureSession/
+                    SetPrivateField(parser, "hostname", Path.GetFileName(hostDir));  // 例: PAN-SHI
+                    SetPrivateField(parser, "deviceName", deviceDirName);            // 例: FemtoBolt_CL8F25300C6
+                    parserObjects.Add(parserObj);
+                }
             }
         }
 

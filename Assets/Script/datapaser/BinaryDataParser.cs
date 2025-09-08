@@ -29,6 +29,10 @@ public class BinaryDataParser : MonoBehaviour
     // Timeline scrubbing support
     private int currentFrameIndex = 0;
     private int totalFrameCount = -1;
+    
+    // Cached parsers for timeline scrubbing (avoid recreating every time)
+    private RcstSensorDataParser cachedDepthParser;
+    private RcsvSensorDataParser cachedColorParser;
 
     void Start()
     {
@@ -120,6 +124,9 @@ public class BinaryDataParser : MonoBehaviour
         
         // Set reasonable defaults for timeline support without expensive counting
         totalFrameCount = -1; // Unknown, will be estimated
+        
+        // Initialize cached parsers for timeline scrubbing
+        InitializeCachedParsers();
     }
 
     void Update()
@@ -238,63 +245,52 @@ public class BinaryDataParser : MonoBehaviour
     
     public void SeekToFrame(int frameIndex)
     {
-        Debug.Log($"SeekToFrame called: target={frameIndex}, current={currentFrameIndex}");
-        
         if (frameIndex < 0) frameIndex = 0;
         if (totalFrameCount > 0 && frameIndex >= totalFrameCount) 
             frameIndex = totalFrameCount - 1;
             
-        if (frameIndex == currentFrameIndex) 
-        {
-            Debug.Log("Same frame, skipping");
-            return;
-        }
+        if (frameIndex == currentFrameIndex) return;
         
         try
         {
-            var (tempDepthParser, tempColorParser) = CreateTemporaryParsers();
-            if (tempDepthParser == null || tempColorParser == null)
+            // Use cached parsers instead of creating new ones
+            if (cachedDepthParser == null || cachedColorParser == null)
             {
+                Debug.LogError("Cached parsers not initialized");
                 return;
             }
+            
+            // Reset cached parsers to beginning
+            ResetCachedParsers();
             
             // Skip to target frame
             int currentFrame = 0;
             const long maxAllowableDeltaNs = 2_000;
             
-            Debug.Log($"Seeking to frame {frameIndex}...");
-            
             while (currentFrame < frameIndex)
             {
-                bool hasDepthTs = tempDepthParser.PeekNextTimestamp(out ulong depthTs);
-                bool hasColorTs = tempColorParser.PeekNextTimestamp(out ulong colorTs);
-                if (!hasDepthTs || !hasColorTs) 
-                {
-                    Debug.Log($"No more data at frame {currentFrame}");
-                    break;
-                }
+                bool hasDepthTs = cachedDepthParser.PeekNextTimestamp(out ulong depthTs);
+                bool hasColorTs = cachedColorParser.PeekNextTimestamp(out ulong colorTs);
+                if (!hasDepthTs || !hasColorTs) break;
                 
                 long delta = (long)depthTs - (long)colorTs;
                 
-                // Debug timestamp sync every 10 frames to avoid spam
-                if (currentFrame % 10 == 0 || Math.Abs(delta) > maxAllowableDeltaNs)
-                {
-                    Debug.Log($"Frame {currentFrame}: depthTs={depthTs}, colorTs={colorTs}, delta={delta}ns");
-                }
-                
                 if (Math.Abs(delta) <= maxAllowableDeltaNs)
                 {
-                    tempDepthParser.ParseNextRecord();
-                    tempColorParser.ParseNextRecord();
+                    // Skip over image data without parsing/decompressing (FAST)
+                    cachedDepthParser.SkipCurrentRecord();
+                    cachedColorParser.SkipCurrentRecord();
                     currentFrame++;
                 }
                 else if (delta < 0)
                 {
-                    tempDepthParser.ParseNextRecord();
+                    // Skip depth record without parsing
+                    cachedDepthParser.SkipCurrentRecord();
                 }
                 else
                 {
-                    tempColorParser.ParseNextRecord();
+                    // Skip color record without parsing  
+                    cachedColorParser.SkipCurrentRecord();
                 }
                 
                 // Safety break to prevent infinite loop
@@ -305,23 +301,12 @@ public class BinaryDataParser : MonoBehaviour
                 }
             }
             
-            Debug.Log($"Reached frame {currentFrame}, processing...");
-            
-            // Process the target frame with temp parsers
-            bool success = ProcessCurrentFrameWithParsers(tempDepthParser, tempColorParser);
+            // Process the target frame with cached parsers
+            bool success = ProcessCurrentFrameWithParsers(cachedDepthParser, cachedColorParser);
             if (success)
             {
                 currentFrameIndex = frameIndex;
-                Debug.Log($"Successfully updated to frame {frameIndex}");
             }
-            else
-            {
-                Debug.LogWarning($"Failed to process frame {frameIndex}");
-            }
-            
-            // Dispose temporary parsers
-            tempDepthParser?.Dispose();
-            tempColorParser?.Dispose();
         }
         catch (System.Exception ex)
         {
@@ -340,44 +325,26 @@ public class BinaryDataParser : MonoBehaviour
         
         bool hasDepthTs = tempDepthParser.PeekNextTimestamp(out ulong depthTs);
         bool hasColorTs = tempColorParser.PeekNextTimestamp(out ulong colorTs);
-        if (!hasDepthTs || !hasColorTs) 
-        {
-            Debug.LogWarning("No timestamps available");
-            return false;
-        }
+        if (!hasDepthTs || !hasColorTs) return false;
         
         long delta = (long)depthTs - (long)colorTs;
-        Debug.Log($"Timestamp delta: {delta}ns (depth: {depthTs}, color: {colorTs})");
         
         if (Math.Abs(delta) <= maxAllowableDeltaNs)
         {
             bool depthOk = tempDepthParser.ParseNextRecord();
             bool colorOk = tempColorParser.ParseNextRecord();
             
-            Debug.Log($"Parse results - depth: {depthOk}, color: {colorOk}");
-            
             if (depthOk && colorOk)
             {
                 var _depth = tempDepthParser.GetLatestDepthValues();
                 var _color = tempColorParser.CurrentColorPixels;
                 
-                Debug.Log($"Data available - depth: {_depth?.Length ?? 0}, color: {_color?.Length ?? 0}");
-                
                 if (_depth != null && _color != null && _depth.Length > 0)
                 {
                     depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
-                    Debug.Log("Mesh updated successfully");
                     return true;
                 }
-                else
-                {
-                    Debug.LogWarning("Depth or color data is null/empty");
-                }
             }
-        }
-        else
-        {
-            Debug.LogWarning($"Timestamp delta too large: {delta}ns");
         }
         
         return false;
@@ -398,31 +365,40 @@ public class BinaryDataParser : MonoBehaviour
         return currentFrameIndex;
     }
     
-    private (RcstSensorDataParser depthParser, RcsvSensorDataParser colorParser) CreateTemporaryParsers()
+    private void InitializeCachedParsers()
     {
-        Debug.Log("Dir: " + dir);
-        Debug.Log("Hostname: " + hostname);
-        Debug.Log("DeviceName: " + deviceName);
         string devicePath = Path.Combine(dir, "dataset", hostname, deviceName);
         string depthFilePath = Path.Combine(devicePath, "camera_depth");
         string colorFilePath = Path.Combine(devicePath, "camera_color");
         
-        Debug.Log($"Creating parsers for: {depthFilePath}");
+        cachedDepthParser = (RcstSensorDataParser)SensorDataParserFactory.Create(depthFilePath);
+        cachedColorParser = (RcsvSensorDataParser)SensorDataParserFactory.Create(colorFilePath);
         
-        var tempDepthParser = (RcstSensorDataParser)SensorDataParserFactory.Create(depthFilePath);
-        var tempColorParser = (RcsvSensorDataParser)SensorDataParserFactory.Create(colorFilePath);
-        
-        if (tempDepthParser == null || tempColorParser == null)
+        if (cachedDepthParser == null || cachedColorParser == null)
         {
-            Debug.LogError("Failed to create temporary parsers");
-            tempDepthParser?.Dispose();
-            tempColorParser?.Dispose();
-            return (null, null);
+            Debug.LogError("Failed to initialize cached parsers for timeline scrubbing");
         }
-        if (tempDepthParser == null || tempColorParser == null)
+        else
         {
-            Debug.LogError("Failed to create temporary parsers");
+            Debug.Log("Cached parsers initialized for timeline scrubbing");
         }
-        return (tempDepthParser, tempColorParser);
+    }
+    
+    private void ResetCachedParsers()
+    {
+        // Reset parsers to beginning by recreating them (since we don't have a Reset method)
+        if (cachedDepthParser != null && cachedColorParser != null)
+        {
+            cachedDepthParser.Dispose();
+            cachedColorParser.Dispose();
+            InitializeCachedParsers();
+        }
+    }
+    
+    void OnDestroy()
+    {
+        // Clean up cached parsers
+        cachedDepthParser?.Dispose();
+        cachedColorParser?.Dispose();
     }
 }

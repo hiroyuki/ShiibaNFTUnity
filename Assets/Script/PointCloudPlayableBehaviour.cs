@@ -11,10 +11,11 @@ public class PointCloudPlayableBehaviour : PlayableBehaviour
     
     public override void OnGraphStart(Playable playable)
     {
-        if (pointCloudManager != null)
-        {
-            pointCloudManager.ResetToFirstFrame();
-        }
+        // Don't auto-reset to first frame - let user control timeline position
+        // if (pointCloudManager != null)
+        // {
+        //     pointCloudManager.ResetToFirstFrame();
+        // }
     }
 
     public override void OnGraphStop(Playable playable)
@@ -34,22 +35,13 @@ public class PointCloudPlayableBehaviour : PlayableBehaviour
 
     public override void PrepareFrame(Playable playable, FrameData info)
     {
-        Debug.Log($"PrepareFrame called - pointCloudManager null: {pointCloudManager == null}");
-        
-        if (pointCloudManager == null) 
-        {
-            Debug.LogWarning("pointCloudManager is null in PrepareFrame");
-            return;
-        }
+        if (pointCloudManager == null) return;
         
         double currentTime = playable.GetTime();
         int targetFrame = Mathf.FloorToInt((float)(currentTime * frameRate));
         
-        Debug.Log($"Timeline time: {currentTime}, target frame: {targetFrame}, current: {currentFrame}");
-        
         if (targetFrame != currentFrame)
         {
-            Debug.Log($"Seeking to frame {targetFrame}");
             pointCloudManager.SeekToFrame(targetFrame);
             currentFrame = targetFrame;
         }

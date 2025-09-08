@@ -121,4 +121,44 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
             return false;
         }
     }
+    
+    // Fast skip method for timeline seeking - only reads header, skips JPEG data
+    public bool SkipCurrentRecord()
+    {
+        try
+        {
+            var colorField = sensorHeader.record_format.FirstOrDefault(f => f.name == "image");
+            if (colorField == null) return false;
+
+            int sizeTypeBytes = colorField.type switch
+            {
+                "u16" => 2,
+                "u32" => 4,
+                _ => throw new InvalidDataException($"Unsupported size type: {colorField.type}")
+            };
+
+            int metadataSize = sensorHeader.MetadataSize;
+            
+            // Read metadata + size field, skip JPEG data
+            byte[] headerAndSize = reader.ReadBytes(metadataSize + sizeTypeBytes);
+            if (headerAndSize.Length < metadataSize + sizeTypeBytes) return false;
+
+            // Update timestamp
+            CurrentTimestamp = BitConverter.ToUInt64(headerAndSize, 0);
+
+            // Get JPEG size and skip it
+            int imageSize = sizeTypeBytes == 2
+                ? BitConverter.ToUInt16(headerAndSize, metadataSize)
+                : BitConverter.ToInt32(headerAndSize, metadataSize);
+
+            // Skip the JPEG data without reading/decompressing it
+            reader.BaseStream.Seek(imageSize, SeekOrigin.Current);
+            
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

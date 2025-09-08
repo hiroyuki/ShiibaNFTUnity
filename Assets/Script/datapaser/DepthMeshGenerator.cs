@@ -24,8 +24,14 @@ public class DepthMeshGenerator
     {
         this.depthWidth = header.custom.camera_sensor.width;
         this.depthHeight = header.custom.camera_sensor.height;
+        // DEBUG: Show raw intrinsics string from YAML
+        Debug.Log($"Raw intrinsics from YAML: '{header.custom.additional_info.orbbec_intrinsics_parameters}'");
+        
         var allParams = ParseIntrinsics(header.custom.additional_info.orbbec_intrinsics_parameters);
         this.intrinsics = allParams.Take(4).ToArray(); // fx, fy, cx, cy
+        
+        // DEBUG: Show parsed values
+        Debug.Log($"Parsed intrinsics: fx={allParams[0]:F2}, fy={allParams[1]:F2}, cx={allParams[2]:F2}, cy={allParams[3]:F2}");
         this.depth_distortion = allParams.Skip(4).ToArray(); // k1~k6, p1, p2
         this.depthScaleFactor = depthScaleFactor;
         this.depthBias = depthBias;
@@ -48,6 +54,13 @@ public class DepthMeshGenerator
 
         float fx_d = intrinsics[0], fy_d = intrinsics[1], cx_d = intrinsics[2], cy_d = intrinsics[3];
         float fx_c = colorIntrinsics[0], fy_c = colorIntrinsics[1], cx_c = colorIntrinsics[2], cy_c = colorIntrinsics[3];
+        
+        // DEBUG: Print camera intrinsics (only once)
+        {
+            Debug.Log($"Depth Camera: fx={fx_d:F2}, fy={fy_d:F2}, cx={cx_d:F2}, cy={cy_d:F2}");
+            Debug.Log($"Image size: {depthWidth}x{depthHeight}");
+            Debug.Log($"Depth scale factor: {depthScaleFactor}");
+        }
 
         List<Vector3> validVertices = new List<Vector3>();
         List<Color32> validColors = new List<Color32>();
@@ -62,11 +75,23 @@ public class DepthMeshGenerator
             float z = correctedDepth * (depthScaleFactor / 1000f);
             if (z <= 0) continue; // Skip invalid depth
 
-            // Step 1: Get normalized ray coordinates from LUT (like K4A xy_table)
-            Vector2 rayCoords = depthUndistortLUT[x, y];
-            // Multiply by depth to get 3D coordinates (like K4A fastpointcloud)
-            float px = rayCoords.x * z;
-            float py = rayCoords.y * z;
+            // Choose between LUT (OpenCV undistortion) or simple pinhole model
+            float px, py;
+            bool useOpenCVLUT = true; // Toggle this to test different methods
+            
+            if (useOpenCVLUT)
+            {
+                // Method 1: OpenCV-generated undistortion LUT
+                Vector2 rayCoords = depthUndistortLUT[x, y];
+                px = rayCoords.x * z;
+                py = rayCoords.y * z;
+            }
+            else
+            {
+                // Method 2: Simple pinhole camera model (no distortion correction)
+                px = (x - cx_d) * z / fx_d;
+                py = (y - cy_d) * z / fy_d;
+            }
 
             Vector3 dPoint = new Vector3(px, py, z);
             Vector3 cPoint = rotation * dPoint + translation;
@@ -91,7 +116,7 @@ public class DepthMeshGenerator
                 {
                     color = latestColorPixels[colorIdx];
                     // Check if color is not completely black (allowing for slight variations)
-                    hasValidColor = color.r > 5 || color.g > 5 || color.b > 5;
+                    hasValidColor = color.r > 0 || color.g > 0 || color.b > 0;
                 }
             }
 

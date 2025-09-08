@@ -87,4 +87,34 @@ public class RcstSensorDataParser : AbstractSensorDataParser
           return false;
       }
   }
+  
+  // Fast skip method for timeline seeking - only reads header, skips image data
+  public bool SkipCurrentRecord()
+  {
+      try
+      {
+          int metadataSize = sensorHeader.MetadataSize;
+          int imageSize = sensorHeader.ImageSize;
+          int recordSize = metadataSize + imageSize;
+          
+          // Read only metadata for timestamp, skip image data
+          byte[] metadataBytes = reader.ReadBytes(metadataSize);
+          if (metadataBytes.Length != metadataSize)
+          {
+              return false;
+          }
+          
+          // Update timestamp but skip image processing
+          CurrentTimestamp = BitConverter.ToUInt64(metadataBytes, 0);
+          
+          // Skip the image data portion
+          reader.BaseStream.Seek(imageSize, SeekOrigin.Current);
+          
+          return true;
+      }
+      catch
+      {
+          return false;
+      }
+  }
 }
