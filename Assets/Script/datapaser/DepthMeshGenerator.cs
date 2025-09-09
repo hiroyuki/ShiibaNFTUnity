@@ -19,6 +19,13 @@ public class DepthMeshGenerator
 
     Quaternion rotation = Quaternion.identity;
     Vector3 translation = Vector3.zero;
+    
+    // Bounding volume for culling
+    private Transform boundingVolume;
+    private Transform depthViewerTransform; // For coordinate conversion
+    
+    // Debug mode: show all points even with bounding volume
+    public static bool showAllPoints = false;
 
     public void setup(SensorHeader header, float depthScaleFactor, float depthBias = 0f)
     {
@@ -120,8 +127,13 @@ public class DepthMeshGenerator
                 }
             }
 
-            // Only add points with valid (non-black) colors
-            if (hasValidColor)
+            // Convert cPoint (camera local) to world coordinates for bounding volume check
+            Vector3 worldPoint = depthViewerTransform != null ? 
+                depthViewerTransform.TransformPoint(cPoint) : cPoint;
+                
+            // Only add points with valid (non-black) colors and within bounding volume (unless debug mode)
+            bool withinBounds = showAllPoints || IsPointInBoundingVolume(worldPoint);
+            if (hasValidColor && withinBounds)
             {
                 validVertices.Add(cPoint);
                 validColors.Add(color);
@@ -141,7 +153,6 @@ public class DepthMeshGenerator
         mesh.SetIndices(indices, MeshTopology.Points, 0);
         mesh.RecalculateBounds();
     }
-
 
 
     private float[] ParseIntrinsics(string param)
@@ -326,6 +337,36 @@ public class DepthMeshGenerator
     {
         this.translation = translation;
         this.rotation = rotation;
+    }
+    
+    public void SetBoundingVolume(Transform boundingVolume)
+    {
+        this.boundingVolume = boundingVolume;
+    }
+    
+    public void SetDepthViewerTransform(Transform depthViewerTransform)
+    {
+        this.depthViewerTransform = depthViewerTransform;
+    }
+    
+    private bool IsPointInBoundingVolume(Vector3 worldPoint)
+    {
+        if (boundingVolume == null) return true; // No culling if no bounding volume
+        
+        // Convert world point to bounding volume's local space
+        Vector3 localPoint = boundingVolume.InverseTransformPoint(worldPoint);
+        
+        // DEBUG: Log first few points to verify bounding volume changes
+        if (UnityEngine.Random.value < 0.01f) // Very rare logging
+        {
+            Debug.Log($"BoundingVolume pos: {boundingVolume.position}, scale: {boundingVolume.localScale}, worldPoint: {worldPoint}, localPoint: {localPoint}");
+        }
+        
+        // Unity Cube vertices are at [-0.5, 0.5], so check against 0.5
+        // This makes the culling range match the visual Cube exactly
+        return Mathf.Abs(localPoint.x) <= 0.5f && 
+               Mathf.Abs(localPoint.y) <= 0.5f && 
+               Mathf.Abs(localPoint.z) <= 0.5f;
     }
 
     // Undistort depth pixel coordinates to normalized coordinates

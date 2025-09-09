@@ -109,6 +109,21 @@ public class BinaryDataParser : MonoBehaviour
         
         depthMeshGenerator = new DepthMeshGenerator();
         depthMeshGenerator.setup(depthParser.sensorHeader, depthScaleFactor, depthBias);
+        
+        // Pass DepthViewer transform for coordinate conversion
+        depthMeshGenerator.SetDepthViewerTransform(depthViewer.transform);
+        
+        // Find and set bounding volume
+        Transform boundingVolume = GameObject.Find("BoundingVolume")?.transform;
+        if (boundingVolume != null)
+        {
+            depthMeshGenerator.SetBoundingVolume(boundingVolume);
+            Debug.Log($"BoundingVolume found and set for {deviceName}");
+        }   
+        else
+        {
+            Debug.LogWarning("BoundingVolume GameObject not found in hierarchy");
+        }
         if (extrisics.TryGetDepthToColorTransform(serial, out Vector3 d2cTranslation, out Quaternion d2cRotation))
         {
             Debug.Log($"Depth to Color transform for {serial}: translation = {d2cTranslation}, rotation = {d2cRotation.eulerAngles}");
