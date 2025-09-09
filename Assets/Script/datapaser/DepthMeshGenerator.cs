@@ -55,90 +55,11 @@ public class DepthMeshGenerator
 
         latestColorPixels = colorPixels; // 保持して使う
         var cameraParams = SetupCameraParameters();
-
-        List<Vector3> validVertices = new List<Vector3>();
-        List<Color32> validColors = new List<Color32>();
-        List<int> validIndices = new List<int>();
+        var (validVertices, validColors, validIndices) = InitializeResultLists();
         
-        for (int i = 0; i < depthValues.Length; i++)
-        {
-            int x = i % depthWidth;
-            int y = i / depthWidth;
-            // Apply depth bias correction and scale factor  
-            float correctedDepth = depthValues[i] + depthBias;
-            float z = correctedDepth * (depthScaleFactor / 1000f);
-            if (z <= 0) continue; // Skip invalid depth
-
-            // Choose between LUT (OpenCV undistortion) or simple pinhole model
-            float px, py;
-            bool useOpenCVLUT = true; // Toggle this to test different methods
-            
-            if (useOpenCVLUT)
-            {
-                // Method 1: OpenCV-generated undistortion LUT
-                Vector2 rayCoords = depthUndistortLUT[x, y];
-                px = rayCoords.x * z;
-                py = rayCoords.y * z;
-            }
-            else
-            {
-                // Method 2: Simple pinhole camera model (no distortion correction)
-                px = (x - cameraParams.cx_d) * z / cameraParams.fx_d;
-                py = (y - cameraParams.cy_d) * z / cameraParams.fy_d;
-            }
-
-            Vector3 dPoint = new Vector3(px, py, z);
-            Vector3 cPoint = rotation * dPoint + translation;
-
-            // Step 2: Project to color camera with distortion
-            if (cPoint.z <= 0) continue; // Skip points behind camera
-
-            float x_norm = cPoint.x / cPoint.z;
-            float y_norm = cPoint.y / cPoint.z;
-            Vector2 colorPixel = DistortColorProjection(x_norm, y_norm);
-
-            int ui = Mathf.RoundToInt(colorPixel.x);
-            int vi = colorHeight - 1 - Mathf.RoundToInt(colorPixel.y);
-
-            Color32 color = new Color32(0, 0, 0, 255); // Default: black
-            bool hasValidColor = false;
-
-            if (ui >= 0 && ui < colorWidth && vi >= 0 && vi < colorHeight)
-            {
-                int colorIdx = vi * colorWidth + ui;
-                if (colorIdx >= 0 && colorIdx < latestColorPixels.Length)
-                {
-                    color = latestColorPixels[colorIdx];
-                    // Check if color is not completely black (allowing for slight variations)
-                    hasValidColor = color.r > 0 || color.g > 0 || color.b > 0;
-                }
-            }
-
-            // Convert cPoint (camera local) to world coordinates for bounding volume check
-            Vector3 worldPoint = depthViewerTransform != null ? 
-                depthViewerTransform.TransformPoint(cPoint) : cPoint;
-                
-            // Only add points with valid (non-black) colors and within bounding volume (unless debug mode)
-            bool withinBounds = showAllPoints || IsPointInBoundingVolume(worldPoint);
-            if (hasValidColor && withinBounds)
-            {
-                validVertices.Add(cPoint);
-                validColors.Add(color);
-                validIndices.Add(validVertices.Count - 1);
-            }
-        }
-
-        // Convert lists to arrays
-        Vector3[] vertices = validVertices.ToArray();
-        Color32[] vertexColors = validColors.ToArray();
-        int[] indices = validIndices.ToArray();
-
-        mesh.Clear();
-        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
-        mesh.vertices = vertices;
-        mesh.colors32 = vertexColors;
-        mesh.SetIndices(indices, MeshTopology.Points, 0);
-        mesh.RecalculateBounds();
+        ProcessDepthPixels(depthValues, cameraParams, validVertices, validColors, validIndices);
+        
+        ApplyDataToMesh(mesh, validVertices, validColors, validIndices);
     }
 
 
@@ -429,6 +350,98 @@ public class DepthMeshGenerator
         Debug.Log($"Depth scale factor: {depthScaleFactor}");
         
         return cameraParams;
+    }
+    
+    private void ApplyDataToMesh(Mesh mesh, List<Vector3> validVertices, List<Color32> validColors, List<int> validIndices)
+    {
+        // Convert lists to arrays
+        Vector3[] vertices = validVertices.ToArray();
+        Color32[] vertexColors = validColors.ToArray();
+        int[] indices = validIndices.ToArray();
+
+        mesh.Clear();
+        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        mesh.vertices = vertices;
+        mesh.colors32 = vertexColors;
+        mesh.SetIndices(indices, MeshTopology.Points, 0);
+        mesh.RecalculateBounds();
+    }
+    
+    private void ProcessDepthPixels(ushort[] depthValues, CameraParameters cameraParams, 
+        List<Vector3> validVertices, List<Color32> validColors, List<int> validIndices)
+    {
+        for (int i = 0; i < depthValues.Length; i++)
+        {
+            int x = i % depthWidth;
+            int y = i / depthWidth;
+            // Apply depth bias correction and scale factor  
+            float correctedDepth = depthValues[i] + depthBias;
+            float z = correctedDepth * (depthScaleFactor / 1000f);
+            if (z <= 0) continue; // Skip invalid depth
+
+            // Choose between LUT (OpenCV undistortion) or simple pinhole model
+            float px, py;
+            bool useOpenCVLUT = true; // Toggle this to test different methods
+            
+            if (useOpenCVLUT)
+            {
+                // Method 1: OpenCV-generated undistortion LUT
+                Vector2 rayCoords = depthUndistortLUT[x, y];
+                px = rayCoords.x * z;
+                py = rayCoords.y * z;
+            }
+            else
+            {
+                // Method 2: Simple pinhole camera model (no distortion correction)
+                px = (x - cameraParams.cx_d) * z / cameraParams.fx_d;
+                py = (y - cameraParams.cy_d) * z / cameraParams.fy_d;
+            }
+
+            Vector3 dPoint = new Vector3(px, py, z);
+            Vector3 cPoint = rotation * dPoint + translation;
+
+            // Step 2: Project to color camera with distortion
+            if (cPoint.z <= 0) continue; // Skip points behind camera
+
+            float x_norm = cPoint.x / cPoint.z;
+            float y_norm = cPoint.y / cPoint.z;
+            Vector2 colorPixel = DistortColorProjection(x_norm, y_norm);
+
+            int ui = Mathf.RoundToInt(colorPixel.x);
+            int vi = colorHeight - 1 - Mathf.RoundToInt(colorPixel.y);
+
+            Color32 color = new Color32(0, 0, 0, 255); // Default: black
+            bool hasValidColor = false;
+
+            if (ui >= 0 && ui < colorWidth && vi >= 0 && vi < colorHeight)
+            {
+                int colorIdx = vi * colorWidth + ui;
+                if (colorIdx >= 0 && colorIdx < latestColorPixels.Length)
+                {
+                    color = latestColorPixels[colorIdx];
+                    // Check if color is not completely black (allowing for slight variations)
+                    hasValidColor = color.r > 0 || color.g > 0 || color.b > 0;
+                }
+            }
+
+            // Convert cPoint (camera local) to world coordinates for bounding volume check
+            Vector3 worldPoint = depthViewerTransform != null ? 
+                depthViewerTransform.TransformPoint(cPoint) : cPoint;
+                
+            // Only add points with valid (non-black) colors and within bounding volume (unless debug mode)
+            bool withinBounds = showAllPoints || IsPointInBoundingVolume(worldPoint);
+            if (hasValidColor && withinBounds)
+            {
+                validVertices.Add(cPoint);
+                validColors.Add(color);
+                validIndices.Add(validVertices.Count - 1);
+            }
+        }
+    }
+    
+    private (List<Vector3> vertices, List<Color32> colors, List<int> indices) InitializeResultLists()
+    {
+        return (new List<Vector3>(), new List<Color32>(), new List<int>());
     }
     
     private void ValidateInputs(ushort[] depthValues, Color32[] colorPixels)
