@@ -51,23 +51,10 @@ public class DepthMeshGenerator
 
     public void UpdateMeshFromDepthAndColor(Mesh mesh, ushort[] depthValues, Color32[] colorPixels)
     {
-        if (depthValues.Length != depthWidth * depthHeight)
-            throw new ArgumentException("Depth size does not match resolution");
-
-        if (colorPixels == null || colorIntrinsics == null)
-            throw new InvalidOperationException("Color intrinsics or pixels not set");
+        ValidateInputs(depthValues, colorPixels);
 
         latestColorPixels = colorPixels; // 保持して使う
-
-        float fx_d = intrinsics[0], fy_d = intrinsics[1], cx_d = intrinsics[2], cy_d = intrinsics[3];
-        float fx_c = colorIntrinsics[0], fy_c = colorIntrinsics[1], cx_c = colorIntrinsics[2], cy_c = colorIntrinsics[3];
-        
-        // DEBUG: Print camera intrinsics (only once)
-        {
-            Debug.Log($"Depth Camera: fx={fx_d:F2}, fy={fy_d:F2}, cx={cx_d:F2}, cy={cy_d:F2}");
-            Debug.Log($"Image size: {depthWidth}x{depthHeight}");
-            Debug.Log($"Depth scale factor: {depthScaleFactor}");
-        }
+        var cameraParams = SetupCameraParameters();
 
         List<Vector3> validVertices = new List<Vector3>();
         List<Color32> validColors = new List<Color32>();
@@ -96,8 +83,8 @@ public class DepthMeshGenerator
             else
             {
                 // Method 2: Simple pinhole camera model (no distortion correction)
-                px = (x - cx_d) * z / fx_d;
-                py = (y - cy_d) * z / fy_d;
+                px = (x - cameraParams.cx_d) * z / cameraParams.fx_d;
+                py = (y - cameraParams.cy_d) * z / cameraParams.fy_d;
             }
 
             Vector3 dPoint = new Vector3(px, py, z);
@@ -420,6 +407,37 @@ public class DepthMeshGenerator
         float v = fy * y_d + cy;
 
         return new Vector2(u, v);
+    }
+    
+    private struct CameraParameters
+    {
+        public float fx_d, fy_d, cx_d, cy_d; // Depth camera
+        public float fx_c, fy_c, cx_c, cy_c; // Color camera
+    }
+    
+    private CameraParameters SetupCameraParameters()
+    {
+        var cameraParams = new CameraParameters
+        {
+            fx_d = intrinsics[0], fy_d = intrinsics[1], cx_d = intrinsics[2], cy_d = intrinsics[3],
+            fx_c = colorIntrinsics[0], fy_c = colorIntrinsics[1], cx_c = colorIntrinsics[2], cy_c = colorIntrinsics[3]
+        };
+        
+        // DEBUG: Print camera intrinsics (only once)
+        Debug.Log($"Depth Camera: fx={cameraParams.fx_d:F2}, fy={cameraParams.fy_d:F2}, cx={cameraParams.cx_d:F2}, cy={cameraParams.cy_d:F2}");
+        Debug.Log($"Image size: {depthWidth}x{depthHeight}");
+        Debug.Log($"Depth scale factor: {depthScaleFactor}");
+        
+        return cameraParams;
+    }
+    
+    private void ValidateInputs(ushort[] depthValues, Color32[] colorPixels)
+    {
+        if (depthValues.Length != depthWidth * depthHeight)
+            throw new ArgumentException("Depth size does not match resolution");
+
+        if (colorPixels == null || colorIntrinsics == null)
+            throw new InvalidOperationException("Color intrinsics or pixels not set");
     }
 
 }
