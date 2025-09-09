@@ -334,6 +334,126 @@ public class BinaryDataParser : MonoBehaviour
         SeekToFrame(0);
     }
     
+    public void SeekToTimestamp(ulong targetTimestamp)
+    {
+        try
+        {
+            if (cachedDepthParser == null || cachedColorParser == null)
+            {
+                Debug.LogError("Cached parsers not initialized");
+                return;
+            }
+            
+            // Reset cached parsers to beginning
+            ResetCachedParsers();
+            
+            const long maxAllowableDeltaNs = 2_000;
+            
+            // Find the frame closest to target timestamp
+            while (true)
+            {
+                bool hasDepthTs = cachedDepthParser.PeekNextTimestamp(out ulong depthTs);
+                bool hasColorTs = cachedColorParser.PeekNextTimestamp(out ulong colorTs);
+                if (!hasDepthTs || !hasColorTs) break;
+                
+                long delta = (long)depthTs - (long)colorTs;
+                
+                if (Math.Abs(delta) <= maxAllowableDeltaNs)
+                {
+                    // Use depth timestamp as reference (both are synchronized)
+                    ulong frameTimestamp = depthTs;
+                    
+                    // If this frame is at or past our target timestamp, use it
+                    if (frameTimestamp >= targetTimestamp)
+                    {
+                        bool success = ProcessCurrentFrameWithParsers(cachedDepthParser, cachedColorParser);
+                        if (success)
+                        {
+                            Debug.Log($"{deviceName}: Seeked to timestamp {frameTimestamp} (target: {targetTimestamp})");
+                        }
+                        return;
+                    }
+                    
+                    // Skip to next synchronized frame pair
+                    cachedDepthParser.SkipCurrentRecord();
+                    cachedColorParser.SkipCurrentRecord();
+                }
+                else if (delta < 0)
+                {
+                    cachedDepthParser.SkipCurrentRecord();
+                }
+                else
+                {
+                    cachedColorParser.SkipCurrentRecord();
+                }
+            }
+            
+            Debug.LogWarning($"{deviceName}: No suitable frame found for timestamp {targetTimestamp}");
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"Error in SeekToTimestamp: {ex.Message}");
+        }
+    }
+    
+    public ulong GetTimestampForFrame(int frameIndex)
+    {
+        if (frameIndex < 0) return 0;
+        
+        try
+        {
+            if (cachedDepthParser == null || cachedColorParser == null)
+            {
+                Debug.LogError("Cached parsers not initialized");
+                return 0;
+            }
+            
+            // Reset cached parsers to beginning
+            ResetCachedParsers();
+            
+            int currentFrame = 0;
+            const long maxAllowableDeltaNs = 2_000;
+            
+            while (currentFrame <= frameIndex)
+            {
+                bool hasDepthTs = cachedDepthParser.PeekNextTimestamp(out ulong depthTs);
+                bool hasColorTs = cachedColorParser.PeekNextTimestamp(out ulong colorTs);
+                if (!hasDepthTs || !hasColorTs) break;
+                
+                long delta = (long)depthTs - (long)colorTs;
+                
+                if (Math.Abs(delta) <= maxAllowableDeltaNs)
+                {
+                    if (currentFrame == frameIndex)
+                    {
+                        return depthTs; // Return the timestamp for this frame
+                    }
+                    
+                    // Skip to next frame
+                    cachedDepthParser.SkipCurrentRecord();
+                    cachedColorParser.SkipCurrentRecord();
+                    currentFrame++;
+                }
+                else if (delta < 0)
+                {
+                    cachedDepthParser.SkipCurrentRecord();
+                }
+                else
+                {
+                    cachedColorParser.SkipCurrentRecord();
+                }
+            }
+            
+            // Fallback: estimate based on 30 FPS
+            return (ulong)(frameIndex * 33333333); // nanoseconds
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"Error in GetTimestampForFrame: {ex.Message}");
+            return (ulong)(frameIndex * 33333333); // nanoseconds
+        }
+    }
+    
     private bool ProcessCurrentFrameWithParsers(RcstSensorDataParser tempDepthParser, RcsvSensorDataParser tempColorParser)
     {
         const long maxAllowableDeltaNs = 2_000;

@@ -86,14 +86,33 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     {
         Debug.Log($"MultiCameraPointCloudManager.SeekToFrame: {frameIndex}");
         
+        // Convert frame index to target timestamp for synchronized seeking
+        ulong targetTimestamp = GetTargetTimestamp(frameIndex);
+        
         foreach (var parserObj in parserObjects)
         {
             var parser = parserObj.GetComponent<BinaryDataParser>();
             if (parser != null)
             {
-                parser.SeekToFrame(frameIndex);
+                parser.SeekToTimestamp(targetTimestamp);
             }
         }
+    }
+    
+    private ulong GetTargetTimestamp(int frameIndex)
+    {
+        // Use first parser as reference for timestamp calculation
+        if (parserObjects.Count > 0)
+        {
+            var parser = parserObjects[0].GetComponent<BinaryDataParser>();
+            if (parser != null)
+            {
+                return parser.GetTimestampForFrame(frameIndex);
+            }
+        }
+        
+        // Fallback: estimate based on 30 FPS (33.33ms per frame)
+        return (ulong)(frameIndex * 33333333); // nanoseconds
     }
     
     public void ResetToFirstFrame()
