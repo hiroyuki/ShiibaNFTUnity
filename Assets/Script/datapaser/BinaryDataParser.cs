@@ -108,6 +108,19 @@ public class BinaryDataParser : MonoBehaviour
         float depthBias = LoadDepthBias();
         
         depthMeshGenerator = new DepthMeshGenerator();
+        
+        // Assign compute shader if available
+        ComputeShader computeShader = Resources.Load<ComputeShader>("DepthPixelProcessor");
+        if (computeShader != null)
+        {
+            depthMeshGenerator.depthPixelProcessor = computeShader;
+            Debug.Log($"Compute shader assigned for GPU processing: {deviceName}");
+        }
+        else
+        {
+            Debug.LogWarning($"Compute shader not found in Resources folder, using CPU processing: {deviceName}");
+        }
+        
         depthMeshGenerator.setup(depthParser.sensorHeader, depthScaleFactor, depthBias);
         
         // Pass DepthViewer transform for coordinate conversion
