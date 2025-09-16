@@ -36,26 +36,38 @@ public class BinaryDataParser : MonoBehaviour
 
     void Start()
     {
+        SetupStatusUI.ShowStatus($"Initializing {deviceName}...");
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Starting setup");
+        
         string devicePath = Path.Combine(dir, "dataset", hostname, deviceName);
         string depthFilePath = Path.Combine(devicePath, "camera_depth");
         string colorFilePath = Path.Combine(devicePath, "camera_color");
 
         if (!File.Exists(depthFilePath) || !File.Exists(colorFilePath))
         {
-            Debug.LogError("指定されたファイルが存在しません: " + devicePath);
+            string errorMsg = "指定されたファイルが存在しません: " + devicePath;
+            Debug.LogError(errorMsg);
+            SetupStatusUI.UpdateDeviceStatus(deviceName, "ERROR: Files not found");
+            SetupStatusUI.ShowStatus($"Failed to initialize {deviceName}");
             return;
         }
 
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Loading sensor data...");
         depthParser = (RcstSensorDataParser)SensorDataParserFactory.Create(depthFilePath);
         colorParser = (RcsvSensorDataParser)SensorDataParserFactory.Create(colorFilePath);
 
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Loading extrinsics...");
         string extrinsicsPath = Path.Combine(dir, "calibration", "extrinsics.yaml");
+        SetupStatusUI.UpdateDeviceStatus(deviceName, $"Looking for: {extrinsicsPath}");
         string serial = deviceName.Split('_')[^1];
 
         extrisics = new ExtrinsicsLoader(extrinsicsPath);
         if (!extrisics.IsLoaded)
         {
-            Debug.LogError("Extrinsics data could not be loaded from: " + extrinsicsPath);
+            string errorMsg = "Extrinsics data could not be loaded from: " + extrinsicsPath;
+            Debug.LogError(errorMsg);
+            SetupStatusUI.UpdateDeviceStatus(deviceName, "ERROR: Extrinsics failed");
+            SetupStatusUI.ShowStatus($"Failed to load extrinsics for {deviceName}");
             return;
         }
 
@@ -109,16 +121,21 @@ public class BinaryDataParser : MonoBehaviour
         
         depthMeshGenerator = new DepthMeshGenerator();
         
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Setting up GPU processing...");
         // Assign compute shader if available
         ComputeShader computeShader = Resources.Load<ComputeShader>("DepthPixelProcessor");
         if (computeShader != null)
         {
             depthMeshGenerator.depthPixelProcessor = computeShader;
             Debug.Log($"Compute shader assigned for GPU processing: {deviceName}");
+            SetupStatusUI.UpdateDeviceStatus(deviceName, "[GPU] Processing enabled");
+            SetupStatusUI.ShowStatus($"GPU acceleration active for {deviceName}");
         }
         else
         {
             Debug.LogWarning($"Compute shader not found in Resources folder, using CPU processing: {deviceName}");
+            SetupStatusUI.UpdateDeviceStatus(deviceName, "[CPU] Processing (fallback)");
+            SetupStatusUI.ShowStatus($"Using CPU processing for {deviceName}");
         }
         
         depthMeshGenerator.setup(depthParser.sensorHeader, depthScaleFactor, depthBias);
@@ -145,8 +162,12 @@ public class BinaryDataParser : MonoBehaviour
         else
         {
             Debug.LogError($"Failed to get depth to color transform for {serial}");
+            SetupStatusUI.UpdateDeviceStatus(deviceName, "ERROR: Transform failed");
+            SetupStatusUI.ShowStatus($"Failed to setup transforms for {deviceName}");
             return;
         }
+        
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Finalizing setup...");
         depthMeshGenerator.SetupColorIntrinsics(colorParser.sensorHeader);
 
         
@@ -155,6 +176,9 @@ public class BinaryDataParser : MonoBehaviour
         
         // Initialize cached parsers for timeline scrubbing
         InitializeCachedParsers();
+        
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Ready - waiting for first frame");
+        SetupStatusUI.ShowStatus($"Setup complete for {deviceName}");
     }
 
     void Update()
@@ -202,6 +226,14 @@ public class BinaryDataParser : MonoBehaviour
                         depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
                         
                         Debug.Log($"Processed frame for {deviceName}");
+                        
+                        if (!firstFrameProcessed)
+                        {
+                            SetupStatusUI.UpdateDeviceStatus(deviceName, "[OK] Active - processing frames");
+                            SetupStatusUI.ShowStatus($"{deviceName} is now rendering point clouds");
+                            SetupStatusUI.OnFirstFrameProcessed();
+                        }
+                        
                         firstFrameProcessed = true; // Mark first frame as processed
                         // Debug image export commented out for performance
                         /*
