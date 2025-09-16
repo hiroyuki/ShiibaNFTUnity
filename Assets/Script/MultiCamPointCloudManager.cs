@@ -13,6 +13,8 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
     void Start()
     {
+        SetupStatusUI.ShowStatus("Starting Multi-Camera Point Cloud Manager...");
+        
         // Disable timeline auto-play
         var playableDirector = FindObjectOfType<UnityEngine.Playables.PlayableDirector>();
         if (playableDirector != null && playableDirector.playOnAwake)
@@ -21,10 +23,15 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             Debug.Log("Timeline auto-play disabled");
         }
         
+        SetupStatusUI.ShowStatus("Timeline auto-play disabled");
+        
+        SetupStatusUI.ShowStatus("Looking for dataset directory...");
         string datasetPath = Path.Combine(rootDirectory, "dataset");
         if (!Directory.Exists(datasetPath))
         {
-            Debug.LogError($"dataset ディレクトリが見つかりません: {datasetPath}");
+            string errorMsg = $"dataset ディレクトリが見つかりません: {datasetPath}";
+            Debug.LogError(errorMsg);
+            SetupStatusUI.ShowStatus($"ERROR: {errorMsg}");
             return;
         }
 
@@ -42,9 +49,17 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             return;
         }
 
+        SetupStatusUI.ShowStatus("Loading host configuration...");
         HostInfo hostInfo = YamlLoader.Load<HostInfo>(hostInfoPath);
+        
+        SetupStatusUI.ShowStatus($"Found {hostInfo.devices.Count} devices to initialize");
+        SetupStatusUI.SetProgress(0f);
+        
+        int deviceIndex = 0;
         foreach (var device in hostInfo.devices)
         {
+            float progress = (float)deviceIndex / hostInfo.devices.Count;
+            SetupStatusUI.SetProgress(progress);
             // deviceType_serialNumber → 例: FemtoBolt_CL8F25300C6
             string deviceDirName = $"{device.deviceType}_{device.serialNumber}";
             // 
@@ -76,8 +91,12 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                     parserObjects.Add(parserObj);
                 }
             }
+            
+            deviceIndex++;
         }
-
+        
+        SetupStatusUI.SetProgress(1f);
+        SetupStatusUI.ShowStatus($"Created {parserObjects.Count} BinaryDataParser instances");
         Debug.Log($"BinaryDataParser を {parserObjects.Count} 個作成しました");
     }
 
