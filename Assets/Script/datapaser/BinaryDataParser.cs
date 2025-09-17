@@ -228,81 +228,23 @@ public class BinaryDataParser : MonoBehaviour
 
     private void ProcessNextFrame()
     {
-        const long maxAllowableDeltaNs = 2_000;
-
         while (true)
         {
-            SetupStatusUI.ShowStatus($"Processing frame for {deviceName}...");
+            // Try to process a synchronized frame
+            bool success = ProcessFrameWithParsers(depthParser, colorParser, showStatus: true);
+            if (success)
+            {
+                // Successfully processed a frame, exit the loop
+                break;
+            }
+            
+            // Frame wasn't synchronized, skip records to find sync
             bool hasDepthTs = depthParser.PeekNextTimestamp(out ulong depthTs);
             bool hasColorTs = colorParser.PeekNextTimestamp(out ulong colorTs);
             if (!hasDepthTs || !hasColorTs) break;
 
             long delta = (long)depthTs - (long)colorTs;
-
-            if (Math.Abs(delta) <= maxAllowableDeltaNs)
-            {
-                SetupStatusUI.UpdateDeviceStatus(deviceName, "Parsering frame data...");
-                bool depthOk = depthParser.ParseNextRecord();
-                bool colorOk = colorParser.ParseNextRecord();
-                SetupStatusUI.UpdateDeviceStatus(deviceName, "frame data parsed");
-
-                if (depthOk && colorOk)
-                {
-                    var _depth = depthParser.GetLatestDepthValues();
-                    var _color = colorParser.CurrentColorPixels;
-
-                    if (_depth != null && _color != null && _depth.Length > 0)
-                    {
-                        SetupStatusUI.UpdateDeviceStatus(deviceName, "Start Update Mesh");
-                        
-                        // Use binary processor if available (most efficient)
-                        if (binaryDepthProcessor != null)
-                        {
-                            // Get raw binary data and color texture for binary processing
-                            var depthRecordBytes = ((RcstSensorDataParser)depthParser).GetLatestRecordBytes();
-                            var colorTexture = CreateColorTexture(_color);
-                            int metadataSize = depthParser.sensorHeader.MetadataSize;
-                            
-                            binaryDepthProcessor.UpdateMeshFromRawBinary(depthMesh, depthRecordBytes, colorTexture, metadataSize);
-                        }
-                        else
-                        {
-                            // Fallback to original processing
-                            depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
-                        }
-
-                        SetupStatusUI.ShowStatus($"Processed frame for {deviceName} at {depthTs} ns and {colorTs} ns");
-
-                        if (!firstFrameProcessed)
-                        {
-                            SetupStatusUI.UpdateDeviceStatus(deviceName, "[OK] Active - processing frames");
-                            SetupStatusUI.ShowStatus($"{deviceName} is now rendering point clouds");
-                            SetupStatusUI.OnFirstFrameProcessed();
-                        }
-
-                        firstFrameProcessed = true; // Mark first frame as processed
-                        // Debug image export commented out for performance
-                        /*
-                        if (savedFrameCount < maxSavedFrames)
-                        {
-                            // Export debug images using utility class
-                            DebugImageExporter.ExportAllDebugImages(
-                                _depth, _color,
-                                depthParser.sensorHeader.custom.camera_sensor.width,
-                                depthParser.sensorHeader.custom.camera_sensor.height,
-                                colorParser.sensorHeader.custom.camera_sensor.width,
-                                colorParser.sensorHeader.custom.camera_sensor.height,
-                                depthScaleFactor, depthMeshGenerator, deviceName, savedFrameCount
-                            );
-
-                            savedFrameCount++;
-                        }
-                        */
-                    }
-                }
-                break;
-            }
-
+            
             if (delta < 0) depthParser.ParseNextRecord();
             else colorParser.ParseNextRecord();
         }
@@ -464,47 +406,7 @@ public class BinaryDataParser : MonoBehaviour
     
     private bool ProcessCurrentFrameWithParsers(RcstSensorDataParser tempDepthParser, RcsvSensorDataParser tempColorParser)
     {
-        const long maxAllowableDeltaNs = 2_000;
-        
-        bool hasDepthTs = tempDepthParser.PeekNextTimestamp(out ulong depthTs);
-        bool hasColorTs = tempColorParser.PeekNextTimestamp(out ulong colorTs);
-        if (!hasDepthTs || !hasColorTs) return false;
-        
-        long delta = (long)depthTs - (long)colorTs;
-        
-        if (Math.Abs(delta) <= maxAllowableDeltaNs)
-        {
-            bool depthOk = tempDepthParser.ParseNextRecord();
-            bool colorOk = tempColorParser.ParseNextRecord();
-            
-            if (depthOk && colorOk)
-            {
-                var _depth = tempDepthParser.GetLatestDepthValues();
-                var _color = tempColorParser.CurrentColorPixels;
-                
-                if (_depth != null && _color != null && _depth.Length > 0)
-                {
-                    // Use binary processor if available (most efficient)
-                    if (binaryDepthProcessor != null)
-                    {
-                        // Get raw binary data and color texture for binary processing
-                        var depthRecordBytes = tempDepthParser.GetLatestRecordBytes();
-                        var colorTexture = CreateColorTexture(_color);
-                        int metadataSize = tempDepthParser.sensorHeader.MetadataSize;
-                        
-                        binaryDepthProcessor.UpdateMeshFromRawBinary(depthMesh, depthRecordBytes, colorTexture, metadataSize);
-                    }
-                    else
-                    {
-                        // Fallback to original processing
-                        depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
-                    }
-                    return true;
-                }
-            }
-        }
-        
-        return false;
+        return ProcessFrameWithParsers(tempDepthParser, tempColorParser, showStatus: false);
     }
     
     public int GetTotalFrameCount()
@@ -621,6 +523,72 @@ public class BinaryDataParser : MonoBehaviour
         }
         
         Debug.LogWarning($"{deviceName}: {logContext} failed - reached end of data");
+        return false;
+    }
+    
+    // Unified frame processing logic to eliminate code duplication  
+    private bool ProcessFrameWithParsers(RcstSensorDataParser depthParser, RcsvSensorDataParser colorParser, bool showStatus = false)
+    {
+        const long maxAllowableDeltaNs = 2_000;
+        
+        if (showStatus) SetupStatusUI.ShowStatus($"Processing frame for {deviceName}...");
+        
+        bool hasDepthTs = depthParser.PeekNextTimestamp(out ulong depthTs);
+        bool hasColorTs = colorParser.PeekNextTimestamp(out ulong colorTs);
+        if (!hasDepthTs || !hasColorTs) return false;
+
+        long delta = (long)depthTs - (long)colorTs;
+
+        if (Math.Abs(delta) <= maxAllowableDeltaNs)
+        {
+            if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "Parsering frame data...");
+            bool depthOk = depthParser.ParseNextRecord();
+            bool colorOk = colorParser.ParseNextRecord();
+            if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "frame data parsed");
+
+            if (depthOk && colorOk)
+            {
+                var _depth = depthParser.GetLatestDepthValues();
+                var _color = colorParser.CurrentColorPixels;
+
+                if (_depth != null && _color != null && _depth.Length > 0)
+                {
+                    if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "Start Update Mesh");
+                    
+                    // Use binary processor if available (most efficient)
+                    if (binaryDepthProcessor != null)
+                    {
+                        // Get raw binary data and color texture for binary processing
+                        var depthRecordBytes = depthParser.GetLatestRecordBytes();
+                        var colorTexture = CreateColorTexture(_color);
+                        int metadataSize = depthParser.sensorHeader.MetadataSize;
+                        
+                        binaryDepthProcessor.UpdateMeshFromRawBinary(depthMesh, depthRecordBytes, colorTexture, metadataSize);
+                    }
+                    else
+                    {
+                        // Fallback to original processing
+                        depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
+                    }
+
+                    if (showStatus)
+                    {
+                        SetupStatusUI.ShowStatus($"Processed frame for {deviceName} at {depthTs} ns and {colorTs} ns");
+
+                        if (!firstFrameProcessed)
+                        {
+                            SetupStatusUI.UpdateDeviceStatus(deviceName, "[OK] Active - processing frames");
+                            SetupStatusUI.ShowStatus($"{deviceName} is now rendering point clouds");
+                            SetupStatusUI.OnFirstFrameProcessed();
+                            firstFrameProcessed = true; // Mark first frame as processed
+                        }
+                    }
+                    
+                    return true;
+                }
+            }
+        }
+        
         return false;
     }
     
