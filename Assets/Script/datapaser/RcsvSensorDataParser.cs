@@ -16,6 +16,9 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
     public Color32[] CurrentColorPixels { get; private set; }
 
     private Texture2D _decodedTexture;
+    
+    // Direct texture access for GPU processing (avoids Color32[] conversion)
+    public Texture2D GetLatestColorTexture() => _decodedTexture;
 
     public RcsvSensorDataParser(BinaryReader reader, string deviceName = "Unknown Device") : base(reader, deviceName) { }
     ~RcsvSensorDataParser() => Dispose();
@@ -37,7 +40,8 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
         sensorHeader = deserializer.Deserialize<SensorHeader>(HeaderText);
     }
 
-    public override bool ParseNextRecord()
+    // GPU-optimized parsing with mode selection
+    public override bool ParseNextRecord(bool optimizeForGPU)
     {
         var colorField = sensorHeader.record_format.FirstOrDefault(f => f.name == "image");
         if (colorField == null)
@@ -62,16 +66,27 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
         int imageSize = sizeTypeBytes == 2
             ? BitConverter.ToUInt16(headerAndSize, metadataSize)
             : BitConverter.ToInt32(headerAndSize, metadataSize);
-
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Reading color image data...");
         CurrentColorBytes = reader.ReadBytes(imageSize);
         if (CurrentColorBytes.Length != imageSize) return false;
 
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Decoding color image...");
         if (_decodedTexture == null)
             _decodedTexture = new Texture2D(2, 2, TextureFormat.RGB24, false);
 
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Loading color image...");
         if (_decodedTexture.LoadImage(CurrentColorBytes))
         {
-            CurrentColorPixels = _decodedTexture.GetPixels32();
+            if (optimizeForGPU)
+            {
+                // Binary GPU processor - texture only, skip CPU conversion
+                CurrentColorPixels = null;
+            }
+            else
+            {
+                // Standard processor - convert to Color32 array
+                CurrentColorPixels = _decodedTexture.GetPixels32();
+            }
         }
         else
         {
@@ -80,6 +95,13 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
         }
 
         return true;
+    }
+
+    // Legacy method for compatibility
+    public override bool ParseNextRecord()
+    {
+        // Default to standard processing for backward compatibility
+        return ParseNextRecord(optimizeForGPU: false);
     }
 
     public override bool PeekNextTimestamp(out ulong timestamp)

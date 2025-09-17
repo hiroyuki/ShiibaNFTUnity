@@ -18,6 +18,7 @@ public abstract class AbstractSensorDataParser : ISensorDataParser, System.IDisp
 
     public abstract void ParseHeader();
     public abstract bool ParseNextRecord();
+    public abstract bool ParseNextRecord(bool optimizeForGPU);
     public abstract void Dispose();
 
     public abstract bool PeekNextTimestamp(out ulong timestamp);

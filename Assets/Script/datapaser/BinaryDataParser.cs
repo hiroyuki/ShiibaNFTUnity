@@ -406,7 +406,7 @@ public class BinaryDataParser : MonoBehaviour
     
     private bool ProcessCurrentFrameWithParsers(RcstSensorDataParser tempDepthParser, RcsvSensorDataParser tempColorParser)
     {
-        return ProcessFrameWithParsers(tempDepthParser, tempColorParser, showStatus: false);
+        return ProcessFrameWithParsers(tempDepthParser, tempColorParser, showStatus: true);
     }
     
     public int GetTotalFrameCount()
@@ -452,19 +452,6 @@ public class BinaryDataParser : MonoBehaviour
             cachedColorParser.Dispose();
             InitializeCachedParsers();
         }
-    }
-    
-    private Texture2D CreateColorTexture(Color32[] colorPixels)
-    {
-        // Efficiently create texture from Color32 array
-        int width = colorParser.sensorHeader.custom.camera_sensor.width;
-        int height = colorParser.sensorHeader.custom.camera_sensor.height;
-        
-        Texture2D colorTexture = new Texture2D(width, height, TextureFormat.RGBA32, false);
-        colorTexture.SetPixels32(colorPixels);
-        colorTexture.Apply();
-        
-        return colorTexture;
     }
     
     // Unified seeking logic to eliminate code duplication
@@ -541,51 +528,59 @@ public class BinaryDataParser : MonoBehaviour
 
         if (Math.Abs(delta) <= maxAllowableDeltaNs)
         {
-            if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "Parsering frame data...");
-            bool depthOk = depthParser.ParseNextRecord();
-            bool colorOk = colorParser.ParseNextRecord();
+            // Use GPU-optimized parsing based on which processor is available
+            bool depthOk, colorOk;
+            bool useGPUOptimization = binaryDepthProcessor != null;
+
+            if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "Parsing depth data...");
+            depthOk = depthParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
+            if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "Parsing color data...");
+            colorOk = colorParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
+            
             if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "frame data parsed");
 
             if (depthOk && colorOk)
             {
-                var _depth = depthParser.GetLatestDepthValues();
-                var _color = colorParser.CurrentColorPixels;
-
-                if (_depth != null && _color != null && _depth.Length > 0)
+                if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "Start Update Mesh");
+                
+                // Use binary processor if available (most efficient)
+                if (binaryDepthProcessor != null)
                 {
-                    if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "Start Update Mesh");
+                    // Get raw binary data and color texture directly (no CPU conversion needed)
+                    var depthRecordBytes = depthParser.GetLatestRecordBytes();
+                    var colorTexture = colorParser.GetLatestColorTexture();
+                    int metadataSize = depthParser.sensorHeader.MetadataSize;
                     
-                    // Use binary processor if available (most efficient)
-                    if (binaryDepthProcessor != null)
+                    binaryDepthProcessor.UpdateMeshFromRawBinary(depthMesh, depthRecordBytes, colorTexture, metadataSize);
+                }
+                else
+                {
+                    // Fallback to standard processing (get color pixels only when needed)
+                    var _color = colorParser.CurrentColorPixels;
+                    if (_color != null)
                     {
-                        // Get raw binary data and color texture for binary processing
-                        var depthRecordBytes = depthParser.GetLatestRecordBytes();
-                        var colorTexture = CreateColorTexture(_color);
-                        int metadataSize = depthParser.sensorHeader.MetadataSize;
-                        
-                        binaryDepthProcessor.UpdateMeshFromRawBinary(depthMesh, depthRecordBytes, colorTexture, metadataSize);
-                    }
-                    else
-                    {
-                        // Fallback to original processing
-                        depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
-                    }
-
-                    if (showStatus)
-                    {
-                        SetupStatusUI.ShowStatus($"Processed frame for {deviceName} at {depthTs} ns and {colorTs} ns");
-
-                        if (!firstFrameProcessed)
+                        var _depth = depthParser.GetLatestDepthValues();
+                        if (_depth != null && _depth.Length > 0)
                         {
-                            SetupStatusUI.UpdateDeviceStatus(deviceName, "[OK] Active - processing frames");
-                            SetupStatusUI.ShowStatus($"{deviceName} is now rendering point clouds");
-                            SetupStatusUI.OnFirstFrameProcessed();
-                            firstFrameProcessed = true; // Mark first frame as processed
+                            depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
                         }
                     }
-                    
-                    return true;
                 }
+
+                if (showStatus)
+                {
+                    SetupStatusUI.ShowStatus($"Processed frame for {deviceName} at {depthTs} ns and {colorTs} ns");
+
+                    if (!firstFrameProcessed)
+                    {
+                        SetupStatusUI.UpdateDeviceStatus(deviceName, "[OK] Active - processing frames");
+                        SetupStatusUI.ShowStatus($"{deviceName} is now rendering point clouds");
+                        SetupStatusUI.OnFirstFrameProcessed();
+                        firstFrameProcessed = true; // Mark first frame as processed
+                    }
+                }
+                
+                return true;
             }
         }
         

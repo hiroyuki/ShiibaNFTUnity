@@ -33,8 +33,55 @@ public class RcstSensorDataParser : AbstractSensorDataParser
 
   }
 
+  // GPU-optimized parsing with mode selection
+  public override bool ParseNextRecord(bool optimizeForGPU)
+  {
+    int metadataSize = sensorHeader.MetadataSize;
+    int imageSize = sensorHeader.ImageSize;
+    int recordSize = metadataSize + imageSize;
+
+    byte[] recordBytes = reader.ReadBytes(recordSize);
+    if (recordBytes.Length != recordSize)
+    {
+      Debug.LogWarning("Record size does not match expected size");
+      return false;
+    }
+    
+    CurrentTimestamp = BitConverter.ToUInt64(recordBytes, 0);
+    
+    if (optimizeForGPU)
+    {
+      // Binary GPU processor - store raw bytes
+      _latestRecordBytes = recordBytes;
+      _latestDepthValues = null;
+      return true;
+    }
+    else
+    {
+      // Standard processor - convert to ushort array
+      if (imageSize % 2 == 0)
+      {
+        int pixelCount = imageSize / 2;
+        _latestDepthValues = new ushort[pixelCount];
+        Buffer.BlockCopy(recordBytes, metadataSize, _latestDepthValues, 0, imageSize);
+        _latestRecordBytes = null;
+        return true;
+      }
+      else
+      {
+        Debug.LogWarning("Image data is not aligned for 16-bit conversion.");
+        _latestDepthValues = null;
+        _latestRecordBytes = null;
+        return false;
+      }
+    }
+  }
+
+  // Legacy method for compatibility - detects usage pattern
   public override bool ParseNextRecord()
   {
+    // For now, default to the more compatible approach that does both
+    // Can be optimized later based on usage detection
     int metadataSize = sensorHeader.MetadataSize;
     int imageSize = sensorHeader.ImageSize;
     int recordSize = metadataSize + imageSize;
@@ -50,21 +97,21 @@ public class RcstSensorDataParser : AbstractSensorDataParser
     _latestRecordBytes = recordBytes;
     
     CurrentTimestamp = BitConverter.ToUInt64(recordBytes, 0);
-    byte[] imageBytes = new byte[imageSize];
-    Array.Copy(recordBytes, metadataSize, imageBytes, 0, imageSize);
 
-    if (imageBytes.Length % 2 == 0)
+    // Convert to ushort array for standard processing
+    if (imageSize % 2 == 0)
     {
-      int pixelCount = imageBytes.Length / 2;
+      int pixelCount = imageSize / 2;
       _latestDepthValues = new ushort[pixelCount];
-      Buffer.BlockCopy(imageBytes, 0, _latestDepthValues, 0, imageBytes.Length);
-
+      Buffer.BlockCopy(recordBytes, metadataSize, _latestDepthValues, 0, imageSize);
     }
     else
     {
-      Debug.Log("Image data is not aligned for 16-bit conversion.");
+      Debug.LogWarning("Image data is not aligned for 16-bit conversion.");
+      _latestDepthValues = null;
     }
-    return true;
+    
+    return _latestDepthValues != null;
   }
   
   public override bool PeekNextTimestamp(out ulong timestamp)
