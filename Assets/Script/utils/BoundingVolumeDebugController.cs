@@ -71,8 +71,6 @@ public class BoundingVolumeDebugController : MonoBehaviour
             // Change BoundingVolume color based on mode
             Color targetColor = showAllPoints ? disabledColor : enabledColor;
             meshRenderer.material.color = targetColor;
-            
-            Debug.Log($"BoundingVolume color changed to: {(showAllPoints ? "RED (culling disabled)" : "GREEN (culling enabled)")}");
         }
     }
 }

@@ -21,7 +21,7 @@ public class SetupStatusUI : MonoBehaviour
     private RectTransform progressFillRect;
     
     [Header("Auto-Hide Settings")]
-    public float autoHideDelay = 10f; // Increased from 5 to 10 seconds
+    public float autoHideDelay = 0.5f; // Increased from 5 to 10 seconds
     public bool hideOnFirstFrame = true;
     
     private static SetupStatusUI instance;
@@ -123,7 +123,7 @@ public class SetupStatusUI : MonoBehaviour
         
         RectTransform statusTextRect = statusTextGO.GetComponent<RectTransform>();
         statusTextRect.anchorMin = new Vector2(0.1f, 0.6f);
-        statusTextRect.anchorMax = new Vector2(0.9f, 0.8f);
+        statusTextRect.anchorMax = new Vector2(0.9f, 0.8f);//右下の値（offsetMaxがゼロの場合）
         statusTextRect.offsetMin = Vector2.zero;
         statusTextRect.offsetMax = Vector2.zero;
         
@@ -177,12 +177,14 @@ public class SetupStatusUI : MonoBehaviour
     
     public static void ShowStatus(string message)
     {
-        Instance.statusMessages.Add($"[{System.DateTime.Now:HH:mm:ss}] {message}");
+        Debug.Log("## App Status: " + $"[{System.DateTime.Now:HH:mm:ss.fff}] {message}");
+        Instance.statusMessages.Add($"[{System.DateTime.Now:HH:mm:ss.fff}] {message}");
         Instance.UpdateDisplay();
     }
     
     public static void UpdateDeviceStatus(string deviceName, string status)
     {
+        Debug.Log("## Device Status: " + $"[{System.DateTime.Now:HH:mm:ss.fff}] {deviceName} - {status}");
         Instance.deviceStatus[deviceName] = status;
         Instance.UpdateDisplay();
     }

@@ -51,19 +51,25 @@ public class DepthMeshGenerator
     
     // Debug mode: show all points even with bounding volume
     public static bool showAllPoints = false;
+    private string deviceName;
+
+    public DepthMeshGenerator(string deviceName)
+    {
+        this.deviceName = deviceName;
+    }
 
     public void setup(SensorHeader header, float depthScaleFactor, float depthBias = 0f)
     {
         this.depthWidth = header.custom.camera_sensor.width;
         this.depthHeight = header.custom.camera_sensor.height;
         // DEBUG: Show raw intrinsics string from YAML
-        Debug.Log($"Raw intrinsics from YAML: '{header.custom.additional_info.orbbec_intrinsics_parameters}'");
+        // Debug.Log($"Raw intrinsics from YAML: '{header.custom.additional_info.orbbec_intrinsics_parameters}'");
         
         var allParams = ParseIntrinsics(header.custom.additional_info.orbbec_intrinsics_parameters);
         this.intrinsics = allParams.Take(4).ToArray(); // fx, fy, cx, cy
         
         // DEBUG: Show parsed values
-        Debug.Log($"Parsed intrinsics: fx={allParams[0]:F2}, fy={allParams[1]:F2}, cx={allParams[2]:F2}, cy={allParams[3]:F2}");
+        // Debug.Log($"Parsed intrinsics: fx={allParams[0]:F2}, fy={allParams[1]:F2}, cx={allParams[2]:F2}, cy={allParams[3]:F2}");
         this.depth_distortion = allParams.Skip(4).ToArray(); // k1~k6, p1, p2
         this.depthScaleFactor = depthScaleFactor;
         this.depthBias = depthBias;
@@ -81,9 +87,9 @@ public class DepthMeshGenerator
         latestColorPixels = colorPixels; // 保持して使う
         var cameraParams = SetupCameraParameters();
         var (validVertices, validColors, validIndices) = InitializeResultLists();
-        
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Processing depth pixels...");
         ProcessDepthPixels(depthValues, cameraParams, validVertices, validColors, validIndices);
-        
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "applying data to mesh...");
         ApplyDataToMesh(mesh, validVertices, validColors, validIndices);
     }
 
@@ -289,12 +295,6 @@ public class DepthMeshGenerator
         // Convert world point to bounding volume's local space
         Vector3 localPoint = boundingVolume.InverseTransformPoint(worldPoint);
         
-        // DEBUG: Log first few points to verify bounding volume changes
-        if (UnityEngine.Random.value < 0.01f) // Very rare logging
-        {
-            Debug.Log($"BoundingVolume pos: {boundingVolume.position}, scale: {boundingVolume.localScale}, worldPoint: {worldPoint}, localPoint: {localPoint}");
-        }
-        
         // Unity Cube vertices are at [-0.5, 0.5], so check against 0.5
         // This makes the culling range match the visual Cube exactly
         return Mathf.Abs(localPoint.x) <= 0.5f && 
@@ -370,9 +370,9 @@ public class DepthMeshGenerator
         };
         
         // DEBUG: Print camera intrinsics (only once)
-        Debug.Log($"Depth Camera: fx={cameraParams.fx_d:F2}, fy={cameraParams.fy_d:F2}, cx={cameraParams.cx_d:F2}, cy={cameraParams.cy_d:F2}");
-        Debug.Log($"Image size: {depthWidth}x{depthHeight}");
-        Debug.Log($"Depth scale factor: {depthScaleFactor}");
+        // Debug.Log($"Depth Camera: fx={cameraParams.fx_d:F2}, fy={cameraParams.fy_d:F2}, cx={cameraParams.cx_d:F2}, cy={cameraParams.cy_d:F2}");
+        // Debug.Log($"Image size: {depthWidth}x{depthHeight}");
+        // Debug.Log($"Depth scale factor: {depthScaleFactor}");
         
         return cameraParams;
     }
@@ -397,31 +397,33 @@ public class DepthMeshGenerator
     {
         if (depthPixelProcessor == null)
         {
+            SetupStatusUI.UpdateDeviceStatus(deviceName, "Processing depth pixels by CPU...");
             // Fallback to CPU processing if compute shader not assigned
             ProcessDepthPixelsCPU(depthValues, cameraParams, validVertices, validColors, validIndices);
             return;
         }
-        
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Processing depth pixels by GPU...");
         ProcessDepthPixelsGPU(depthValues, cameraParams, validVertices, validColors, validIndices);
     }
-    
-    private void ProcessDepthPixelsGPU(ushort[] depthValues, CameraParameters cameraParams, 
+
+    private void ProcessDepthPixelsGPU(ushort[] depthValues, CameraParameters cameraParams,
         List<Vector3> validVertices, List<Color32> validColors, List<int> validIndices)
     {
         int totalPixels = depthValues.Length;
-        
+        SetupStatusUI.UpdateDeviceStatus(deviceName, $"Total depth pixels: {totalPixels}");
         // Initialize compute buffers
         InitializeComputeBuffers(totalPixels);
         
         // Platform-specific depth data handling (always needed per frame)
         SetDepthBufferData(depthValues);
-        
+
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Settting depth buffer data done.");
         // Cache and reuse color data conversion (only if changed)
         if (cachedColorData == null || cachedColorData.Length != latestColorPixels.Length)
         {
             cachedColorData = new Vector4[latestColorPixels.Length];
         }
-        
+
         // Convert color pixels to Vector4 array
         for (int i = 0; i < latestColorPixels.Length; i++)
         {
@@ -429,7 +431,8 @@ public class DepthMeshGenerator
             cachedColorData[i] = new Vector4(c.r / 255f, c.g / 255f, c.b / 255f, c.a / 255f);
         }
         colorBuffer.SetData(cachedColorData);
-        
+
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Setting color buffer data done.");
         // Cache LUT data (only convert once as it never changes)
         if (!lutCacheInitialized)
         {
@@ -437,7 +440,7 @@ public class DepthMeshGenerator
             {
                 cachedLutData = new Vector2[depthWidth * depthHeight];
             }
-            
+
             for (int y = 0; y < depthHeight; y++)
             {
                 for (int x = 0; x < depthWidth; x++)
@@ -449,13 +452,15 @@ public class DepthMeshGenerator
             Debug.Log("LUT cache initialized");
         }
         lutBuffer.SetData(cachedLutData);
-        
+
         // Reset valid count
         validCountBuffer.SetData(new int[] { 0 });
-        
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Setting LUT buffer data done.");
         // Set compute shader parameters
         SetComputeShaderParameters(cameraParams);
-        
+
+
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Setting compute shader buffers...");
         // Set buffers
         int kernelIndex = depthPixelProcessor.FindKernel("ProcessDepthPixels");
         depthPixelProcessor.SetBuffer(kernelIndex, "depthValues", depthBuffer);
@@ -463,22 +468,27 @@ public class DepthMeshGenerator
         depthPixelProcessor.SetBuffer(kernelIndex, "depthUndistortLUT", lutBuffer);
         depthPixelProcessor.SetBuffer(kernelIndex, "outputVertices", outputBuffer);
         depthPixelProcessor.SetBuffer(kernelIndex, "validCount", validCountBuffer);
-        
+
         // Dispatch compute shader
         int threadGroups = Mathf.CeilToInt(totalPixels / 64f);
+
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Dispatching compute shader...");
+
         depthPixelProcessor.Dispatch(kernelIndex, threadGroups, 1, 1);
-        
+
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Reading back results...");
         // Read results
         VertexData[] results = new VertexData[totalPixels];
         outputBuffer.GetData(results);
-        
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Read back results done.");
+
         // Process results
         for (int i = 0; i < results.Length; i++)
         {
             if (results[i].isValid == 1)
             {
                 validVertices.Add(results[i].vertex);
-                
+
                 // Convert Vector4 color back to Color32
                 Vector4 colorVec = results[i].color;
                 Color32 color32 = new Color32(
@@ -491,6 +501,8 @@ public class DepthMeshGenerator
                 validIndices.Add(validVertices.Count - 1);
             }
         }
+        
+        SetupStatusUI.UpdateDeviceStatus(deviceName, "Processing done. Valid points: " + validVertices.Count);
     }
     
     private void ProcessDepthPixelsCPU(ushort[] depthValues, CameraParameters cameraParams, 
@@ -588,7 +600,7 @@ public class DepthMeshGenerator
             currentDepthBufferSize = totalPixels;
             lutCacheInitialized = false; // Need to rebuild LUT cache
             
-            Debug.Log($"Recreated depth buffers for {totalPixels} pixels");
+            SetupStatusUI.UpdateDeviceStatus(deviceName, $"Depth Buffers recreated for {totalPixels} pixels");
         }
         
         if (needsColorBufferResize)
@@ -600,7 +612,7 @@ public class DepthMeshGenerator
             currentColorBufferSize = colorPixelCount;
             cachedColorData = null; // Need to rebuild color cache
             
-            Debug.Log($"Recreated color buffer for {colorPixelCount} pixels");
+             SetupStatusUI.UpdateDeviceStatus(deviceName, $"Recreated color buffer for {colorPixelCount} pixels");
         }
         
         // Create validCountBuffer only once (always size 1)

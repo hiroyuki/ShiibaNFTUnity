@@ -11,7 +11,7 @@ public class RcstSensorDataParser : AbstractSensorDataParser
   private ushort[] _latestDepthValues;
   public ushort[] GetLatestDepthValues() => _latestDepthValues;
 
-  public RcstSensorDataParser(BinaryReader reader) : base(reader) { }
+  public RcstSensorDataParser(BinaryReader reader, string deviceName = "Unknown Device") : base(reader, deviceName) { }
 
   ~RcstSensorDataParser() => Dispose();
 
@@ -25,9 +25,9 @@ public class RcstSensorDataParser : AbstractSensorDataParser
     var deserializer = new DeserializerBuilder().Build();
     sensorHeader = deserializer.Deserialize<SensorHeader>(HeaderText);
 
-    Debug.Log("RCST Header YAML:");
-    Debug.Log($"Header Size: {HeaderSize} bytes");
-    Debug.Log($"YAML Content:\n{HeaderText}");
+    // Debug.Log("RCST Header YAML:");
+    // Debug.Log($"Header Size: {HeaderSize} bytes");
+    // Debug.Log($"YAML Content:\n{HeaderText}");
 
   }
 

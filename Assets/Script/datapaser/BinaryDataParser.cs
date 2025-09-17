@@ -53,8 +53,8 @@ public class BinaryDataParser : MonoBehaviour
         }
 
         SetupStatusUI.UpdateDeviceStatus(deviceName, "Loading sensor data...");
-        depthParser = (RcstSensorDataParser)SensorDataParserFactory.Create(depthFilePath);
-        colorParser = (RcsvSensorDataParser)SensorDataParserFactory.Create(colorFilePath);
+        depthParser = (RcstSensorDataParser)SensorDataParserFactory.Create(depthFilePath, deviceName);
+        colorParser = (RcsvSensorDataParser)SensorDataParserFactory.Create(colorFilePath, deviceName);
 
         SetupStatusUI.UpdateDeviceStatus(deviceName, "Loading extrinsics...");
         string extrinsicsPath = Path.Combine(dir, "calibration", "extrinsics.yaml");
@@ -89,7 +89,7 @@ public class BinaryDataParser : MonoBehaviour
 
         if (extrisics.TryGetGlobalTransform(serial, out Vector3 pos, out Quaternion rot))
         {
-            Debug.Log($"Applying global transform for {deviceName}: position = {pos:F6}, rotation = {rot.eulerAngles:F6}");
+            // Debug.Log($"Applying global transform for {deviceName}: position = {pos:F6}, rotation = {rot.eulerAngles:F6}");
 
             // Unity用に座標系変換（右手系→左手系、Y軸下→Y軸上）
             Vector3 unityPosition = new Vector3(pos.x, pos.y, pos.z);
@@ -99,7 +99,7 @@ public class BinaryDataParser : MonoBehaviour
 
             // 結果を確認
             Vector3 unityEuler = unityRotation.eulerAngles;
-            Debug.Log($"Unity Position: {unityPosition:F6}  Rotation (Euler): {unityEuler:F6}");
+            // Debug.Log($"Unity Position: {unityPosition:F6}  Rotation (Euler): {unityEuler:F6}");
 
             depthViewer.transform.SetLocalPositionAndRotation(unityPosition, unityRotation);
 
@@ -119,7 +119,7 @@ public class BinaryDataParser : MonoBehaviour
         // Load depth bias from configuration.yaml
         float depthBias = LoadDepthBias();
         
-        depthMeshGenerator = new DepthMeshGenerator();
+        depthMeshGenerator = new DepthMeshGenerator(deviceName);
         
         SetupStatusUI.UpdateDeviceStatus(deviceName, "Setting up GPU processing...");
         // Assign compute shader if available
@@ -127,7 +127,7 @@ public class BinaryDataParser : MonoBehaviour
         if (computeShader != null)
         {
             depthMeshGenerator.depthPixelProcessor = computeShader;
-            Debug.Log($"Compute shader assigned for GPU processing: {deviceName}");
+            // Debug.Log($"Compute shader assigned for GPU processing: {deviceName}");
             SetupStatusUI.UpdateDeviceStatus(deviceName, "[GPU] Processing enabled");
             SetupStatusUI.ShowStatus($"GPU acceleration active for {deviceName}");
         }
@@ -148,7 +148,7 @@ public class BinaryDataParser : MonoBehaviour
         if (boundingVolume != null)
         {
             depthMeshGenerator.SetBoundingVolume(boundingVolume);
-            Debug.Log($"BoundingVolume found and set for {deviceName}");
+            // Debug.Log($"BoundingVolume found and set for {deviceName}");
         }   
         else
         {
@@ -156,7 +156,7 @@ public class BinaryDataParser : MonoBehaviour
         }
         if (extrisics.TryGetDepthToColorTransform(serial, out Vector3 d2cTranslation, out Quaternion d2cRotation))
         {
-            Debug.Log($"Depth to Color transform for {serial}: translation = {d2cTranslation}, rotation = {d2cRotation.eulerAngles}");
+            // Debug.Log($"Depth to Color transform for {serial}: translation = {d2cTranslation}, rotation = {d2cRotation.eulerAngles}");
             depthMeshGenerator.ApplyDepthToColorExtrinsics(d2cTranslation, d2cRotation);
         }
         else
@@ -203,6 +203,7 @@ public class BinaryDataParser : MonoBehaviour
 
         while (true)
         {
+            SetupStatusUI.ShowStatus($"Processing frame for {deviceName}...");
             bool hasDepthTs = depthParser.PeekNextTimestamp(out ulong depthTs);
             bool hasColorTs = colorParser.PeekNextTimestamp(out ulong colorTs);
             if (!hasDepthTs || !hasColorTs) break;
@@ -211,8 +212,10 @@ public class BinaryDataParser : MonoBehaviour
 
             if (Math.Abs(delta) <= maxAllowableDeltaNs)
             {
+                SetupStatusUI.UpdateDeviceStatus(deviceName, "Parsering frame data...");
                 bool depthOk = depthParser.ParseNextRecord();
                 bool colorOk = colorParser.ParseNextRecord();
+                SetupStatusUI.UpdateDeviceStatus(deviceName, "frame data parsed");
 
                 if (depthOk && colorOk)
                 {
@@ -221,19 +224,18 @@ public class BinaryDataParser : MonoBehaviour
 
                     if (_depth != null && _color != null && _depth.Length > 0)
                     {
-                        // Temporarily use original color without undistortion
-                        // TODO: Fix color undistortion LUT bounds checking
+                        SetupStatusUI.UpdateDeviceStatus(deviceName, "Start Update Mesh");
                         depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
-                        
-                        Debug.Log($"Processed frame for {deviceName}");
-                        
+
+                        SetupStatusUI.ShowStatus($"Processed frame for {deviceName} at {depthTs} ns and {colorTs} ns");
+
                         if (!firstFrameProcessed)
                         {
                             SetupStatusUI.UpdateDeviceStatus(deviceName, "[OK] Active - processing frames");
                             SetupStatusUI.ShowStatus($"{deviceName} is now rendering point clouds");
                             SetupStatusUI.OnFirstFrameProcessed();
                         }
-                        
+
                         firstFrameProcessed = true; // Mark first frame as processed
                         // Debug image export commented out for performance
                         /*
@@ -286,7 +288,7 @@ public class BinaryDataParser : MonoBehaviour
                     string[] parts = line.Split(':');
                     if (parts.Length > 1 && float.TryParse(parts[1].Trim(), out float bias))
                     {
-                        Debug.Log($"Loaded depthBias: {bias} from {configPath}");
+                        // Debug.Log($"Loaded depthBias: {bias} from {configPath}");
                         return bias;
                     }
                 }
@@ -560,7 +562,7 @@ public class BinaryDataParser : MonoBehaviour
         }
         else
         {
-            Debug.Log("Cached parsers initialized for timeline scrubbing");
+            SetupStatusUI.UpdateDeviceStatus(deviceName, "Cached parsers initialized for timeline scrubbing");
         }
     }
     

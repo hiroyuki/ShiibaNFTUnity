@@ -75,7 +75,7 @@ public static class OpenCVUndistortHelper
         inputPoints.Dispose();
         outputPoints.Dispose();
 
-        Debug.Log($"Built OpenCV undistortion LUT for {width}x{height} with fx={fx:F2}, fy={fy:F2}");
+        // Debug.Log($"Built OpenCV undistortion LUT for {width}x{height} with fx={fx:F2}, fy={fy:F2}");
         return undistortLUT;
     }
 
@@ -84,15 +84,15 @@ public static class OpenCVUndistortHelper
     /// </summary>
     public static Vector2[,] BuildUndistortLUTFromHeader(SensorHeader header)
     {
-        Debug.Log($"Raw orbbec_intrinsics_parameters: '{header.custom.additional_info.orbbec_intrinsics_parameters}'");
+        // Debug.Log($"Raw orbbec_intrinsics_parameters: '{header.custom.additional_info.orbbec_intrinsics_parameters}'");
         var allParams = ParseIntrinsics(header.custom.additional_info.orbbec_intrinsics_parameters);
-        Debug.Log($"Parsed parameters ({allParams.Length}): {string.Join(", ", allParams.Select(x => x.ToString("F4")))}");
-        if (allParams.Length >= 12)
-        {
-            Debug.Log($"fx={allParams[0]:F4}, fy={allParams[1]:F4}, cx={allParams[2]:F4}, cy={allParams[3]:F4}");
-            Debug.Log($"k1={allParams[4]:F4}, k2={allParams[5]:F4}, k3={allParams[6]:F4}, k4={allParams[7]:F4}, k5={allParams[8]:F4}, k6={allParams[9]:F4}");
-            Debug.Log($"p1={allParams[10]:F4}, p2={allParams[11]:F4}");
-        }
+        // Debug.Log($"Parsed parameters ({allParams.Length}): {string.Join(", ", allParams.Select(x => x.ToString("F4")))}");
+        // if (allParams.Length >= 12)
+        // {
+        //     Debug.Log($"fx={allParams[0]:F4}, fy={allParams[1]:F4}, cx={allParams[2]:F4}, cy={allParams[3]:F4}");
+        //     Debug.Log($"k1={allParams[4]:F4}, k2={allParams[5]:F4}, k3={allParams[6]:F4}, k4={allParams[7]:F4}, k5={allParams[8]:F4}, k6={allParams[9]:F4}");
+        //     Debug.Log($"p1={allParams[10]:F4}, p2={allParams[11]:F4}");
+        // }
         
         return BuildUndistortLUT(
             header.custom.camera_sensor.width,

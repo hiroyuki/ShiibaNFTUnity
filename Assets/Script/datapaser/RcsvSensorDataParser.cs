@@ -17,7 +17,7 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
 
     private Texture2D _decodedTexture;
 
-    public RcsvSensorDataParser(BinaryReader reader) : base(reader) { }
+    public RcsvSensorDataParser(BinaryReader reader, string deviceName = "Unknown Device") : base(reader, deviceName) { }
     ~RcsvSensorDataParser() => Dispose();
     public override void Dispose() => reader?.Dispose();
 
@@ -29,9 +29,9 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
         byte[] yamlBytes = reader.ReadBytes((int)HeaderSize);
         HeaderText = Encoding.UTF8.GetString(yamlBytes);
 
-        Debug.Log("RCSV Header YAML:");
-        Debug.Log($"Header Size: {HeaderSize} bytes");
-        Debug.Log($"YAML Content:\n{HeaderText}");
+        // Debug.Log("RCSV Header YAML:");
+        // Debug.Log($"Header Size: {HeaderSize} bytes");
+        // Debug.Log($"YAML Content:\n{HeaderText}");
 
         var deserializer = new DeserializerBuilder().Build();
         sensorHeader = deserializer.Deserialize<SensorHeader>(HeaderText);
