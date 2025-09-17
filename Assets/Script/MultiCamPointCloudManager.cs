@@ -62,11 +62,9 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             SetupStatusUI.SetProgress(progress);
             // deviceType_serialNumber → 例: FemtoBolt_CL8F25300C6
             string deviceDirName = $"{device.deviceType}_{device.serialNumber}";
-            // 
-            // (deviceDirName != "FemtoBolt_CL8F25300HJ" && deviceDirName != "FemtoBolt_CL8F25300EG")
-            // (deviceDirName != "FemtoBolt_CL8F25300HJ" )
-            // if (deviceDirName != "FemtoBolt_CL8F25300C6" )
-            //      continue;//center , right
+            
+            // ALL CAMERAS ENABLED: Process all available cameras
+            Debug.Log($"Processing device: {deviceDirName}");
 
             string deviceDir = Path.Combine(hostDir, deviceDirName);
             string depthPath = Path.Combine(deviceDir, "camera_depth");

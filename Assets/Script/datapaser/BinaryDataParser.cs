@@ -19,7 +19,7 @@ public class BinaryDataParser : MonoBehaviour
     private Mesh depthMesh;
 
     private DepthMeshGenerator depthMeshGenerator;
-
+    private BinaryDepthProcessor binaryDepthProcessor; // New efficient processor
 
 
     private bool firstFrameProcessed = false;
@@ -122,32 +122,55 @@ public class BinaryDataParser : MonoBehaviour
         depthMeshGenerator = new DepthMeshGenerator(deviceName);
         
         SetupStatusUI.UpdateDeviceStatus(deviceName, "Setting up GPU processing...");
-        // Assign compute shader if available
-        ComputeShader computeShader = Resources.Load<ComputeShader>("DepthPixelProcessor");
-        if (computeShader != null)
+        
+        // Check for new binary processor compute shader first (most efficient)
+        ComputeShader binaryComputeShader = Resources.Load<ComputeShader>("BinaryDepthProcessor");
+        if (binaryComputeShader != null)
         {
-            depthMeshGenerator.depthPixelProcessor = computeShader;
-            // Debug.Log($"Compute shader assigned for GPU processing: {deviceName}");
-            SetupStatusUI.UpdateDeviceStatus(deviceName, "[GPU] Processing enabled");
-            SetupStatusUI.ShowStatus($"GPU acceleration active for {deviceName}");
+            // Use new efficient binary processor
+            binaryDepthProcessor = new BinaryDepthProcessor(deviceName);
+            binaryDepthProcessor.binaryDepthProcessor = binaryComputeShader;
+            SetupStatusUI.UpdateDeviceStatus(deviceName, "[GPU-BINARY] Ultra-fast processing enabled");
+            SetupStatusUI.ShowStatus($"Binary GPU acceleration active for {deviceName}");
         }
         else
         {
-            Debug.LogWarning($"Compute shader not found in Resources folder, using CPU processing: {deviceName}");
-            SetupStatusUI.UpdateDeviceStatus(deviceName, "[CPU] Processing (fallback)");
-            SetupStatusUI.ShowStatus($"Using CPU processing for {deviceName}");
+            // Fallback to original GPU processing
+            ComputeShader computeShader = Resources.Load<ComputeShader>("DepthPixelProcessor");
+            if (computeShader != null)
+            {
+                depthMeshGenerator.depthPixelProcessor = computeShader;
+                SetupStatusUI.UpdateDeviceStatus(deviceName, "[GPU] Processing enabled");
+                SetupStatusUI.ShowStatus($"GPU acceleration active for {deviceName}");
+            }
+            else
+            {
+                Debug.LogWarning($"No compute shaders found, using CPU processing: {deviceName}");
+                SetupStatusUI.UpdateDeviceStatus(deviceName, "[CPU] Processing (fallback)");
+                SetupStatusUI.ShowStatus($"Using CPU processing for {deviceName}");
+            }
         }
         
+        // Setup processors
         depthMeshGenerator.setup(depthParser.sensorHeader, depthScaleFactor, depthBias);
-        
-        // Pass DepthViewer transform for coordinate conversion
         depthMeshGenerator.SetDepthViewerTransform(depthViewer.transform);
+        
+        if (binaryDepthProcessor != null)
+        {
+            // Setup binary processor with both depth and color headers
+            binaryDepthProcessor.Setup(depthParser.sensorHeader, colorParser.sensorHeader, depthScaleFactor, depthBias);
+            binaryDepthProcessor.SetDepthViewerTransform(depthViewer.transform);
+        }
         
         // Find and set bounding volume
         Transform boundingVolume = GameObject.Find("BoundingVolume")?.transform;
         if (boundingVolume != null)
         {
             depthMeshGenerator.SetBoundingVolume(boundingVolume);
+            if (binaryDepthProcessor != null)
+            {
+                binaryDepthProcessor.SetBoundingVolume(boundingVolume);
+            }
             // Debug.Log($"BoundingVolume found and set for {deviceName}");
         }   
         else
@@ -158,6 +181,12 @@ public class BinaryDataParser : MonoBehaviour
         {
             // Debug.Log($"Depth to Color transform for {serial}: translation = {d2cTranslation}, rotation = {d2cRotation.eulerAngles}");
             depthMeshGenerator.ApplyDepthToColorExtrinsics(d2cTranslation, d2cRotation);
+            
+            // Apply same transform to binary processor
+            if (binaryDepthProcessor != null)
+            {
+                binaryDepthProcessor.ApplyDepthToColorExtrinsics(d2cTranslation, d2cRotation);
+            }
         }
         else
         {
@@ -225,7 +254,22 @@ public class BinaryDataParser : MonoBehaviour
                     if (_depth != null && _color != null && _depth.Length > 0)
                     {
                         SetupStatusUI.UpdateDeviceStatus(deviceName, "Start Update Mesh");
-                        depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
+                        
+                        // Use binary processor if available (most efficient)
+                        if (binaryDepthProcessor != null)
+                        {
+                            // Get raw binary data and color texture for binary processing
+                            var depthRecordBytes = ((RcstSensorDataParser)depthParser).GetLatestRecordBytes();
+                            var colorTexture = CreateColorTexture(_color);
+                            int metadataSize = depthParser.sensorHeader.MetadataSize;
+                            
+                            binaryDepthProcessor.UpdateMeshFromRawBinary(depthMesh, depthRecordBytes, colorTexture, metadataSize);
+                        }
+                        else
+                        {
+                            // Fallback to original processing
+                            depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
+                        }
 
                         SetupStatusUI.ShowStatus($"Processed frame for {deviceName} at {depthTs} ns and {colorTs} ns");
 
@@ -315,59 +359,18 @@ public class BinaryDataParser : MonoBehaviour
         
         try
         {
-            // Use cached parsers instead of creating new ones
-            if (cachedDepthParser == null || cachedColorParser == null)
-            {
-                Debug.LogError("Cached parsers not initialized");
-                return;
-            }
+            bool success = SeekToTarget(
+                (timestamp, currentFrame) => currentFrame >= frameIndex,
+                $"Seeked to frame {frameIndex}"
+            );
             
-            // Reset cached parsers to beginning
-            ResetCachedParsers();
-            
-            // Skip to target frame
-            int currentFrame = 0;
-            const long maxAllowableDeltaNs = 2_000;
-            
-            while (currentFrame < frameIndex)
-            {
-                bool hasDepthTs = cachedDepthParser.PeekNextTimestamp(out ulong depthTs);
-                bool hasColorTs = cachedColorParser.PeekNextTimestamp(out ulong colorTs);
-                if (!hasDepthTs || !hasColorTs) break;
-                
-                long delta = (long)depthTs - (long)colorTs;
-                
-                if (Math.Abs(delta) <= maxAllowableDeltaNs)
-                {
-                    // Skip over image data without parsing/decompressing (FAST)
-                    cachedDepthParser.SkipCurrentRecord();
-                    cachedColorParser.SkipCurrentRecord();
-                    currentFrame++;
-                }
-                else if (delta < 0)
-                {
-                    // Skip depth record without parsing
-                    cachedDepthParser.SkipCurrentRecord();
-                }
-                else
-                {
-                    // Skip color record without parsing  
-                    cachedColorParser.SkipCurrentRecord();
-                }
-                
-                // Safety break to prevent infinite loop
-                if (currentFrame > frameIndex + 1000)
-                {
-                    Debug.LogError($"Safety break: Seeking took too long, stopping at frame {currentFrame}");
-                    break;
-                }
-            }
-            
-            // Process the target frame with cached parsers
-            bool success = ProcessCurrentFrameWithParsers(cachedDepthParser, cachedColorParser);
             if (success)
             {
                 currentFrameIndex = frameIndex;
+            }
+            else
+            {
+                Debug.LogWarning($"{deviceName}: Failed to seek to frame {frameIndex}");
             }
         }
         catch (System.Exception ex)
@@ -385,57 +388,15 @@ public class BinaryDataParser : MonoBehaviour
     {
         try
         {
-            if (cachedDepthParser == null || cachedColorParser == null)
+            bool success = SeekToTarget(
+                (timestamp, currentFrame) => timestamp >= targetTimestamp,
+                $"Seeked to timestamp {targetTimestamp}"
+            );
+            
+            if (!success)
             {
-                Debug.LogError("Cached parsers not initialized");
-                return;
+                Debug.LogWarning($"{deviceName}: No suitable frame found for timestamp {targetTimestamp}");
             }
-            
-            // Reset cached parsers to beginning
-            ResetCachedParsers();
-            
-            const long maxAllowableDeltaNs = 2_000;
-            
-            // Find the frame closest to target timestamp
-            while (true)
-            {
-                bool hasDepthTs = cachedDepthParser.PeekNextTimestamp(out ulong depthTs);
-                bool hasColorTs = cachedColorParser.PeekNextTimestamp(out ulong colorTs);
-                if (!hasDepthTs || !hasColorTs) break;
-                
-                long delta = (long)depthTs - (long)colorTs;
-                
-                if (Math.Abs(delta) <= maxAllowableDeltaNs)
-                {
-                    // Use depth timestamp as reference (both are synchronized)
-                    ulong frameTimestamp = depthTs;
-                    
-                    // If this frame is at or past our target timestamp, use it
-                    if (frameTimestamp >= targetTimestamp)
-                    {
-                        bool success = ProcessCurrentFrameWithParsers(cachedDepthParser, cachedColorParser);
-                        if (success)
-                        {
-                            Debug.Log($"{deviceName}: Seeked to timestamp {frameTimestamp} (target: {targetTimestamp})");
-                        }
-                        return;
-                    }
-                    
-                    // Skip to next synchronized frame pair
-                    cachedDepthParser.SkipCurrentRecord();
-                    cachedColorParser.SkipCurrentRecord();
-                }
-                else if (delta < 0)
-                {
-                    cachedDepthParser.SkipCurrentRecord();
-                }
-                else
-                {
-                    cachedColorParser.SkipCurrentRecord();
-                }
-            }
-            
-            Debug.LogWarning($"{deviceName}: No suitable frame found for timestamp {targetTimestamp}");
         }
         catch (System.Exception ex)
         {
@@ -523,7 +484,21 @@ public class BinaryDataParser : MonoBehaviour
                 
                 if (_depth != null && _color != null && _depth.Length > 0)
                 {
-                    depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
+                    // Use binary processor if available (most efficient)
+                    if (binaryDepthProcessor != null)
+                    {
+                        // Get raw binary data and color texture for binary processing
+                        var depthRecordBytes = tempDepthParser.GetLatestRecordBytes();
+                        var colorTexture = CreateColorTexture(_color);
+                        int metadataSize = tempDepthParser.sensorHeader.MetadataSize;
+                        
+                        binaryDepthProcessor.UpdateMeshFromRawBinary(depthMesh, depthRecordBytes, colorTexture, metadataSize);
+                    }
+                    else
+                    {
+                        // Fallback to original processing
+                        depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
+                    }
                     return true;
                 }
             }
@@ -577,10 +552,83 @@ public class BinaryDataParser : MonoBehaviour
         }
     }
     
+    private Texture2D CreateColorTexture(Color32[] colorPixels)
+    {
+        // Efficiently create texture from Color32 array
+        int width = colorParser.sensorHeader.custom.camera_sensor.width;
+        int height = colorParser.sensorHeader.custom.camera_sensor.height;
+        
+        Texture2D colorTexture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+        colorTexture.SetPixels32(colorPixels);
+        colorTexture.Apply();
+        
+        return colorTexture;
+    }
+    
+    // Unified seeking logic to eliminate code duplication
+    private bool SeekToTarget(System.Func<ulong, int, bool> shouldStop, string logContext)
+    {
+        if (cachedDepthParser == null || cachedColorParser == null)
+        {
+            Debug.LogError("Cached parsers not initialized");
+            return false;
+        }
+        
+        // Reset cached parsers to beginning
+        ResetCachedParsers();
+        
+        int currentFrame = 0;
+        const long maxAllowableDeltaNs = 2_000;
+        
+        while (true)
+        {
+            bool hasDepthTs = cachedDepthParser.PeekNextTimestamp(out ulong depthTs);
+            bool hasColorTs = cachedColorParser.PeekNextTimestamp(out ulong colorTs);
+            if (!hasDepthTs || !hasColorTs) break;
+            
+            long delta = (long)depthTs - (long)colorTs;
+            
+            if (Math.Abs(delta) <= maxAllowableDeltaNs)
+            {
+                // Check if we should stop at this synchronized frame
+                if (shouldStop(depthTs, currentFrame))
+                {
+                    // Process the current frame
+                    bool success = ProcessCurrentFrameWithParsers(cachedDepthParser, cachedColorParser);
+                    if (success)
+                    {
+                        Debug.Log($"{deviceName}: {logContext} to frame {currentFrame} at timestamp {depthTs}");
+                        return true;
+                    }
+                    return false;
+                }
+                
+                // Skip to next synchronized frame pair
+                cachedDepthParser.SkipCurrentRecord();
+                cachedColorParser.SkipCurrentRecord();
+                currentFrame++;
+            }
+            else if (delta < 0)
+            {
+                // Skip depth record without parsing
+                cachedDepthParser.SkipCurrentRecord();
+            }
+            else
+            {
+                // Skip color record without parsing  
+                cachedColorParser.SkipCurrentRecord();
+            }
+        }
+        
+        Debug.LogWarning($"{deviceName}: {logContext} failed - reached end of data");
+        return false;
+    }
+    
     void OnDestroy()
     {
-        // Clean up cached parsers
+        // Clean up resources
         cachedDepthParser?.Dispose();
         cachedColorParser?.Dispose();
+        binaryDepthProcessor?.Dispose();
     }
 }

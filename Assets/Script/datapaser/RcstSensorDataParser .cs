@@ -9,7 +9,9 @@ public class RcstSensorDataParser : AbstractSensorDataParser
 {
   public override string FormatIdentifier => "RCST";
   private ushort[] _latestDepthValues;
+  private byte[] _latestRecordBytes; // Store raw binary data for GPU processing
   public ushort[] GetLatestDepthValues() => _latestDepthValues;
+  public byte[] GetLatestRecordBytes() => _latestRecordBytes;
 
   public RcstSensorDataParser(BinaryReader reader, string deviceName = "Unknown Device") : base(reader, deviceName) { }
 
@@ -43,6 +45,10 @@ public class RcstSensorDataParser : AbstractSensorDataParser
       Debug.LogWarning("Record size does not match expected size");
       return false;
     }
+    
+    // Store raw record bytes for binary GPU processing
+    _latestRecordBytes = recordBytes;
+    
     CurrentTimestamp = BitConverter.ToUInt64(recordBytes, 0);
     byte[] imageBytes = new byte[imageSize];
     Array.Copy(recordBytes, metadataSize, imageBytes, 0, imageSize);
