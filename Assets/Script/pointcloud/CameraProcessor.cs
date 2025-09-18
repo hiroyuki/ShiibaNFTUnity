@@ -23,13 +23,13 @@ namespace PointCloud
     public class CameraProcessor : IDisposable
     {
         private readonly string cameraName;
-        private readonly BinaryDataParser parser;
+        private readonly CameraDataManager parser;
         private readonly Thread backgroundThread;
         private readonly BlockingCollection<FrameRequest> requestQueue;
         private readonly ConcurrentQueue<FrameResult> resultQueue;
         private volatile bool isRunning = true;
         
-        public CameraProcessor(string cameraName, BinaryDataParser parser)
+        public CameraProcessor(string cameraName, CameraDataManager parser)
         {
             this.cameraName = cameraName;
             this.parser = parser;
@@ -173,13 +173,13 @@ namespace PointCloud
         
         private bool SeekToTimestampThreadSafe(ulong targetTimestamp)
         {
-            // Completely bypass BinaryDataParser and work directly with parsers
+            // Completely bypass CameraDataManager and work directly with parsers
             try
             {
                 // Get the internal parsers using reflection
-                var depthParserField = typeof(BinaryDataParser).GetField("depthParser", 
+                var depthParserField = typeof(CameraDataManager).GetField("depthParser", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                var colorParserField = typeof(BinaryDataParser).GetField("colorParser", 
+                var colorParserField = typeof(CameraDataManager).GetField("colorParser", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 
                 if (depthParserField != null && colorParserField != null)
@@ -277,9 +277,9 @@ namespace PointCloud
             try
             {
                 // Access parser's internal parsers directly if possible
-                var depthParserField = typeof(BinaryDataParser).GetField("depthParser", 
+                var depthParserField = typeof(CameraDataManager).GetField("depthParser", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                var colorParserField = typeof(BinaryDataParser).GetField("colorParser", 
+                var colorParserField = typeof(CameraDataManager).GetField("colorParser", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 
                 if (depthParserField != null && colorParserField != null)
@@ -302,13 +302,13 @@ namespace PointCloud
         
         private bool ProcessSingleFrameThreadSafe()
         {
-            // Completely thread-safe version that bypasses BinaryDataParser Unity API calls
+            // Completely thread-safe version that bypasses CameraDataManager Unity API calls
             try
             {
                 // Get the internal parsers using reflection
-                var depthParserField = typeof(BinaryDataParser).GetField("depthParser", 
+                var depthParserField = typeof(CameraDataManager).GetField("depthParser", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                var colorParserField = typeof(BinaryDataParser).GetField("colorParser", 
+                var colorParserField = typeof(CameraDataManager).GetField("colorParser", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 
                 if (depthParserField != null && colorParserField != null)

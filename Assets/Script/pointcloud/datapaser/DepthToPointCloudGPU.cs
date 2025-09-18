@@ -2,7 +2,7 @@ using UnityEngine;
 using System;
 using System.Linq;
 
-public class BinaryDepthProcessor
+public class DepthToPointCloudGPU
 {
     // GPU resources
     public ComputeShader binaryDepthProcessor;
@@ -43,7 +43,7 @@ public class BinaryDepthProcessor
         public int isValid;
     }
     
-    public BinaryDepthProcessor(string deviceName)
+    public DepthToPointCloudGPU(string deviceName)
     {
         this.deviceName = deviceName;
     }

@@ -3,7 +3,7 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public class BinaryDataParser : MonoBehaviour
+public class CameraDataManager : MonoBehaviour
 {
     [SerializeField] private string dir;
     [SerializeField] private string hostname;
@@ -19,7 +19,7 @@ public class BinaryDataParser : MonoBehaviour
     private Mesh depthMesh;
 
     private DepthMeshGenerator depthMeshGenerator;
-    private BinaryDepthProcessor binaryDepthProcessor; // New efficient processor
+    private DepthToPointCloudGPU depthToPointCloudGPU; // New efficient processor
 
 
     private bool firstFrameProcessed = false;
@@ -124,19 +124,19 @@ public class BinaryDataParser : MonoBehaviour
         SetupStatusUI.UpdateDeviceStatus(deviceName, "Setting up GPU processing...");
         
         // Check for new binary processor compute shader first (most efficient)
-        ComputeShader binaryComputeShader = Resources.Load<ComputeShader>("BinaryDepthProcessor");
+        ComputeShader binaryComputeShader = Resources.Load<ComputeShader>("RawDepthToPointCloud");
         if (binaryComputeShader != null)
         {
             // Use new efficient binary processor
-            binaryDepthProcessor = new BinaryDepthProcessor(deviceName);
-            binaryDepthProcessor.binaryDepthProcessor = binaryComputeShader;
+            depthToPointCloudGPU = new DepthToPointCloudGPU(deviceName);
+            depthToPointCloudGPU.binaryDepthProcessor = binaryComputeShader;
             SetupStatusUI.UpdateDeviceStatus(deviceName, "[GPU-BINARY] Ultra-fast processing enabled");
             SetupStatusUI.ShowStatus($"Binary GPU acceleration active for {deviceName}");
         }
         else
         {
             // Fallback to original GPU processing
-            ComputeShader computeShader = Resources.Load<ComputeShader>("DepthPixelProcessor");
+            ComputeShader computeShader = Resources.Load<ComputeShader>("DepthArrayToPointCloud");
             if (computeShader != null)
             {
                 depthMeshGenerator.depthPixelProcessor = computeShader;
@@ -155,11 +155,11 @@ public class BinaryDataParser : MonoBehaviour
         depthMeshGenerator.setup(depthParser.sensorHeader, depthScaleFactor, depthBias);
         depthMeshGenerator.SetDepthViewerTransform(depthViewer.transform);
         
-        if (binaryDepthProcessor != null)
+        if (depthToPointCloudGPU != null)
         {
             // Setup binary processor with both depth and color headers
-            binaryDepthProcessor.Setup(depthParser.sensorHeader, colorParser.sensorHeader, depthScaleFactor, depthBias);
-            binaryDepthProcessor.SetDepthViewerTransform(depthViewer.transform);
+            depthToPointCloudGPU.Setup(depthParser.sensorHeader, colorParser.sensorHeader, depthScaleFactor, depthBias);
+            depthToPointCloudGPU.SetDepthViewerTransform(depthViewer.transform);
         }
         
         // Find and set bounding volume
@@ -167,9 +167,9 @@ public class BinaryDataParser : MonoBehaviour
         if (boundingVolume != null)
         {
             depthMeshGenerator.SetBoundingVolume(boundingVolume);
-            if (binaryDepthProcessor != null)
+            if (depthToPointCloudGPU != null)
             {
-                binaryDepthProcessor.SetBoundingVolume(boundingVolume);
+                depthToPointCloudGPU.SetBoundingVolume(boundingVolume);
             }
             // Debug.Log($"BoundingVolume found and set for {deviceName}");
         }   
@@ -183,9 +183,9 @@ public class BinaryDataParser : MonoBehaviour
             depthMeshGenerator.ApplyDepthToColorExtrinsics(d2cTranslation, d2cRotation);
             
             // Apply same transform to binary processor
-            if (binaryDepthProcessor != null)
+            if (depthToPointCloudGPU != null)
             {
-                binaryDepthProcessor.ApplyDepthToColorExtrinsics(d2cTranslation, d2cRotation);
+                depthToPointCloudGPU.ApplyDepthToColorExtrinsics(d2cTranslation, d2cRotation);
             }
         }
         else
@@ -544,14 +544,14 @@ public class BinaryDataParser : MonoBehaviour
                 if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "Start Update Mesh");
                 
                 // Use binary processor if available (most efficient)
-                if (binaryDepthProcessor != null)
+                if (depthToPointCloudGPU != null)
                 {
                     // Get raw binary data and color texture directly (no CPU conversion needed)
                     var depthRecordBytes = depthParser.GetLatestRecordBytes();
                     var colorTexture = colorParser.GetLatestColorTexture();
                     int metadataSize = depthParser.sensorHeader.MetadataSize;
                     
-                    binaryDepthProcessor.UpdateMeshFromRawBinary(depthMesh, depthRecordBytes, colorTexture, metadataSize);
+                    depthToPointCloudGPU.UpdateMeshFromRawBinary(depthMesh, depthRecordBytes, colorTexture, metadataSize);
                 }
                 else
                 {

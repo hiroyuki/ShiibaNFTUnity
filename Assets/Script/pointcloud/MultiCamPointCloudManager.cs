@@ -89,8 +89,8 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                 // else
                 {
                     
-                    GameObject parserObj = new GameObject("BinaryDataParser_" + deviceDirName);
-                    var parser = parserObj.AddComponent<BinaryDataParser>();
+                    GameObject parserObj = new GameObject("CameraDataManager_" + deviceDirName);
+                    var parser = parserObj.AddComponent<CameraDataManager>();
                     parserObj.transform.parent = this.transform;
                     SetPrivateField(parser, "dir", rootDirectory);                    // 例: /Volumes/MyDisk/CaptureSession/
                     SetPrivateField(parser, "hostname", Path.GetFileName(hostDir));  // 例: PAN-SHI
@@ -107,8 +107,8 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         }
         
         SetupStatusUI.SetProgress(1f);
-        SetupStatusUI.ShowStatus($"Created {parserObjects.Count} BinaryDataParser instances");
-        Debug.Log($"BinaryDataParser を {parserObjects.Count} 個作成しました");
+        SetupStatusUI.ShowStatus($"Created {parserObjects.Count} CameraDataManager instances");
+        Debug.Log($"CameraDataManager を {parserObjects.Count} 個作成しました");
         
         // Initialize async processing
         cancellationTokenSource = new CancellationTokenSource();
@@ -168,7 +168,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             // Create tasks for all cameras to run in parallel
             var processingTasks = parserObjects.Select(async (parserObj, index) =>
             {
-                var parser = parserObj.GetComponent<BinaryDataParser>();
+                var parser = parserObj.GetComponent<CameraDataManager>();
                 if (parser != null)
                 {
                     try
@@ -215,7 +215,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         // Use first parser as reference for timestamp calculation
         if (parserObjects.Count > 0)
         {
-            var parser = parserObjects[0].GetComponent<BinaryDataParser>();
+            var parser = parserObjects[0].GetComponent<CameraDataManager>();
             if (parser != null)
             {
                 return parser.GetTimestampForFrame(frameIndex);
@@ -230,7 +230,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     {
         foreach (var parserObj in parserObjects)
         {
-            var parser = parserObj.GetComponent<BinaryDataParser>();
+            var parser = parserObj.GetComponent<CameraDataManager>();
             if (parser != null)
             {
                 parser.ResetToFirstFrame();
@@ -243,7 +243,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         // Return frame count from first parser (assuming all have same length)
         if (parserObjects.Count > 0)
         {
-            var parser = parserObjects[0].GetComponent<BinaryDataParser>();
+            var parser = parserObjects[0].GetComponent<CameraDataManager>();
             return parser?.GetTotalFrameCount() ?? -1;
         }
         return -1;
@@ -254,15 +254,15 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         // Return FPS from first parser
         if (parserObjects.Count > 0)
         {
-            var parser = parserObjects[0].GetComponent<BinaryDataParser>();
+            var parser = parserObjects[0].GetComponent<CameraDataManager>();
             return parser?.GetFpsFromHeader() ?? 30;
         }
         return 30;
     }
 
-    private void SetPrivateField(BinaryDataParser instance, string fieldName, object value)
+    private void SetPrivateField(CameraDataManager instance, string fieldName, object value)
     {
-        var field = typeof(BinaryDataParser).GetField(fieldName, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var field = typeof(CameraDataManager).GetField(fieldName, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         if (field != null)
             field.SetValue(instance, value);
         else
