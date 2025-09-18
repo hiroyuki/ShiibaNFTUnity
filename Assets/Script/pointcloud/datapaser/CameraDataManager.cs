@@ -530,7 +530,7 @@ public class CameraDataManager : MonoBehaviour
         {
             // Use GPU-optimized parsing based on which processor is available
             bool depthOk, colorOk;
-            bool useGPUOptimization = binaryDepthProcessor != null;
+            bool useGPUOptimization = depthToPointCloudGPU != null;
 
             if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "Parsing depth data...");
             depthOk = depthParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
@@ -592,6 +592,6 @@ public class CameraDataManager : MonoBehaviour
         // Clean up resources
         cachedDepthParser?.Dispose();
         cachedColorParser?.Dispose();
-        binaryDepthProcessor?.Dispose();
+        depthToPointCloudGPU?.Dispose();
     }
 }

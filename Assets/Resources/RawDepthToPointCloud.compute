@@ -144,7 +144,7 @@ void ProcessRawDepthData(uint3 id : SV_DispatchThreadID)
     float4 color = colorTexture.SampleLevel(samplercolorTexture, colorUV, 0);
     
     // Check if color is valid (not completely black)
-    bool hasValidColor = color.r > 0.02 || color.g > 0.02 || color.b > 0.02; // Slight threshold for float comparison
+    bool hasValidColor = true;// color.r > 0.02 || color.g > 0.02 || color.b > 0.02; // Slight threshold for float comparison
     
     // Convert cPoint to world coordinates for bounding volume check
     float4 worldPoint4 = mul(depthViewerTransform, float4(cPoint, 1.0));
