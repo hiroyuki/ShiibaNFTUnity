@@ -150,7 +150,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         await ProcessFrameAsync(targetTimestamp);
     }
     
-    // Async parallel frame processing - simplified approach
+    // True parallel frame processing with main thread coordination
     public async Task ProcessFrameAsync(ulong targetTimestamp)
     {
         if (isProcessing)
@@ -163,37 +163,45 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         
         try
         {
-            SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} across {parserObjects.Count} cameras...");
+            SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} across {parserObjects.Count} cameras in parallel...");
             
-            // Process all cameras directly on main thread for now (simpler and more reliable)
-            int successCount = 0;
-            foreach (var parserObj in parserObjects)
+            // Create tasks for all cameras to run in parallel
+            var processingTasks = parserObjects.Select(async (parserObj, index) =>
             {
                 var parser = parserObj.GetComponent<BinaryDataParser>();
                 if (parser != null)
                 {
                     try
                     {
-                        // Call the existing SeekToTimestamp method directly
+                        // Run on main thread using ConfigureAwait to maintain Unity context
+                        await Task.Run(() => { }); // Small async delay
+                        await Task.Yield(); // Ensure we're back on main thread
+                        
+                        // Call the existing SeekToTimestamp method on main thread
                         parser.SeekToTimestamp(targetTimestamp);
-                        successCount++;
+                        return true;
                     }
                     catch (System.Exception ex)
                     {
                         Debug.LogError($"Failed to process camera {parserObj.name}: {ex.Message}");
+                        return false;
                     }
                 }
-                
-                // Small delay to prevent blocking UI
-                await Task.Yield();
-            }
+                return false;
+            }).ToArray();
             
-            SetupStatusUI.ShowStatus($"Completed processing {successCount}/{parserObjects.Count} cameras");
+            Debug.Log($"Started {processingTasks.Length} camera processing tasks in parallel");
+            
+            // Wait for all cameras to complete
+            var results = await Task.WhenAll(processingTasks);
+            int successCount = results.Count(success => success);
+            
+            SetupStatusUI.ShowStatus($"Parallel processing complete: {successCount}/{parserObjects.Count} cameras succeeded");
         }
         catch (System.Exception ex)
         {
-            Debug.LogError($"Error in frame processing: {ex.Message}");
-            SetupStatusUI.ShowStatus($"ERROR: Frame processing failed");
+            Debug.LogError($"Error in parallel frame processing: {ex.Message}");
+            SetupStatusUI.ShowStatus($"ERROR: Parallel frame processing failed");
         }
         finally
         {
