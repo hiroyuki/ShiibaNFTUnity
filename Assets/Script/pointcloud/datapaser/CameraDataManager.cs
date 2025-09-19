@@ -362,17 +362,15 @@ public class CameraDataManager : MonoBehaviour
             ResetCachedParsers();
             
             int currentFrame = 0;
-            const long maxAllowableDeltaNs = 2_000;
+            // Synchronization tolerance is now handled by SensorSynchronizer
             
             while (currentFrame <= frameIndex)
             {
-                bool hasDepthTs = cachedDepthParser.PeekNextTimestamp(out ulong depthTs);
-                bool hasColorTs = cachedColorParser.PeekNextTimestamp(out ulong colorTs);
-                if (!hasDepthTs || !hasColorTs) break;
+                // Check synchronization using unified method
+                bool synchronized = CheckSynchronization(cachedDepthParser, cachedColorParser, out ulong depthTs, out ulong colorTs, out long delta);
+                if (!synchronized && depthTs == 0 && colorTs == 0) break; // No more data
                 
-                long delta = (long)depthTs - (long)colorTs;
-                
-                if (Math.Abs(delta) <= maxAllowableDeltaNs)
+                if (synchronized)
                 {
                     if (currentFrame == frameIndex)
                     {
@@ -384,13 +382,17 @@ public class CameraDataManager : MonoBehaviour
                     cachedColorParser.SkipCurrentRecord();
                     currentFrame++;
                 }
-                else if (delta < 0)
-                {
-                    cachedDepthParser.SkipCurrentRecord();
-                }
                 else
                 {
-                    cachedColorParser.SkipCurrentRecord();
+                    // Skip the earlier timestamp to catch up
+                    if (delta < 0)
+                    {
+                        cachedDepthParser.SkipCurrentRecord();
+                    }
+                    else
+                    {
+                        cachedColorParser.SkipCurrentRecord();
+                    }
                 }
             }
             
@@ -402,11 +404,6 @@ public class CameraDataManager : MonoBehaviour
             Debug.LogError($"Error in GetTimestampForFrame: {ex.Message}");
             return (ulong)(frameIndex * 33333333); // nanoseconds
         }
-    }
-    
-    private bool ProcessCurrentFrameWithParsers(RcstSensorDataParser tempDepthParser, RcsvSensorDataParser tempColorParser)
-    {
-        return ProcessFrameWithParsers(tempDepthParser, tempColorParser, showStatus: true);
     }
     
     public int GetTotalFrameCount()
@@ -467,23 +464,22 @@ public class CameraDataManager : MonoBehaviour
         ResetCachedParsers();
         
         int currentFrame = 0;
-        const long maxAllowableDeltaNs = 2_000;
+        // Synchronization tolerance is now handled by SensorSynchronizer
         
         while (true)
         {
-            bool hasDepthTs = cachedDepthParser.PeekNextTimestamp(out ulong depthTs);
-            bool hasColorTs = cachedColorParser.PeekNextTimestamp(out ulong colorTs);
-            if (!hasDepthTs || !hasColorTs) break;
+            // Check synchronization using unified method
+            bool synchronized = CheckSynchronization(cachedDepthParser, cachedColorParser, out ulong depthTs, out ulong colorTs, out long delta);
+            if (!synchronized && depthTs == 0 && colorTs == 0) break; // No more data
             
-            long delta = (long)depthTs - (long)colorTs;
-            
-            if (Math.Abs(delta) <= maxAllowableDeltaNs)
-            {
+            if (synchronized)
+            {   
+                SetupStatusUI.ShowStatus($"Seeking {deviceName}: depthTs={depthTs}, colorTs={colorTs}, delta={delta}, frame={currentFrame}");
                 // Check if we should stop at this synchronized frame
                 if (shouldStop(depthTs, currentFrame))
                 {
                     // Process the current frame
-                    bool success = ProcessCurrentFrameWithParsers(cachedDepthParser, cachedColorParser);
+                    bool success = ProcessFrameWithParsers(cachedDepthParser, cachedColorParser, showStatus: true);
                     if (success)
                     {
                         Debug.Log($"{deviceName}: {logContext} to frame {currentFrame} at timestamp {depthTs}");
@@ -499,12 +495,14 @@ public class CameraDataManager : MonoBehaviour
             }
             else if (delta < 0)
             {
+                SetupStatusUI.ShowStatus("[WARNING] skipping depth frame to catch up...");
                 // Skip depth record without parsing
                 cachedDepthParser.SkipCurrentRecord();
             }
             else
             {
-                // Skip color record without parsing  
+                SetupStatusUI.ShowStatus("[WARNING] skipping color frame to catch up...");
+                // Skip color record without parsing
                 cachedColorParser.SkipCurrentRecord();
             }
         }
@@ -516,75 +514,85 @@ public class CameraDataManager : MonoBehaviour
     // Unified frame processing logic to eliminate code duplication  
     private bool ProcessFrameWithParsers(RcstSensorDataParser depthParser, RcsvSensorDataParser colorParser, bool showStatus = false)
     {
-        const long maxAllowableDeltaNs = 2_000;
+        // Synchronization tolerance is now handled by SensorSynchronizer
         
         if (showStatus) SetupStatusUI.ShowStatus($"Processing frame for {deviceName}...");
         
-        bool hasDepthTs = depthParser.PeekNextTimestamp(out ulong depthTs);
-        bool hasColorTs = colorParser.PeekNextTimestamp(out ulong colorTs);
-        if (!hasDepthTs || !hasColorTs) return false;
+        // Synchronization is already checked in SeekToTarget before calling this method
+        bool useGPUOptimization = depthToPointCloudGPU != null;
+        
+        if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "Parsing synchronized frame...");
+        
+        // Parse both frames with GPU optimization
+        bool depthOk = depthParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
+        bool colorOk = colorParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
+        bool frameOk = depthOk && colorOk;
+        
+        if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "frame data parsed");
 
-        long delta = (long)depthTs - (long)colorTs;
-
-        if (Math.Abs(delta) <= maxAllowableDeltaNs)
+        if (frameOk)
         {
-            // Use GPU-optimized parsing based on which processor is available
-            bool depthOk, colorOk;
-            bool useGPUOptimization = depthToPointCloudGPU != null;
-
-            if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "Parsing depth data...");
-            depthOk = depthParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
-            if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "Parsing color data...");
-            colorOk = colorParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
+            if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "Start Update Mesh");
             
-            if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "frame data parsed");
-
-            if (depthOk && colorOk)
+            // Use binary processor if available (most efficient)
+            if (depthToPointCloudGPU != null)
             {
-                if (showStatus) SetupStatusUI.UpdateDeviceStatus(deviceName, "Start Update Mesh");
+                // Get raw binary data and color texture directly (no CPU conversion needed)
+                var depthRecordBytes = depthParser.GetLatestRecordBytes();
+                var colorTexture = colorParser.GetLatestColorTexture();
+                int metadataSize = depthParser.sensorHeader.MetadataSize;
                 
-                // Use binary processor if available (most efficient)
-                if (depthToPointCloudGPU != null)
-                {
-                    // Get raw binary data and color texture directly (no CPU conversion needed)
-                    var depthRecordBytes = depthParser.GetLatestRecordBytes();
-                    var colorTexture = colorParser.GetLatestColorTexture();
-                    int metadataSize = depthParser.sensorHeader.MetadataSize;
-                    
-                    depthToPointCloudGPU.UpdateMeshFromRawBinary(depthMesh, depthRecordBytes, colorTexture, metadataSize);
-                }
-                else
-                {
-                    // Fallback to standard processing (get color pixels only when needed)
-                    var _color = colorParser.CurrentColorPixels;
-                    if (_color != null)
-                    {
-                        var _depth = depthParser.GetLatestDepthValues();
-                        if (_depth != null && _depth.Length > 0)
-                        {
-                            depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
-                        }
-                    }
-                }
-
-                if (showStatus)
-                {
-                    SetupStatusUI.ShowStatus($"Processed frame for {deviceName} at {depthTs} ns and {colorTs} ns");
-
-                    if (!firstFrameProcessed)
-                    {
-                        SetupStatusUI.UpdateDeviceStatus(deviceName, "[OK] Active - processing frames");
-                        SetupStatusUI.ShowStatus($"{deviceName} is now rendering point clouds");
-                        SetupStatusUI.OnFirstFrameProcessed();
-                        firstFrameProcessed = true; // Mark first frame as processed
-                    }
-                }
-                
-                return true;
+                depthToPointCloudGPU.UpdateMeshFromRawBinary(depthMesh, depthRecordBytes, colorTexture, metadataSize);
             }
+            else
+            {
+                // Fallback to standard processing (get color pixels only when needed)
+                var _color = colorParser.CurrentColorPixels;
+                if (_color != null)
+                {
+                    var _depth = depthParser.GetLatestDepthValues();
+                    if (_depth != null && _depth.Length > 0)
+                    {
+                        depthMeshGenerator.UpdateMeshFromDepthAndColor(depthMesh, _depth, _color);
+                    }
+                }
+            }
+
+            if (showStatus)
+            {
+                SetupStatusUI.ShowStatus($"Processed frame for {deviceName}");
+
+                if (!firstFrameProcessed)
+                {
+                    SetupStatusUI.UpdateDeviceStatus(deviceName, "[OK] Active - processing frames");
+                    SetupStatusUI.ShowStatus($"{deviceName} is now rendering point clouds");
+                    SetupStatusUI.OnFirstFrameProcessed();
+                    firstFrameProcessed = true; // Mark first frame as processed
+                }
+            }
+            
+            return true;
         }
         
         return false;
+    }
+    
+    // Unified synchronization logic
+    private bool CheckSynchronization(RcstSensorDataParser depthParser, RcsvSensorDataParser colorParser, out ulong depthTs, out ulong colorTs, out long delta)
+    {
+        bool hasDepthTs = depthParser.PeekNextTimestamp(out depthTs);
+        bool hasColorTs = colorParser.PeekNextTimestamp(out colorTs);
+        
+        if (!hasDepthTs || !hasColorTs)
+        {
+            depthTs = 0;
+            colorTs = 0;
+            delta = 0;
+            return false;
+        }
+        
+        delta = (long)depthTs - (long)colorTs;
+        return Math.Abs(delta) <= 2_000;
     }
     
     void OnDestroy()
