@@ -396,8 +396,19 @@ public class CameraDataManager : MonoBehaviour
                 }
             }
             
-            // Fallback: estimate based on 30 FPS
-            return (ulong)(frameIndex * 33333333); // nanoseconds
+            // Fallback: estimate based on FPS from header
+            int fps = GetFpsFromHeader();
+            if (fps > 0)
+            {
+                // Calculate nanoseconds per frame: 1,000,000,000 / fps
+                ulong nanosecondsPerFrame = (ulong)(1_000_000_000L / fps);
+                return (ulong)frameIndex * nanosecondsPerFrame;
+            }
+            else
+            {
+                Debug.LogError($"Cannot estimate timestamp for frame {frameIndex}: FPS not available from header");
+                return 0; // Error case - cannot estimate without FPS
+            }
         }
         catch (System.Exception ex)
         {
