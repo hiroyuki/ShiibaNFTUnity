@@ -413,7 +413,19 @@ public class CameraDataManager : MonoBehaviour
     
     public int GetFpsFromHeader()
     {
-        return colorParser?.sensorHeader?.custom?.camera_sensor?.fps ?? 30;
+        int? fps = colorParser?.sensorHeader?.custom?.camera_sensor?.fps;
+        if (fps.HasValue)
+        {
+            return fps.Value;
+        }
+        
+        string errorMsg = $"FPS not available in sensor header for device {deviceName}. " +
+                         "This may cause timeline synchronization issues.";
+        Debug.LogError(errorMsg);
+        SetupStatusUI.ShowStatus($"ERROR: {errorMsg}");
+        
+        // Return -1 to indicate error instead of defaulting to magic number
+        return -1;
     }
     
     public int GetCurrentFrameIndex()

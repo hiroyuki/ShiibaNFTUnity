@@ -255,9 +255,24 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         if (dataManagerObjects.Count > 0)
         {
             var dataManager = dataManagerObjects[0].GetComponent<CameraDataManager>();
-            return dataManager?.GetFpsFromHeader() ?? 30;
+            if (dataManager != null)
+            {
+                int fps = dataManager.GetFpsFromHeader();
+                if (fps > 0)
+                {
+                    return fps;
+                }
+                
+                // Error case: FPS not available in header
+                string errorMsg = "FPS not available from any camera headers. Cannot determine timeline framerate.";
+                Debug.LogError(errorMsg);
+                SetupStatusUI.ShowStatus($"CRITICAL ERROR: {errorMsg}");
+                return -1;
+            }
         }
-        return 30;
+        
+        Debug.LogError("No data managers available to get FPS from header");
+        return -1;
     }
 
     private void SetPrivateField(CameraDataManager instance, string fieldName, object value)

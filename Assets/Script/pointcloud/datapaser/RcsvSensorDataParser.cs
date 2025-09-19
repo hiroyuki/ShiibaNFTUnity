@@ -126,7 +126,7 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
 
             int metadataSize = sensorHeader.MetadataSize;
             byte[] header = reader.ReadBytes(metadataSize);
-            if (header.Length < 8)
+            if (header.Length != metadataSize)
             {
                 timestamp = 0;
                 reader.BaseStream.Position = originalPos;
@@ -145,7 +145,7 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
     }
     
     // Fast skip method for timeline seeking - only reads header, skips JPEG data
-    public bool SkipCurrentRecord()
+    public override bool SkipCurrentRecord()
     {
         try
         {
