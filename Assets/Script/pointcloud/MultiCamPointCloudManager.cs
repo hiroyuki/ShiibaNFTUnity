@@ -13,7 +13,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     [SerializeField]
     private string rootDirectory; // datasetを含むディレクトリ
 
-    private List<GameObject> parserObjects = new();
+    private List<GameObject> dataManagerObjects = new();
     
     // Async processing infrastructure
     private readonly List<CameraProcessor> cameraProcessors = new();
@@ -89,16 +89,16 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                 // else
                 {
                     
-                    GameObject parserObj = new GameObject("CameraDataManager_" + deviceDirName);
-                    var parser = parserObj.AddComponent<CameraDataManager>();
-                    parserObj.transform.parent = this.transform;
-                    SetPrivateField(parser, "dir", rootDirectory);                    // 例: /Volumes/MyDisk/CaptureSession/
-                    SetPrivateField(parser, "hostname", Path.GetFileName(hostDir));  // 例: PAN-SHI
-                    SetPrivateField(parser, "deviceName", deviceDirName);            // 例: FemtoBolt_CL8F25300C6
-                    parserObjects.Add(parserObj);
+                    GameObject dataManagerObj = new GameObject("CameraDataManager_" + deviceDirName);
+                    var dataManager = dataManagerObj.AddComponent<CameraDataManager>();
+                    dataManagerObj.transform.parent = this.transform;
+                    SetPrivateField(dataManager, "dir", rootDirectory);                    // 例: /Volumes/MyDisk/CaptureSession/
+                    SetPrivateField(dataManager, "hostname", Path.GetFileName(hostDir));  // 例: PAN-SHI
+                    SetPrivateField(dataManager, "deviceName", deviceDirName);            // 例: FemtoBolt_CL8F25300C6
+                    dataManagerObjects.Add(dataManagerObj);
                     
                     // Create async processor for this camera
-                    var cameraProcessor = new CameraProcessor(deviceDirName, parser);
+                    var cameraProcessor = new CameraProcessor(deviceDirName, dataManager);
                     cameraProcessors.Add(cameraProcessor);
                 }
             }
@@ -107,8 +107,8 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         }
         
         SetupStatusUI.SetProgress(1f);
-        SetupStatusUI.ShowStatus($"Created {parserObjects.Count} CameraDataManager instances");
-        Debug.Log($"CameraDataManager を {parserObjects.Count} 個作成しました");
+        SetupStatusUI.ShowStatus($"Created {dataManagerObjects.Count} CameraDataManager instances");
+        Debug.Log($"CameraDataManager を {dataManagerObjects.Count} 個作成しました");
         
         // Initialize async processing
         cancellationTokenSource = new CancellationTokenSource();
@@ -163,13 +163,13 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         
         try
         {
-            SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} across {parserObjects.Count} cameras in parallel...");
+            SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} across {dataManagerObjects.Count} cameras in parallel...");
             
             // Create tasks for all cameras to run in parallel
-            var processingTasks = parserObjects.Select(async (parserObj, index) =>
+            var processingTasks = dataManagerObjects.Select(async (dataManagerObj, index) =>
             {
-                var parser = parserObj.GetComponent<CameraDataManager>();
-                if (parser != null)
+                var dataManager = dataManagerObj.GetComponent<CameraDataManager>();
+                if (dataManager != null)
                 {
                     try
                     {
@@ -178,12 +178,12 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                         await Task.Yield(); // Ensure we're back on main thread
                         
                         // Call the existing SeekToTimestamp method on main thread
-                        parser.SeekToTimestamp(targetTimestamp);
+                        dataManager.SeekToTimestamp(targetTimestamp);
                         return true;
                     }
                     catch (System.Exception ex)
                     {
-                        Debug.LogError($"Failed to process camera {parserObj.name}: {ex.Message}");
+                        Debug.LogError($"Failed to process camera {dataManagerObj.name}: {ex.Message}");
                         return false;
                     }
                 }
@@ -196,7 +196,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             var results = await Task.WhenAll(processingTasks);
             int successCount = results.Count(success => success);
             
-            SetupStatusUI.ShowStatus($"Parallel processing complete: {successCount}/{parserObjects.Count} cameras succeeded");
+            SetupStatusUI.ShowStatus($"Parallel processing complete: {successCount}/{dataManagerObjects.Count} cameras succeeded");
         }
         catch (System.Exception ex)
         {
@@ -212,13 +212,13 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     
     private ulong GetTargetTimestamp(int frameIndex)
     {
-        // Use first parser as reference for timestamp calculation
-        if (parserObjects.Count > 0)
+        // Use first data manager as reference for timestamp calculation
+        if (dataManagerObjects.Count > 0)
         {
-            var parser = parserObjects[0].GetComponent<CameraDataManager>();
-            if (parser != null)
+            var dataManager = dataManagerObjects[0].GetComponent<CameraDataManager>();
+            if (dataManager != null)
             {
-                return parser.GetTimestampForFrame(frameIndex);
+                return dataManager.GetTimestampForFrame(frameIndex);
             }
         }
         
@@ -228,34 +228,34 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     
     public void ResetToFirstFrame()
     {
-        foreach (var parserObj in parserObjects)
+        foreach (var dataManagerObj in dataManagerObjects)
         {
-            var parser = parserObj.GetComponent<CameraDataManager>();
-            if (parser != null)
+            var dataManager = dataManagerObj.GetComponent<CameraDataManager>();
+            if (dataManager != null)
             {
-                parser.ResetToFirstFrame();
+                dataManager.ResetToFirstFrame();
             }
         }
     }
     
     public int GetTotalFrameCount()
     {
-        // Return frame count from first parser (assuming all have same length)
-        if (parserObjects.Count > 0)
+        // Return frame count from first data manager (assuming all have same length)
+        if (dataManagerObjects.Count > 0)
         {
-            var parser = parserObjects[0].GetComponent<CameraDataManager>();
-            return parser?.GetTotalFrameCount() ?? -1;
+            var dataManager = dataManagerObjects[0].GetComponent<CameraDataManager>();
+            return dataManager?.GetTotalFrameCount() ?? -1;
         }
         return -1;
     }
     
     public int GetFpsFromHeader()
     {
-        // Return FPS from first parser
-        if (parserObjects.Count > 0)
+        // Return FPS from first data manager
+        if (dataManagerObjects.Count > 0)
         {
-            var parser = parserObjects[0].GetComponent<CameraDataManager>();
-            return parser?.GetFpsFromHeader() ?? 30;
+            var dataManager = dataManagerObjects[0].GetComponent<CameraDataManager>();
+            return dataManager?.GetFpsFromHeader() ?? 30;
         }
         return 30;
     }
