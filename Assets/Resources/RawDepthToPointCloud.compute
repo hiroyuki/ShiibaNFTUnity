@@ -71,12 +71,13 @@ float2 DistortColorProjection(float x_norm, float y_norm)
 
 bool IsPointInBoundingVolume(float3 worldPoint)
 {
+    // Early return if no bounding volume is set
     if (!hasBoundingVolume) return true;
-    
+
     float4 localPoint4 = mul(boundingVolumeInverseTransform, float4(worldPoint, 1.0));
     float3 localPoint = localPoint4.xyz;
-    
-    return abs(localPoint.x) <= 0.5 && abs(localPoint.y) <= 0.5 && abs(localPoint.z) <= 0.5;
+
+    return (abs(localPoint.x) <= 0.5) && (abs(localPoint.y) <= 0.5) && (abs(localPoint.z) <= 0.5);
 }
 
 // No longer need byte-level access function - use structured buffer directly
@@ -121,7 +122,7 @@ void ProcessRawDepthData(uint3 id : SV_DispatchThreadID)
     }
     
     float3 dPoint = float3(px, py, z);
-    float3 cPoint = mul(rotationMatrix, dPoint) + translation;
+    float3 cPoint = mul(rotationMatrix, float4(dPoint, 1.0)).xyz + translation;
     
     // Skip points behind camera
     if (cPoint.z <= 0)
@@ -151,7 +152,10 @@ void ProcessRawDepthData(uint3 id : SV_DispatchThreadID)
     float3 worldPoint = worldPoint4.xyz;
     
     // Only add points with valid colors and within bounding volume
-    bool withinBounds = showAllPoints || IsPointInBoundingVolume(worldPoint);
+    bool withinBounds = showAllPoints;
+    if (!showAllPoints) {
+        withinBounds = IsPointInBoundingVolume(worldPoint);
+    }
     
     if (hasValidColor && withinBounds)
     {

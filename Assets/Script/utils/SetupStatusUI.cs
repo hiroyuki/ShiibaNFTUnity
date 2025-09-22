@@ -61,7 +61,7 @@ public class SetupStatusUI : MonoBehaviour
             // Create UI if not already set up
             if (statusCanvas == null)
             {
-                CreateUI();
+                // CreateUI();
             }
         }
         else if (instance != this)
@@ -184,7 +184,7 @@ public class SetupStatusUI : MonoBehaviour
     
     public static void UpdateDeviceStatus(string deviceName, string status)
     {
-        Debug.Log("## Device Status: " + $"[{System.DateTime.Now:HH:mm:ss.fff}] {deviceName} - {status}");
+        // Debug.Log("## Device Status: " + $"[{System.DateTime.Now:HH:mm:ss.fff}] {deviceName} - {status}");
         Instance.deviceStatus[deviceName] = status;
         Instance.UpdateDisplay();
     }

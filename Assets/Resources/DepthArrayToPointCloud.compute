@@ -72,10 +72,10 @@ float2 DistortColorProjection(float x_norm, float y_norm)
 bool IsPointInBoundingVolume(float3 worldPoint)
 {
     if (!hasBoundingVolume) return true;
-    
+
     float4 localPoint4 = mul(boundingVolumeInverseTransform, float4(worldPoint, 1.0));
     float3 localPoint = localPoint4.xyz;
-    
+
     return abs(localPoint.x) <= 0.5 && abs(localPoint.y) <= 0.5 && abs(localPoint.z) <= 0.5;
 }
 

@@ -34,11 +34,11 @@ public class BoundingVolumeDebugController : MonoBehaviour
         {
             lastShowAllPoints = showAllPoints;
             DepthMeshGenerator.showAllPoints = showAllPoints;
-            
+
             Debug.Log($"Bounding volume culling: {(showAllPoints ? "DISABLED (showing all points)" : "ENABLED")}");
-            
+
             UpdateVisualFeedback();
-            
+
             // Refresh current frame if auto-refresh is enabled
             if (refreshOnChange)
             {

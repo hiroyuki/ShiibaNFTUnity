@@ -119,7 +119,7 @@ public class RcstSensorDataParser : AbstractSensorDataParser
       try
       {
           long originalPos = reader.BaseStream.Position;
-
+          Debug.Log("Peeking next timestamp at position: " + originalPos + " for device: " + deviceName);
           int metadataSize = sensorHeader.MetadataSize;
           byte[] metadataBytes = reader.ReadBytes(metadataSize);
           if (metadataBytes.Length != metadataSize)

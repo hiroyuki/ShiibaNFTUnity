@@ -23,13 +23,13 @@ namespace PointCloud
     public class CameraProcessor : IDisposable
     {
         private readonly string cameraName;
-        private readonly CameraDataManager parser;
+        private readonly SingleCameraDataManager parser;
         private readonly Thread backgroundThread;
         private readonly BlockingCollection<FrameRequest> requestQueue;
         private readonly ConcurrentQueue<FrameResult> resultQueue;
         private volatile bool isRunning = true;
         
-        public CameraProcessor(string cameraName, CameraDataManager parser)
+        public CameraProcessor(string cameraName, SingleCameraDataManager parser)
         {
             this.cameraName = cameraName;
             this.parser = parser;
@@ -45,7 +45,7 @@ namespace PointCloud
             backgroundThread.Start();
             
             // Use main thread for initialization logging
-            UnityEngine.Debug.Log($"CameraProcessor started for {cameraName}");
+            UnityEngine.Debug.Log($"CameraProcessor created for {cameraName}");
         }
         
         public async Task<FrameResult> ProcessFrameAsync(ulong targetTimestamp, CancellationToken cancellationToken)
@@ -173,13 +173,13 @@ namespace PointCloud
         
         private bool SeekToTimestampThreadSafe(ulong targetTimestamp)
         {
-            // Completely bypass CameraDataManager and work directly with parsers
+            // Completely bypass SingleCameraDataManager and work directly with parsers
             try
             {
                 // Get the internal parsers using reflection
-                var depthParserField = typeof(CameraDataManager).GetField("depthParser", 
+                var depthParserField = typeof(SingleCameraDataManager).GetField("depthParser", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                var colorParserField = typeof(CameraDataManager).GetField("colorParser", 
+                var colorParserField = typeof(SingleCameraDataManager).GetField("colorParser", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 
                 if (depthParserField != null && colorParserField != null)
@@ -277,9 +277,9 @@ namespace PointCloud
             try
             {
                 // Access parser's internal parsers directly if possible
-                var depthParserField = typeof(CameraDataManager).GetField("depthParser", 
+                var depthParserField = typeof(SingleCameraDataManager).GetField("depthParser", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                var colorParserField = typeof(CameraDataManager).GetField("colorParser", 
+                var colorParserField = typeof(SingleCameraDataManager).GetField("colorParser", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 
                 if (depthParserField != null && colorParserField != null)
@@ -302,13 +302,13 @@ namespace PointCloud
         
         private bool ProcessSingleFrameThreadSafe()
         {
-            // Completely thread-safe version that bypasses CameraDataManager Unity API calls
+            // Completely thread-safe version that bypasses SingleCameraDataManager Unity API calls
             try
             {
                 // Get the internal parsers using reflection
-                var depthParserField = typeof(CameraDataManager).GetField("depthParser", 
+                var depthParserField = typeof(SingleCameraDataManager).GetField("depthParser", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                var colorParserField = typeof(CameraDataManager).GetField("colorParser", 
+                var colorParserField = typeof(SingleCameraDataManager).GetField("colorParser", 
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 
                 if (depthParserField != null && colorParserField != null)

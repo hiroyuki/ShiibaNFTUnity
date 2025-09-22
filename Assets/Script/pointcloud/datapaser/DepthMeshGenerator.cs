@@ -291,14 +291,14 @@ public class DepthMeshGenerator
     private bool IsPointInBoundingVolume(Vector3 worldPoint)
     {
         if (boundingVolume == null) return true; // No culling if no bounding volume
-        
+
         // Convert world point to bounding volume's local space
         Vector3 localPoint = boundingVolume.InverseTransformPoint(worldPoint);
-        
+
         // Unity Cube vertices are at [-0.5, 0.5], so check against 0.5
         // This makes the culling range match the visual Cube exactly
-        return Mathf.Abs(localPoint.x) <= 0.5f && 
-               Mathf.Abs(localPoint.y) <= 0.5f && 
+        return Mathf.Abs(localPoint.x) <= 0.5f &&
+               Mathf.Abs(localPoint.y) <= 0.5f &&
                Mathf.Abs(localPoint.z) <= 0.5f;
     }
 

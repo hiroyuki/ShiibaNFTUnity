@@ -1,9 +1,8 @@
 using System;
 using System.IO;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
-public class CameraDataManager : MonoBehaviour
+public class SingleCameraDataManager : MonoBehaviour
 {
     [SerializeField] private string dir;
     [SerializeField] private string hostname;
@@ -11,7 +10,6 @@ public class CameraDataManager : MonoBehaviour
 
     RcstSensorDataParser depthParser;
     RcsvSensorDataParser colorParser;
-
     [SerializeField] private float depthScaleFactor = 1000f;
 
     private GameObject depthViewer;
@@ -24,20 +22,20 @@ public class CameraDataManager : MonoBehaviour
 
     private bool firstFrameProcessed = false;
     private bool autoLoadFirstFrame = false; // Disabled - MultiCamPointCloudManager handles first frame
+    
+    // Store current timestamp for efficient leading camera detection
+    private ulong currentTimestamp = 0;
     private ExtrinsicsLoader extrisics;
     
     // Timeline scrubbing support
     private int currentFrameIndex = 0;
     private int totalFrameCount = -1;
     
-    // Cached parsers for timeline scrubbing (avoid recreating every time)
-    private RcstSensorDataParser cachedDepthParser;
-    private RcsvSensorDataParser cachedColorParser;
+
 
     void Start()
     {
         SetupStatusUI.ShowStatus($"Initializing {deviceName}...");
-        SetupStatusUI.UpdateDeviceStatus(deviceName, "Starting setup");
         
         string devicePath = Path.Combine(dir, "dataset", hostname, deviceName);
         string depthFilePath = Path.Combine(devicePath, "camera_depth");
@@ -58,7 +56,6 @@ public class CameraDataManager : MonoBehaviour
 
         SetupStatusUI.UpdateDeviceStatus(deviceName, "Loading extrinsics...");
         string extrinsicsPath = Path.Combine(dir, "calibration", "extrinsics.yaml");
-        SetupStatusUI.UpdateDeviceStatus(deviceName, $"Looking for: {extrinsicsPath}");
         string serial = deviceName.Split('_')[^1];
 
         extrisics = new ExtrinsicsLoader(extrinsicsPath);
@@ -67,7 +64,6 @@ public class CameraDataManager : MonoBehaviour
             string errorMsg = "Extrinsics data could not be loaded from: " + extrinsicsPath;
             Debug.LogError(errorMsg);
             SetupStatusUI.UpdateDeviceStatus(deviceName, "ERROR: Extrinsics failed");
-            SetupStatusUI.ShowStatus($"Failed to load extrinsics for {deviceName}");
             return;
         }
 
@@ -121,7 +117,6 @@ public class CameraDataManager : MonoBehaviour
         
         depthMeshGenerator = new DepthMeshGenerator(deviceName);
         
-        SetupStatusUI.UpdateDeviceStatus(deviceName, "Setting up GPU processing...");
         
         // Check for new binary processor compute shader first (most efficient)
         ComputeShader binaryComputeShader = Resources.Load<ComputeShader>("RawDepthToPointCloud");
@@ -131,7 +126,6 @@ public class CameraDataManager : MonoBehaviour
             depthToPointCloudGPU = new DepthToPointCloudGPU(deviceName);
             depthToPointCloudGPU.binaryDepthProcessor = binaryComputeShader;
             SetupStatusUI.UpdateDeviceStatus(deviceName, "[GPU-BINARY] Ultra-fast processing enabled");
-            SetupStatusUI.ShowStatus($"Binary GPU acceleration active for {deviceName}");
         }
         else
         {
@@ -141,13 +135,11 @@ public class CameraDataManager : MonoBehaviour
             {
                 depthMeshGenerator.depthPixelProcessor = computeShader;
                 SetupStatusUI.UpdateDeviceStatus(deviceName, "[GPU] Processing enabled");
-                SetupStatusUI.ShowStatus($"GPU acceleration active for {deviceName}");
             }
             else
             {
                 Debug.LogWarning($"No compute shaders found, using CPU processing: {deviceName}");
                 SetupStatusUI.UpdateDeviceStatus(deviceName, "[CPU] Processing (fallback)");
-                SetupStatusUI.ShowStatus($"Using CPU processing for {deviceName}");
             }
         }
         
@@ -192,7 +184,6 @@ public class CameraDataManager : MonoBehaviour
         {
             Debug.LogError($"Failed to get depth to color transform for {serial}");
             SetupStatusUI.UpdateDeviceStatus(deviceName, "ERROR: Transform failed");
-            SetupStatusUI.ShowStatus($"Failed to setup transforms for {deviceName}");
             return;
         }
         
@@ -203,8 +194,6 @@ public class CameraDataManager : MonoBehaviour
         // Set reasonable defaults for timeline support without expensive counting
         totalFrameCount = -1; // Unknown, will be estimated
         
-        // Initialize cached parsers for timeline scrubbing
-        InitializeCachedParsers();
         
         SetupStatusUI.UpdateDeviceStatus(deviceName, "Ready - waiting for first frame");
         SetupStatusUI.ShowStatus($"Setup complete for {deviceName}");
@@ -215,40 +204,11 @@ public class CameraDataManager : MonoBehaviour
         // Auto-load first frame on startup (disabled - MultiCamPointCloudManager handles this)
         if (autoLoadFirstFrame && !firstFrameProcessed)
         {
-            ProcessNextFrame();
+            SeekToFrame(0);
             autoLoadFirstFrame = false; // Prevent auto-loading again
         }
-        
-        // Check for right arrow key press to advance to next frame (individual camera control)
-        if (Keyboard.current != null && Keyboard.current.rightArrowKey.wasPressedThisFrame)
-        {
-            ProcessNextFrame();
-        }
     }
 
-    private void ProcessNextFrame()
-    {
-        while (true)
-        {
-            // Try to process a synchronized frame
-            bool success = ProcessFrameWithParsers(depthParser, colorParser, showStatus: true);
-            if (success)
-            {
-                // Successfully processed a frame, exit the loop
-                break;
-            }
-            
-            // Frame wasn't synchronized, skip records to find sync
-            bool hasDepthTs = depthParser.PeekNextTimestamp(out ulong depthTs);
-            bool hasColorTs = colorParser.PeekNextTimestamp(out ulong colorTs);
-            if (!hasDepthTs || !hasColorTs) break;
-
-            long delta = (long)depthTs - (long)colorTs;
-            
-            if (delta < 0) depthParser.ParseNextRecord();
-            else colorParser.ParseNextRecord();
-        }
-    }
 
 
     private float LoadDepthBias()
@@ -301,10 +261,9 @@ public class CameraDataManager : MonoBehaviour
         
         try
         {
-            bool success = SeekToTarget(
-                (timestamp, currentFrame) => currentFrame >= frameIndex,
-                $"Seeked to frame {frameIndex}"
-            );
+            // Convert frame index to timestamp for unified seeking
+            ulong targetTimestamp = GetTimestampForFrame(frameIndex);
+            bool success = SeekToTimestampInternal(targetTimestamp);
             
             if (success)
             {
@@ -323,6 +282,7 @@ public class CameraDataManager : MonoBehaviour
     
     public void ResetToFirstFrame()
     {
+        Debug.Log("Reset To First Frame");
         SeekToFrame(0);
     }
     
@@ -330,10 +290,8 @@ public class CameraDataManager : MonoBehaviour
     {
         try
         {
-            bool success = SeekToTarget(
-                (timestamp, currentFrame) => timestamp >= targetTimestamp,
-                $"Seeked to timestamp {targetTimestamp}"
-            );
+            Debug.Log($"{deviceName}: Seek to timestampp{targetTimestamp}");
+            bool success = SeekToTimestampInternal(targetTimestamp);
             
             if (!success)
             {
@@ -352,14 +310,14 @@ public class CameraDataManager : MonoBehaviour
         
         try
         {
-            if (cachedDepthParser == null || cachedColorParser == null)
+            if (depthParser == null || colorParser == null)
             {
-                Debug.LogError("Cached parsers not initialized");
+                Debug.LogError("Parsers not initialized");
                 return 0;
             }
             
-            // Reset cached parsers to beginning
-            ResetCachedParsers();
+            // Reset parsers to beginning
+            ResetParsers();
             
             int currentFrame = 0;
             // Synchronization tolerance is now handled by SensorSynchronizer
@@ -367,7 +325,7 @@ public class CameraDataManager : MonoBehaviour
             while (currentFrame <= frameIndex)
             {
                 // Check synchronization using unified method
-                bool synchronized = CheckSynchronization(cachedDepthParser, cachedColorParser, out ulong depthTs, out ulong colorTs, out long delta);
+                bool synchronized = CheckSynchronization(depthParser, colorParser, out ulong depthTs, out ulong colorTs, out long delta);
                 if (!synchronized && depthTs == 0 && colorTs == 0) break; // No more data
                 
                 if (synchronized)
@@ -378,8 +336,8 @@ public class CameraDataManager : MonoBehaviour
                     }
                     
                     // Skip to next frame
-                    cachedDepthParser.SkipCurrentRecord();
-                    cachedColorParser.SkipCurrentRecord();
+                    depthParser.SkipCurrentRecord();
+                    colorParser.SkipCurrentRecord();
                     currentFrame++;
                 }
                 else
@@ -387,11 +345,11 @@ public class CameraDataManager : MonoBehaviour
                     // Skip the earlier timestamp to catch up
                     if (delta < 0)
                     {
-                        cachedDepthParser.SkipCurrentRecord();
+                        depthParser.SkipCurrentRecord();
                     }
                     else
                     {
-                        cachedColorParser.SkipCurrentRecord();
+                        colorParser.SkipCurrentRecord();
                     }
                 }
             }
@@ -444,101 +402,91 @@ public class CameraDataManager : MonoBehaviour
         return currentFrameIndex;
     }
     
-    private void InitializeCachedParsers()
-    {
-        string devicePath = Path.Combine(dir, "dataset", hostname, deviceName);
-        string depthFilePath = Path.Combine(devicePath, "camera_depth");
-        string colorFilePath = Path.Combine(devicePath, "camera_color");
-        
-        cachedDepthParser = (RcstSensorDataParser)SensorDataParserFactory.Create(depthFilePath);
-        cachedColorParser = (RcsvSensorDataParser)SensorDataParserFactory.Create(colorFilePath);
-        
-        if (cachedDepthParser == null || cachedColorParser == null)
-        {
-            Debug.LogError("Failed to initialize cached parsers for timeline scrubbing");
-        }
-        else
-        {
-            SetupStatusUI.UpdateDeviceStatus(deviceName, "Cached parsers initialized for timeline scrubbing");
-        }
-    }
-    
-    private void ResetCachedParsers()
+    private void ResetParsers()
     {
         // Reset parsers to beginning by recreating them (since we don't have a Reset method)
-        if (cachedDepthParser != null && cachedColorParser != null)
+        if (depthParser != null && colorParser != null)
         {
-            cachedDepthParser.Dispose();
-            cachedColorParser.Dispose();
-            InitializeCachedParsers();
+            depthParser.Dispose();
+            colorParser.Dispose();
+
+            string devicePath = Path.Combine(dir, "dataset", hostname, deviceName);
+            string depthFilePath = Path.Combine(devicePath, "camera_depth");
+            string colorFilePath = Path.Combine(devicePath, "camera_color");
+
+            depthParser = (RcstSensorDataParser)SensorDataParserFactory.Create(depthFilePath, deviceName);
+            colorParser = (RcsvSensorDataParser)SensorDataParserFactory.Create(colorFilePath, deviceName);
         }
     }
     
-    // Unified seeking logic to eliminate code duplication
-    private bool SeekToTarget(System.Func<ulong, int, bool> shouldStop, string logContext)
+    
+    // Simplified timestamp-only seeking logic
+    private bool SeekToTimestampInternal(ulong targetTimestamp)
     {
-        if (cachedDepthParser == null || cachedColorParser == null)
+        if (depthParser == null || colorParser == null)
         {
-            Debug.LogError("Cached parsers not initialized");
+            Debug.LogError("Parsers not initialized");
             return false;
         }
-        
-        // Reset cached parsers to beginning
-        ResetCachedParsers();
-        
-        int currentFrame = 0;
-        // Synchronization tolerance is now handled by SensorSynchronizer
+
+        // Reset parsers to beginning
+        ResetParsers();
         
         while (true)
         {
             // Check synchronization using unified method
-            bool synchronized = CheckSynchronization(cachedDepthParser, cachedColorParser, out ulong depthTs, out ulong colorTs, out long delta);
+            bool synchronized = CheckSynchronization(depthParser, colorParser, out ulong depthTs, out ulong colorTs, out long delta);
             if (!synchronized && depthTs == 0 && colorTs == 0) break; // No more data
             
             if (synchronized)
             {   
-                SetupStatusUI.ShowStatus($"Seeking {deviceName}: depthTs={depthTs}, colorTs={colorTs}, delta={delta}, frame={currentFrame}");
-                // Check if we should stop at this synchronized frame
-                if (shouldStop(depthTs, currentFrame))
+                
+                // Check if we've reached or passed the target timestamp
+                if (depthTs >= targetTimestamp)
                 {
+                    SetupStatusUI.ShowStatus($"Seeking {deviceName}: depthTs={depthTs}, colorTs={colorTs}, delta={delta}");
                     // Process the current frame
-                    bool success = ProcessFrameWithParsers(cachedDepthParser, cachedColorParser, showStatus: true);
+                    bool success = ProcessFrameWithParsers(depthParser, colorParser, depthTs, showStatus: false);
                     if (success)
                     {
-                        Debug.Log($"{deviceName}: {logContext} to frame {currentFrame} at timestamp {depthTs}");
+                        Debug.Log($"{deviceName}: Seeked to timestamp {targetTimestamp} (actual: {depthTs})");
                         return true;
                     }
-                    return false;
+                    else
+                    {
+                        Debug.LogWarning($"{deviceName}: Failed to process frame at timestamp {targetTimestamp} (actual: {depthTs})");
+                        return false;
+                    }
                 }
-                
+
                 // Skip to next synchronized frame pair
-                cachedDepthParser.SkipCurrentRecord();
-                cachedColorParser.SkipCurrentRecord();
-                currentFrame++;
-            }
-            else if (delta < 0)
-            {
-                SetupStatusUI.ShowStatus("[WARNING] skipping depth frame to catch up...");
-                // Skip depth record without parsing
-                cachedDepthParser.SkipCurrentRecord();
+                // SetupStatusUI.ShowStatus($"Skipping {deviceName}: synchronized frame at {depthTs} to target {targetTimestamp}");
+                depthParser.SkipCurrentRecord();
+                colorParser.SkipCurrentRecord();
             }
             else
             {
-                SetupStatusUI.ShowStatus("[WARNING] skipping color frame to catch up...");
-                // Skip color record without parsing
-                cachedColorParser.SkipCurrentRecord();
+                // Skip the earlier timestamp to catch up
+                if (delta < 0)
+                {
+                    depthParser.SkipCurrentRecord();
+                }
+                else
+                {
+                    colorParser.SkipCurrentRecord();
+                }
             }
         }
         
-        Debug.LogWarning($"{deviceName}: {logContext} failed - reached end of data");
         return false;
     }
+
     
     // Unified frame processing logic to eliminate code duplication  
-    private bool ProcessFrameWithParsers(RcstSensorDataParser depthParser, RcsvSensorDataParser colorParser, bool showStatus = false)
+    private bool ProcessFrameWithParsers(RcstSensorDataParser depthParser, RcsvSensorDataParser colorParser, ulong frameTimestamp, bool showStatus = false)
     {
         // Synchronization tolerance is now handled by SensorSynchronizer
-        
+        // Debug.Log($"Processing frame at timestamp {frameTimestamp} for {deviceName}");
         if (showStatus) SetupStatusUI.ShowStatus($"Processing frame for {deviceName}...");
         
         // Synchronization is already checked in SeekToTarget before calling this method
@@ -581,6 +529,9 @@ public class CameraDataManager : MonoBehaviour
                 }
             }
 
+            // Store the current timestamp for efficient leading camera detection
+            currentTimestamp = frameTimestamp;
+            
             if (showStatus)
             {
                 SetupStatusUI.ShowStatus($"Processed frame for {deviceName}");
@@ -605,7 +556,7 @@ public class CameraDataManager : MonoBehaviour
     {
         bool hasDepthTs = depthParser.PeekNextTimestamp(out depthTs);
         bool hasColorTs = colorParser.PeekNextTimestamp(out colorTs);
-        
+
         if (!hasDepthTs || !hasColorTs)
         {
             depthTs = 0;
@@ -613,16 +564,66 @@ public class CameraDataManager : MonoBehaviour
             delta = 0;
             return false;
         }
-        
+
         delta = (long)depthTs - (long)colorTs;
-        return Math.Abs(delta) <= 2_000;
+
+        // Calculate FPS-based synchronization threshold (use 25% of frame duration)
+        int fps = GetFpsFromHeader();
+        long syncThreshold;
+        if (fps > 0)
+        {
+            // 25% of frame duration in nanoseconds: (1,000,000,000 / fps) * 0.25
+            syncThreshold = (long)(250_000_000L / fps);
+        }
+        else
+        {
+            // Fallback to a reasonable default if FPS unavailable (assume 30 FPS)
+            syncThreshold = 8_333_333; // 25% of 33.33ms frame at 30 FPS
+        }
+
+        return Math.Abs(delta) <= syncThreshold;
     }
+    
+    // Public methods for synchronized frame navigation
+    public string GetDeviceName() => deviceName;
+    
+    public ulong GetCurrentTimestamp() => currentTimestamp;
+    
+    public bool PeekNextTimestamp(out ulong timestamp)
+    {
+        timestamp = 0;
+        if (depthParser == null) return false;
+        return depthParser.PeekNextTimestamp(out timestamp);
+    }
+    
+    // public bool NavigateToTimestamp(ulong targetTimestamp)
+    // {
+    //     try
+    //     {
+    //         // Use the ParseRecord method to seek to the target timestamp
+    //         bool depthSuccess = depthParser?.ParseRecord(targetTimestamp, optimizeForGPU: false) ?? false;
+    //         bool colorSuccess = colorParser?.ParseRecord(targetTimestamp, optimizeForGPU: false) ?? false;
+            
+    //         if (depthSuccess && colorSuccess)
+    //         {
+    //             // Process the synchronized frame
+    //             return ProcessFrameWithParsers(depthParser, colorParser, targetTimestamp, showStatus: false);
+    //         }
+            
+    //         return false;
+    //     }
+    //     catch (System.Exception ex)
+    //     {
+    //         Debug.LogError($"Error navigating to timestamp {targetTimestamp}: {ex.Message}");
+    //         return false;
+    //     }
+    // }
     
     void OnDestroy()
     {
         // Clean up resources
-        cachedDepthParser?.Dispose();
-        cachedColorParser?.Dispose();
+        depthParser?.Dispose();
+        colorParser?.Dispose();
         depthToPointCloudGPU?.Dispose();
     }
 }

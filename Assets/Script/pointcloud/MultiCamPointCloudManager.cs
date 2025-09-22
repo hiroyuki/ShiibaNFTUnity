@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Threading;
 using System.Collections.Concurrent;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using YamlDotNet.Serialization;
 using PointCloud;
 
@@ -14,6 +15,9 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     private string rootDirectory; // datasetを含むディレクトリ
 
     private List<GameObject> dataManagerObjects = new();
+    
+    // Frame navigation tracking
+    private int leadingCameraIndex = 0; // Index of camera that currently has the head timestamp
     
     // Async processing infrastructure
     private readonly List<CameraProcessor> cameraProcessors = new();
@@ -72,10 +76,6 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             SetupStatusUI.SetProgress(progress);
             // deviceType_serialNumber → 例: FemtoBolt_CL8F25300C6
             string deviceDirName = $"{device.deviceType}_{device.serialNumber}";
-            
-            // ALL CAMERAS ENABLED: Process all available cameras
-            Debug.Log($"Processing device: {deviceDirName}");
-
             string deviceDir = Path.Combine(hostDir, deviceDirName);
             string depthPath = Path.Combine(deviceDir, "camera_depth");
             string colorPath = Path.Combine(deviceDir, "camera_color");
@@ -89,8 +89,8 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                 // else
                 {
                     
-                    GameObject dataManagerObj = new GameObject("CameraDataManager_" + deviceDirName);
-                    var dataManager = dataManagerObj.AddComponent<CameraDataManager>();
+                    GameObject dataManagerObj = new GameObject("SingleCameraDataManager_" + deviceDirName);
+                    var dataManager = dataManagerObj.AddComponent<SingleCameraDataManager>();
                     dataManagerObj.transform.parent = this.transform;
                     SetPrivateField(dataManager, "dir", rootDirectory);                    // 例: /Volumes/MyDisk/CaptureSession/
                     SetPrivateField(dataManager, "hostname", Path.GetFileName(hostDir));  // 例: PAN-SHI
@@ -106,24 +106,131 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             deviceIndex++;
         }
         
-        SetupStatusUI.SetProgress(1f);
-        SetupStatusUI.ShowStatus($"Created {dataManagerObjects.Count} CameraDataManager instances");
-        Debug.Log($"CameraDataManager を {dataManagerObjects.Count} 個作成しました");
-        
         // Initialize async processing
         cancellationTokenSource = new CancellationTokenSource();
-        SetupStatusUI.ShowStatus("Async multi-camera processing ready");
+
+        SetupStatusUI.SetProgress(1f);
+        SetupStatusUI.ShowStatus($"SingleCameraDataManager を {dataManagerObjects.Count} 個作成しました");
         
         // Load first frame asynchronously after setup
         _ = LoadFirstFrameAsync();
     }
+    
+    void Update()
+    {
+        HandleSynchronizedFrameNavigation();
+    }
+    
+    private void HandleSynchronizedFrameNavigation()
+    {
+        if (Keyboard.current == null) return;
+        
+        // Right arrow: Navigate to next synchronized frame across all cameras
+        if (Keyboard.current.rightArrowKey.wasPressedThisFrame)
+        {
+            NavigateToNextSynchronizedFrame();
+        }
+        
+        // Left arrow: Navigate to previous synchronized frame across all cameras
+        if (Keyboard.current.leftArrowKey.wasPressedThisFrame)
+        {
+            NavigateToPreviousSynchronizedFrame();
+        }
+    }
+    
+    private void NavigateToNextSynchronizedFrame()
+    {
+        if (dataManagerObjects.Count == 0) return;
+        
+        // Find next synchronized timestamp from the leading camera
+        ulong nextTimestamp = FindNextSynchronizedTimestamp();
+        Debug.Log("Next synchronized timestamp: " + nextTimestamp + "   leadingCameraIndex=" + leadingCameraIndex);
+        if (nextTimestamp == 0)
+        {
+            Debug.Log("No more synchronized frames available");
+            return;
+        }
+        
+        // Navigate all cameras to this synchronized timestamp using unified method
+        _ = ProcessFrameAsync(nextTimestamp);
+    }
+    
+    private void NavigateToPreviousSynchronizedFrame()
+    {
+        // Note: This would require backward seeking which our parsers don't support
+        // For now, we'll show a warning and suggest using timeline control instead
+        Debug.LogWarning("Backward navigation not supported with current forward-only parsers. Use timeline controls for seeking backward.");
+    }
+    
+    private void UpdateLeadingCameraIndex()
+    {
+        int newLeadingIndex = 0;
+        ulong foremostTimestamp = ulong.MinValue;
+        
+        for (int i = 0; i < dataManagerObjects.Count; i++)
+        {
+            var dataManager = dataManagerObjects[i].GetComponent<SingleCameraDataManager>();
+            if (dataManager == null) continue;
+            
+            // Use stored current timestamp instead of peeking metadata
+            ulong timestamp = dataManager.GetCurrentTimestamp();
+            Debug.Log($"Checking camera index {i}: {dataManager.GetDeviceName()} with timestamp {timestamp}");
+            if (timestamp > foremostTimestamp)
+            {
+                foremostTimestamp = timestamp;
+                newLeadingIndex = i;
+            }
+        }
+        
+        if (newLeadingIndex != leadingCameraIndex)
+        {
+            leadingCameraIndex = newLeadingIndex;
+            var leadingCamera = dataManagerObjects[leadingCameraIndex].GetComponent<SingleCameraDataManager>();
+            Debug.Log($"Leading camera updated to index {leadingCameraIndex}: {leadingCamera?.GetDeviceName()} (head timestamp: {foremostTimestamp})");
+        }
+    }
+    
+    private ulong FindNextSynchronizedTimestamp()
+    {
+        try
+        {
+            // Get the next timestamp from the current leading camera
+            if (leadingCameraIndex >= dataManagerObjects.Count)
+            {
+                Debug.LogError($"Leading camera index {leadingCameraIndex} is out of range");
+                return 0;
+            }
+            
+            var leadingCamera = dataManagerObjects[leadingCameraIndex].GetComponent<SingleCameraDataManager>();
+            if (leadingCamera == null)
+            {
+                Debug.LogError($"Leading camera at index {leadingCameraIndex} is null");
+                return 0;
+            }
+            
+            Debug.Log($"Finding next synchronized timestamp from leading camera: {leadingCamera.GetDeviceName()}, current timestamp: {leadingCamera.GetCurrentTimestamp()}");
+            // Try to get the next frame timestamp from the leading camera
+            if (leadingCamera.PeekNextTimestamp(out ulong timestamp))
+            {
+                return timestamp;
+            }
+            
+            return 0; // No more data
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"Error finding next synchronized timestamp: {ex.Message}");
+            return 0;
+        }
+    }
+    
     
     // Async first frame loading
     private async Task LoadFirstFrameAsync()
     {
         await Task.Delay(100); // Small delay to ensure all setup is complete
         
-        SetupStatusUI.ShowStatus("Loading first frame across all cameras...");
+        SetupStatusUI.ShowStatus("LOADING FIRST FRAME ACROSS ALL CAMERAS...");
         
         try
         {
@@ -168,7 +275,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             // Create tasks for all cameras to run in parallel
             var processingTasks = dataManagerObjects.Select(async (dataManagerObj, index) =>
             {
-                var dataManager = dataManagerObj.GetComponent<CameraDataManager>();
+                var dataManager = dataManagerObj.GetComponent<SingleCameraDataManager>();
                 if (dataManager != null)
                 {
                     try
@@ -190,13 +297,14 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                 return false;
             }).ToArray();
             
-            Debug.Log($"Started {processingTasks.Length} camera processing tasks in parallel");
-            
             // Wait for all cameras to complete
             var results = await Task.WhenAll(processingTasks);
             int successCount = results.Count(success => success);
             
             SetupStatusUI.ShowStatus($"Parallel processing complete: {successCount}/{dataManagerObjects.Count} cameras succeeded");
+            
+            // Update leading camera index after processing for next navigation
+            UpdateLeadingCameraIndex();
         }
         catch (System.Exception ex)
         {
@@ -215,22 +323,32 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         // Use first data manager as reference for timestamp calculation
         if (dataManagerObjects.Count > 0)
         {
-            var dataManager = dataManagerObjects[0].GetComponent<CameraDataManager>();
+            var dataManager = dataManagerObjects[0].GetComponent<SingleCameraDataManager>();
             if (dataManager != null)
             {
                 return dataManager.GetTimestampForFrame(frameIndex);
             }
         }
         
-        // Fallback: estimate based on 30 FPS (33.33ms per frame)
-        return (ulong)(frameIndex * 33333333); // nanoseconds
+        // Fallback: estimate based on FPS from header
+        int fps = GetFpsFromHeader();
+        if (fps > 0)
+        {
+            ulong nanosecondsPerFrame = (ulong)(1_000_000_000L / fps);
+            return (ulong)frameIndex * nanosecondsPerFrame;
+        }
+        else
+        {
+            Debug.LogError($"Cannot estimate timestamp for frame {frameIndex}: FPS not available from any camera headers");
+            return 0; // Error case - cannot estimate without FPS
+        }
     }
     
     public void ResetToFirstFrame()
     {
         foreach (var dataManagerObj in dataManagerObjects)
         {
-            var dataManager = dataManagerObj.GetComponent<CameraDataManager>();
+            var dataManager = dataManagerObj.GetComponent<SingleCameraDataManager>();
             if (dataManager != null)
             {
                 dataManager.ResetToFirstFrame();
@@ -243,7 +361,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         // Return frame count from first data manager (assuming all have same length)
         if (dataManagerObjects.Count > 0)
         {
-            var dataManager = dataManagerObjects[0].GetComponent<CameraDataManager>();
+            var dataManager = dataManagerObjects[0].GetComponent<SingleCameraDataManager>();
             return dataManager?.GetTotalFrameCount() ?? -1;
         }
         return -1;
@@ -254,7 +372,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         // Return FPS from first data manager
         if (dataManagerObjects.Count > 0)
         {
-            var dataManager = dataManagerObjects[0].GetComponent<CameraDataManager>();
+            var dataManager = dataManagerObjects[0].GetComponent<SingleCameraDataManager>();
             if (dataManager != null)
             {
                 int fps = dataManager.GetFpsFromHeader();
@@ -275,9 +393,9 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         return -1;
     }
 
-    private void SetPrivateField(CameraDataManager instance, string fieldName, object value)
+    private void SetPrivateField(SingleCameraDataManager instance, string fieldName, object value)
     {
-        var field = typeof(CameraDataManager).GetField(fieldName, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var field = typeof(SingleCameraDataManager).GetField(fieldName, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         if (field != null)
             field.SetValue(instance, value);
         else
