@@ -119,6 +119,12 @@ public class SensorDevice
         return this;
     }
 
+    public bool PeekNextTimestamp(out ulong timestamp)
+    {
+        timestamp = 0;
+        if (depthParser == null) return false;
+        return depthParser.PeekNextTimestamp(out timestamp);
+    }
         
     public ulong GetTimestampForFrame(int frameIndex)
     {
@@ -210,13 +216,6 @@ public class SensorDevice
             depthParser = (RcstSensorDataParser)SensorDataParserFactory.Create(depthFilePath, deviceName);
             colorParser = (RcsvSensorDataParser)SensorDataParserFactory.Create(colorFilePath, deviceName);
         }
-    }
-
-    public bool PeekNextTimestamp(out ulong timestamp)
-    {
-        timestamp = 0;
-        if (depthParser == null) return false;
-        return depthParser.PeekNextTimestamp(out timestamp);
     }
 
     // Unified synchronization logic

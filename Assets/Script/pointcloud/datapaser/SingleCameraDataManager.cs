@@ -18,14 +18,14 @@ public class SingleCameraDataManager : MonoBehaviour
     private SensorDevice device;
 
     private bool firstFrameProcessed = false;
-    private bool autoLoadFirstFrame = false; // Disabled - MultiCamPointCloudManager handles first frame
+    private bool autoLoadFirstFrame = true; // Enabled - each manager loads its own first frame
     
     // Store current timestamp for efficient leading camera detection
     private ulong currentTimestamp = 0;
     private ExtrinsicsLoader extrisics;
     
     // Timeline scrubbing support
-    private int currentFrameIndex = 0;
+    private int currentFrameIndex = -1;
     private int totalFrameCount = -1;
 
     public void Initialize(string dir, string hostname, string deviceName)
@@ -236,7 +236,6 @@ public class SingleCameraDataManager : MonoBehaviour
            // Simplified timestamp-only seeking logic
     public bool SeekToTimestampInternal(ulong targetTimestamp)
     {
-        Debug.LogWarning($"{device.deviceName}: Seeking to timestamp {targetTimestamp}");
         // Reset parsers to beginning
         device.ResetParsers();
         
@@ -244,7 +243,6 @@ public class SingleCameraDataManager : MonoBehaviour
         {
             // Check synchronization using unified method
             bool synchronized = device.CheckSynchronization(out ulong depthTs, out ulong colorTs, out long delta);
-            Debug.LogWarning($"{device.deviceName}: Checking synchronization: depthTs={depthTs}, colorTs={colorTs}, delta={delta}, synchronized={synchronized}");
             if (!synchronized && depthTs == 0 && colorTs == 0) break; // No more data
             
             if (synchronized)
@@ -253,10 +251,6 @@ public class SingleCameraDataManager : MonoBehaviour
                 // Check if we've reached or passed the target timestamp
                 if (depthTs >= targetTimestamp)
                 {
-                    if (delta > 1000000) // 1 second tolerance
-                    {
-                    Debug.LogWarning($"{device.deviceName}: Large timestamp delta detected: {delta} (depthTs={depthTs}, colorTs={colorTs}) target={targetTimestamp}");
-                    }
                     SetupStatusUI.ShowStatus($"Seeking {device.deviceName}: depthTs={depthTs}, colorTs={colorTs}, delta={delta}");
                     // Process the current frame
                     bool success = ProcessFrameWithParsers(depthTs, showStatus: true);
@@ -279,12 +273,12 @@ public class SingleCameraDataManager : MonoBehaviour
                 // Skip the earlier timestamp to catch up
                 if (delta < 0)
                 {
-                    Debug.LogWarning($"{device.deviceName}: Depth is behind color by {-delta} ticks, skipping depth frame depthTs={depthTs}, colorTs={colorTs}");
+                    // Debug.LogWarning($"{device.deviceName}: Depth is behind color by {-delta} ticks, skipping depth frame depthTs={depthTs}, colorTs={colorTs}");
                     device.SkipDepthRecord();
                 }
                 else
                 {
-                    Debug.LogWarning($"{device.deviceName}: Color is behind depth by {-delta} ticks, skipping color frame depthTs={depthTs}, colorTs={colorTs}");
+                    // Debug.LogWarning($"{device.deviceName}: Color is behind depth by {-delta} ticks, skipping color frame depthTs={depthTs}, colorTs={colorTs}");
                     device.SkipColorRecord();
                 }
             }

@@ -1,9 +1,8 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
-using System.Threading;
 using System.Collections.Concurrent;
+using System.Threading;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using YamlDotNet.Serialization;
@@ -110,10 +109,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         cancellationTokenSource = new CancellationTokenSource();
 
         SetupStatusUI.SetProgress(1f);
-        SetupStatusUI.ShowStatus($"SingleCameraDataManager を {dataManagerObjects.Count} 個作成しました");
-        
-        // Load first frame asynchronously after setup
-        _ = LoadFirstFrameAsync();
+        SetupStatusUI.ShowStatus($"SingleCameraDataManager を {dataManagerObjects.Count} 個作成しました - first frames will load individually");
     }
     
     void Update()
@@ -141,7 +137,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     private void NavigateToNextSynchronizedFrame()
     {
         if (dataManagerObjects.Count == 0) return;
-        
+
         // Find next synchronized timestamp from the leading camera
         ulong nextTimestamp = FindNextSynchronizedTimestamp();
         Debug.Log("Next synchronized timestamp: " + nextTimestamp + "   leadingCameraIndex=" + leadingCameraIndex);
@@ -150,9 +146,9 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             Debug.Log("No more synchronized frames available");
             return;
         }
-        
+
         // Navigate all cameras to this synchronized timestamp using unified method
-        _ = ProcessFrameAsync(nextTimestamp);
+        ProcessFrame(nextTimestamp);
     }
     
     private void NavigateToPreviousSynchronizedFrame()
@@ -220,93 +216,60 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             return 0;
         }
     }
-    
-    
-    // Async first frame loading
-    private async Task LoadFirstFrameAsync()
-    {
-        await Task.Delay(100); // Small delay to ensure all setup is complete
-        
-        SetupStatusUI.ShowStatus("LOADING FIRST FRAME ACROSS ALL CAMERAS...");
-        
-        try
-        {
-            // Load frame 0 (first frame) across all cameras
-            await ProcessFrameAsync(GetTargetTimestamp(0));
-            SetupStatusUI.ShowStatus($"First frame loaded successfully across {cameraProcessors.Count} cameras");
-            Debug.Log("Multi-camera first frame loading completed");
-        }
-        catch (System.Exception ex)
-        {
-            Debug.LogError($"Failed to load first frame: {ex.Message}");
-            SetupStatusUI.ShowStatus("ERROR: First frame loading failed");
-        }
-    }
 
-    // Timeline control methods - now async for parallel processing
-    public async void SeekToFrame(int frameIndex)
+    // Timeline control methods - simple synchronous processing
+    public void SeekToFrame(int frameIndex)
     {
-        Debug.Log($"MultiCameraPointCloudManager.SeekToFrame: {frameIndex} (ASYNC)");
-        
+        Debug.Log($"MultiCameraPointCloudManager.SeekToFrame: {frameIndex}");
+
         // Convert frame index to target timestamp for synchronized seeking
         ulong targetTimestamp = GetTargetTimestamp(frameIndex);
-        
-        await ProcessFrameAsync(targetTimestamp);
+
+        ProcessFrame(targetTimestamp);
     }
     
-    // True parallel frame processing with main thread coordination
-    public async Task ProcessFrameAsync(ulong targetTimestamp)
+    // Simple synchronous frame processing for all cameras
+    public void ProcessFrame(ulong targetTimestamp)
     {
         if (isProcessing)
         {
             Debug.LogWarning("Frame processing already in progress, skipping...");
             return;
         }
-        
+
         isProcessing = true;
-        
+
         try
         {
-            SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} across {dataManagerObjects.Count} cameras in parallel...");
-            
-            // Create tasks for all cameras to run in parallel
-            var processingTasks = dataManagerObjects.Select(async (dataManagerObj, index) =>
+            SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} across {dataManagerObjects.Count} cameras...");
+
+            int successCount = 0;
+            foreach (var dataManagerObj in dataManagerObjects)
             {
                 var dataManager = dataManagerObj.GetComponent<SingleCameraDataManager>();
                 if (dataManager != null)
                 {
                     try
                     {
-                        // Run on main thread using ConfigureAwait to maintain Unity context
-                        await Task.Run(() => { }); // Small async delay
-                        await Task.Yield(); // Ensure we're back on main thread
-                        
-                        // Call the existing SeekToTimestamp method on main thread
                         dataManager.SeekToTimestamp(targetTimestamp);
-                        return true;
+                        successCount++;
                     }
                     catch (System.Exception ex)
                     {
                         Debug.LogError($"Failed to process camera {dataManagerObj.name}: {ex.Message}");
-                        return false;
                     }
                 }
-                return false;
-            }).ToArray();
-            
-            // Wait for all cameras to complete
-            var results = await Task.WhenAll(processingTasks);
-            int successCount = results.Count(success => success);
-            
-            SetupStatusUI.ShowStatus($"Parallel processing complete: {successCount}/{dataManagerObjects.Count} cameras succeeded");
-            
+            }
+
+            SetupStatusUI.ShowStatus($"Frame processing complete: {successCount}/{dataManagerObjects.Count} cameras processed successfully");
+
             // Update leading camera index after processing for next navigation
             UpdateLeadingCameraIndex();
         }
         catch (System.Exception ex)
         {
-            Debug.LogError($"Error in parallel frame processing: {ex.Message}");
-            SetupStatusUI.ShowStatus($"ERROR: Parallel frame processing failed");
+            Debug.LogError($"Error in ProcessFrame: {ex.Message}");
+            SetupStatusUI.ShowStatus("ERROR: Frame processing failed");
         }
         finally
         {
