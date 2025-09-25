@@ -18,11 +18,11 @@ public class BoundingVolumeDebugController : MonoBehaviour
     
     void Start()
     {
-        pointCloudManager = FindObjectOfType<MultiCameraPointCloudManager>();
+        pointCloudManager = FindFirstObjectByType<MultiCameraPointCloudManager>();
         meshRenderer = GetComponent<MeshRenderer>();
         
         lastShowAllPoints = showAllPoints;
-        DepthMeshGenerator.showAllPoints = showAllPoints;
+        PointCloudSettings.showAllPoints = showAllPoints;
         
         UpdateVisualFeedback();
     }
@@ -33,7 +33,7 @@ public class BoundingVolumeDebugController : MonoBehaviour
         if (showAllPoints != lastShowAllPoints)
         {
             lastShowAllPoints = showAllPoints;
-            DepthMeshGenerator.showAllPoints = showAllPoints;
+            PointCloudSettings.showAllPoints = showAllPoints;
 
             Debug.Log($"Bounding volume culling: {(showAllPoints ? "DISABLED (showing all points)" : "ENABLED")}");
 

@@ -22,7 +22,7 @@ public class TimelineController : MonoBehaviour
         // Auto-find timeline if not assigned
         if (timeline == null && findTimelineAutomatically)
         {
-            timeline = FindObjectOfType<PlayableDirector>();
+            timeline = FindFirstObjectByType<PlayableDirector>();
             if (timeline != null && showDebugLogs)
             {
                 Debug.Log($"TimelineController: Auto-found Timeline: {timeline.gameObject.name}");

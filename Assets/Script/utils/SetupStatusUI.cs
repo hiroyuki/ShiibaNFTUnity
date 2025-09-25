@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections.Generic;
+using System.Linq;
 using TMPro;
 
 public class SetupStatusUI : MonoBehaviour
@@ -26,7 +27,7 @@ public class SetupStatusUI : MonoBehaviour
     
     private static SetupStatusUI instance;
     private List<string> statusMessages = new List<string>();
-    private Dictionary<string, string> deviceStatus = new Dictionary<string, string>();
+    private List<SensorDevice> deviceStatusList = new List<SensorDevice>();
     private bool firstFrameProcessed = false;
     private float hideTimer = 0f;
     private bool shouldAutoHide = false;
@@ -38,7 +39,7 @@ public class SetupStatusUI : MonoBehaviour
             if (instance == null)
             {
                 // Try to find existing instance
-                instance = FindObjectOfType<SetupStatusUI>();
+                instance = FindFirstObjectByType<SetupStatusUI>();
                 
                 // Create one if none exists
                 if (instance == null)
@@ -61,7 +62,7 @@ public class SetupStatusUI : MonoBehaviour
             // Create UI if not already set up
             if (statusCanvas == null)
             {
-                // CreateUI();
+                CreateUI();
             }
         }
         else if (instance != this)
@@ -182,10 +183,18 @@ public class SetupStatusUI : MonoBehaviour
         Instance.UpdateDisplay();
     }
     
-    public static void UpdateDeviceStatus(string deviceName, string status)
+    public static void UpdateDeviceStatus(SensorDevice device)
     {
-        // Debug.Log("## Device Status: " + $"[{System.DateTime.Now:HH:mm:ss.fff}] {deviceName} - {status}");
-        Instance.deviceStatus[deviceName] = status;
+        Debug.Log("## Device Status: " + $"[{System.DateTime.Now:HH:mm:ss.fff}] {device.deviceName} - {device.GetDisplayString()}");
+        var existingIndex = Instance.deviceStatusList.FindIndex(d => d.deviceName == device.deviceName);
+        if (existingIndex >= 0)
+        {
+            Instance.deviceStatusList[existingIndex] = device;
+        }
+        else
+        {
+            Instance.deviceStatusList.Add(device);
+        }
         Instance.UpdateDisplay();
     }
     
@@ -210,18 +219,18 @@ public class SetupStatusUI : MonoBehaviour
         if (statusText != null && detailsText != null)
         {
             // Main status - show device summary
-            int totalDevices = deviceStatus.Count;
+            int totalDevices = deviceStatusList.Count;
             int activeDevices = 0;
             int gpuDevices = 0;
             int cpuDevices = 0;
-            
-            foreach (var status in deviceStatus.Values)
+
+            foreach (var device in deviceStatusList)
             {
-                if (status.Contains("[OK] Active"))
+                if (device.statusType == DeviceStatusType.Active)
                     activeDevices++;
-                if (status.Contains("[GPU]"))
+                if (device.processingType == ProcessingType.GPU || device.processingType == ProcessingType.GPU_Binary)
                     gpuDevices++;
-                if (status.Contains("[CPU]"))
+                if (device.processingType == ProcessingType.CPU)
                     cpuDevices++;
             }
             
@@ -236,9 +245,9 @@ public class SetupStatusUI : MonoBehaviour
             
             // Device details
             string details = "Device Status:\n";
-            foreach (var kvp in deviceStatus)
+            foreach (var device in deviceStatusList)
             {
-                details += $"• {kvp.Key}: {kvp.Value}\n";
+                details += $"• {device.deviceName}: {device.GetDisplayString()}\n";
             }
             
             if (statusMessages.Count > 1)

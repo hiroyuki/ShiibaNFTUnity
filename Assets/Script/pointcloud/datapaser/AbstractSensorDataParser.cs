@@ -86,5 +86,5 @@ public abstract class AbstractSensorDataParser : ISensorDataParser, System.IDisp
     /// </summary>
     public abstract bool SkipCurrentRecord();
 
-    // 将来的に共通ヘルパー関数などをここに追加できます
+
 }

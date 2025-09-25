@@ -8,17 +8,19 @@ using YamlDotNet.Serialization;
 public class RcsvSensorDataParser : AbstractSensorDataParser
 {
     public override string FormatIdentifier => "RCSV";
-    public ulong IndexOffset { get; private set; }
-    public ulong Unused { get; private set; }
-    public uint HeaderSize { get; private set; }
-    public string HeaderText { get; private set; }
-    public byte[] CurrentColorBytes { get; private set; }
-    public Color32[] CurrentColorPixels { get; private set; }
+    private ulong IndexOffset { get; set; }
+    private ulong Unused { get; set; }
+    private uint HeaderSize { get; set; }
+    private string HeaderText { get; set; }
+    private byte[] CurrentColorBytes { get; set; }
+    private Color32[] CurrentColorPixels { get; set; }
 
     private Texture2D _decodedTexture;
     
     // Direct texture access for GPU processing (avoids Color32[] conversion)
     public Texture2D GetLatestColorTexture() => _decodedTexture;
+
+    public Color32[] GetLatestColorPixels() => CurrentColorPixels;
 
     public RcsvSensorDataParser(BinaryReader reader, string deviceName = "Unknown Device") : base(reader, deviceName) { }
     ~RcsvSensorDataParser() => Dispose();
@@ -66,15 +68,12 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
         int imageSize = sizeTypeBytes == 2
             ? BitConverter.ToUInt16(headerAndSize, metadataSize)
             : BitConverter.ToInt32(headerAndSize, metadataSize);
-        SetupStatusUI.UpdateDeviceStatus(deviceName, "Reading color image data...");
         CurrentColorBytes = reader.ReadBytes(imageSize);
         if (CurrentColorBytes.Length != imageSize) return false;
 
-        SetupStatusUI.UpdateDeviceStatus(deviceName, "Decoding color image...");
         if (_decodedTexture == null)
             _decodedTexture = new Texture2D(2, 2, TextureFormat.RGB24, false);
 
-        SetupStatusUI.UpdateDeviceStatus(deviceName, "Loading color image...");
         if (_decodedTexture.LoadImage(CurrentColorBytes))
         {
             if (optimizeForGPU)

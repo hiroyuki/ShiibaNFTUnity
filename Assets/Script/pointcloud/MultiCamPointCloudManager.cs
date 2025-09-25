@@ -30,7 +30,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         SetupStatusUI.ShowStatus("Starting Multi-Camera Point Cloud Manager...");
         
         // Disable timeline auto-play
-        var playableDirector = FindObjectOfType<UnityEngine.Playables.PlayableDirector>();
+        var playableDirector = FindFirstObjectByType<UnityEngine.Playables.PlayableDirector>();
         if (playableDirector != null && playableDirector.playOnAwake)
         {
             playableDirector.Stop();
@@ -82,7 +82,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
             if (File.Exists(depthPath) && File.Exists(colorPath))
             {
-                // if (deviceDirName != "FemtoBolt_CL8F25300F0")
+                // if (deviceDirName != "FemtoBolt_CL8F253004Z")
                 // {
                 //     Debug.Log($"スキップ: {deviceDirName}");
                 // }
@@ -92,9 +92,9 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                     GameObject dataManagerObj = new GameObject("SingleCameraDataManager_" + deviceDirName);
                     var dataManager = dataManagerObj.AddComponent<SingleCameraDataManager>();
                     dataManagerObj.transform.parent = this.transform;
-                    SetPrivateField(dataManager, "dir", rootDirectory);                    // 例: /Volumes/MyDisk/CaptureSession/
-                    SetPrivateField(dataManager, "hostname", Path.GetFileName(hostDir));  // 例: PAN-SHI
-                    SetPrivateField(dataManager, "deviceName", deviceDirName);            // 例: FemtoBolt_CL8F25300C6
+
+                    // Initialize the data manager with required parameters
+                    dataManager.Initialize(rootDirectory, Path.GetFileName(hostDir), deviceDirName);
                     dataManagerObjects.Add(dataManagerObj);
                     
                     // Create async processor for this camera
@@ -174,7 +174,6 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             
             // Use stored current timestamp instead of peeking metadata
             ulong timestamp = dataManager.GetCurrentTimestamp();
-            Debug.Log($"Checking camera index {i}: {dataManager.GetDeviceName()} with timestamp {timestamp}");
             if (timestamp > foremostTimestamp)
             {
                 foremostTimestamp = timestamp;
@@ -186,7 +185,6 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         {
             leadingCameraIndex = newLeadingIndex;
             var leadingCamera = dataManagerObjects[leadingCameraIndex].GetComponent<SingleCameraDataManager>();
-            Debug.Log($"Leading camera updated to index {leadingCameraIndex}: {leadingCamera?.GetDeviceName()} (head timestamp: {foremostTimestamp})");
         }
     }
     
@@ -208,7 +206,6 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                 return 0;
             }
             
-            Debug.Log($"Finding next synchronized timestamp from leading camera: {leadingCamera.GetDeviceName()}, current timestamp: {leadingCamera.GetCurrentTimestamp()}");
             // Try to get the next frame timestamp from the leading camera
             if (leadingCamera.PeekNextTimestamp(out ulong timestamp))
             {
@@ -375,7 +372,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             var dataManager = dataManagerObjects[0].GetComponent<SingleCameraDataManager>();
             if (dataManager != null)
             {
-                int fps = dataManager.GetFpsFromHeader();
+                int fps = dataManager.GetFps();
                 if (fps > 0)
                 {
                     return fps;
@@ -391,15 +388,6 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         
         Debug.LogError("No data managers available to get FPS from header");
         return -1;
-    }
-
-    private void SetPrivateField(SingleCameraDataManager instance, string fieldName, object value)
-    {
-        var field = typeof(SingleCameraDataManager).GetField(fieldName, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        if (field != null)
-            field.SetValue(instance, value);
-        else
-            Debug.LogWarning($"フィールド {fieldName} が見つかりません");
     }
     
     void OnDestroy()
