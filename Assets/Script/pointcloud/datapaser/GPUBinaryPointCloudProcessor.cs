@@ -251,7 +251,7 @@ public class GPUBinaryPointCloudProcessor : BasePointCloudProcessor
         
         // Processing options
         binaryDepthProcessor.SetBool("useOpenCVLUT", true);
-        binaryDepthProcessor.SetBool("showAllPoints", DepthMeshGenerator.showAllPoints);
+        binaryDepthProcessor.SetBool("showAllPoints", PointCloudSettings.showAllPoints);
         binaryDepthProcessor.SetBool("hasBoundingVolume", boundingVolume != null);
         
         // Transform matrices for bounding volume
