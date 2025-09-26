@@ -315,7 +315,7 @@ public class SensorDevice
     public string GetColorFilePath() => colorFilePath;
     public string GetDeviceName() => deviceName;
     public float GetDepthBias() => depthBias;
-    public byte[] GetLatestDepthData() => depthParser?.GetLatestRecordBytes();
+    public uint[] GetLatestDepthData() => depthParser?.GetLatestDepthUints();
     public Texture2D GetLatestColorTexture() => colorParser?.GetLatestColorTexture();
 
     public Color32[] GetLatestColorData() => colorParser?.GetLatestColorPixels();

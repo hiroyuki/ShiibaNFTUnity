@@ -48,66 +48,58 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         CacheLUTData();
         // Setup constant compute shader parameters once
         SetupComputeShaderConstantParameters();
-        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Loading, ProcessingType, "Binary processor setup complete"));
+        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Loading, ProcessingType, "GPU processor setup complete"));
     }
 
 
     public override void UpdateMesh(Mesh mesh, SensorDevice device)
     {
-        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Processing raw binary data..."));
+        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Processing depth data..."));
 
-        var depthRecordBytes = device.GetLatestDepthData();
+        var depthDataUints = device.GetLatestDepthData();
         var colorTexture = device.GetLatestColorTexture();
-        int metadataSize = device.GetMetaDataSize();
 
-        if (depthRecordBytes != null && colorTexture != null)
+        if (depthDataUints != null && colorTexture != null)
         {
-            UpdateMeshFromRawBinary(mesh, depthRecordBytes, colorTexture, metadataSize, device);
+            UpdateMeshFromDepthData(mesh, depthDataUints, colorTexture, device);
         }
 
-        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Complete, ProcessingType, "Binary processing complete"));
+        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Complete, ProcessingType, "GPU processing complete"));
     }
 
-    private void UpdateMeshFromRawBinary(Mesh mesh, byte[] depthRecordBytes, Texture2D colorTexture, int metadataSize, SensorDevice device)
+    private void UpdateMeshFromDepthData(Mesh mesh, uint[] depthDataUints, Texture2D colorTexture, SensorDevice device)
     {
         if (!IsSupported())
         {
-            SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Error, ProcessingType, "Fallback: No binary compute shader"));
+            SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Error, ProcessingType, "Fallback: No compute shader"));
             return;
         }
 
         try
         {
             SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Dispatching compute shader..."));
-            ProcessRawBinaryData(mesh, depthRecordBytes, colorTexture, metadataSize);
+            ProcessDepthData(mesh, depthDataUints, colorTexture);
             SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Complete, ProcessingType, "GPU processing complete"));
         }
         catch (System.Exception ex)
         {
-            Debug.LogError($"GPU Binary processing failed: {ex.Message}");
+            Debug.LogError($"GPU processing failed: {ex.Message}");
             SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Error, ProcessingType, "GPU processing failed"));
         }
     }
 
-    private void ProcessRawBinaryData(Mesh mesh, byte[] depthRecordBytes, Texture2D colorTexture, int metadataSize)
+    private void ProcessDepthData(Mesh mesh, uint[] depthDataUints, Texture2D colorTexture)
     {
         if (depthProcessor == null)
         {
-            // SetupStatusUI.UpdateDeviceStatus(deviceName, "[CPU] Fallback: No binary compute shader");
-            // Could fallback to original CPU processing here
             return;
         }
 
-        // SetupStatusUI.UpdateDeviceStatus(deviceName, "[GPU] Processing raw binary data...");
-
-        // Convert raw bytes to structured data for Metal compatibility
-        uint[] depthAsUints = ConvertRawBytesToUints(depthRecordBytes, metadataSize);
-
         // Initialize GPU resources
-        InitializeGPUResources(depthAsUints.Length);
+        InitializeGPUResources(depthDataUints.Length);
 
-        // Upload structured depth data (Metal-friendly)
-        depthDataBuffer.SetData(depthAsUints);
+        // Upload depth data directly (no conversion needed!)
+        depthDataBuffer.SetData(depthDataUints);
 
         // Cache color texture (upload once per frame)
         this.colorTexture = colorTexture;
@@ -117,8 +109,8 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         // Reset valid count
         validCountBuffer.SetData(new int[] { 0 });
 
-        // Set dynamic compute shader parameters (only the ones that might change)
-        UpdateComputeShaderDynamicParameters(metadataSize);
+        // Set dynamic compute shader parameters
+        UpdateComputeShaderDynamicParameters();
 
         // Set buffers and textures
         int kernelIndex = depthProcessor.FindKernel("ProcessRawDepthData");
@@ -137,28 +129,6 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         ApplyResultsToMesh(mesh, totalPixels);
     }
 
-    private uint[] ConvertRawBytesToUints(byte[] rawData, int metadataSize)
-    {
-        // Skip metadata and convert depth bytes to uint array for structured buffer
-        int depthDataStart = metadataSize;
-        int depthByteCount = rawData.Length - metadataSize;
-        int depthPixelCount = depthByteCount / 2; // 2 bytes per ushort
-        
-        uint[] depthAsUints = new uint[depthPixelCount];
-        
-        for (int i = 0; i < depthPixelCount; i++)
-        {
-            int byteIndex = depthDataStart + i * 2;
-            if (byteIndex + 1 < rawData.Length)
-            {
-                // Read ushort as little-endian and store as uint
-                ushort depthValue = (ushort)(rawData[byteIndex] | (rawData[byteIndex + 1] << 8));
-                depthAsUints[i] = depthValue;
-            }
-        }
-        
-        return depthAsUints;
-    }
 
     private void InitializeGPUResources(int depthPixelCount)
     {
@@ -248,23 +218,18 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
     }
 
     // Update only dynamic parameters per frame (if they actually change)
-    private void UpdateComputeShaderDynamicParameters(int metadataSize)
+    private void UpdateComputeShaderDynamicParameters()
     {
         // Transform parameters (constant for this camera)
         Matrix4x4 rotMatrix = Matrix4x4.Rotate(rotation);
         depthProcessor.SetMatrix("rotationMatrix", rotMatrix);
         depthProcessor.SetVector("translation", translation);
 
-
         // Static transform matrices (set once if they don't move)
         if (depthViewerTransform != null)
         {
             depthProcessor.SetMatrix("depthViewerTransform", depthViewerTransform.localToWorldMatrix);
         }
-
-        // Binary format parameters (might vary per frame - though usually constant per dataset)
-        depthProcessor.SetInt("metadataSize", metadataSize);
-        depthProcessor.SetInt("depthDataOffset", metadataSize);
 
         // Runtime settings that can change
         depthProcessor.SetBool("showAllPoints", PointCloudSettings.showAllPoints);

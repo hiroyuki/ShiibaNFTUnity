@@ -96,13 +96,6 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
         return true;
     }
 
-    // Legacy method for compatibility
-    public override bool ParseNextRecord()
-    {
-        // Default to standard processing for backward compatibility
-        return ParseNextRecord(optimizeForGPU: false);
-    }
-
     public override bool PeekNextTimestamp(out ulong timestamp)
     {
         try
