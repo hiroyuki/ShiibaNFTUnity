@@ -80,7 +80,7 @@ public class RcstSensorDataParser : AbstractSensorDataParser
       }
       else
       {
-        Debug.LogWarning("Image data is not aligned for 16-bit conversion.");
+        // Debug.LogWarning("Image data is not aligned for 16-bit conversion.");
         _latestDepthUints = null;
         _latestDepthValues = null;
         return false;
@@ -99,7 +99,7 @@ public class RcstSensorDataParser : AbstractSensorDataParser
       }
       else
       {
-        Debug.LogWarning("Image data is not aligned for 16-bit conversion.");
+        // Debug.LogWarning("Image data is not aligned for 16-bit conversion.");
         _latestDepthValues = null;
         _latestDepthUints = null;
         return false;

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using UnityEngine;
 
 public class SingleCameraDataManager : MonoBehaviour
@@ -285,7 +286,7 @@ public class SingleCameraDataManager : MonoBehaviour
     }
 
     // Unified frame processing logic using the interface
-    private bool ProcessFrameWithParsers(ulong frameTimestamp, bool showStatus = false)
+    private async Task<bool> ProcessFrameWithParsersAsync(ulong frameTimestamp, bool showStatus = false)
     {
         if (showStatus) SetupStatusUI.ShowStatus($"Processing frame for {device.deviceName}...");
 
@@ -294,7 +295,8 @@ public class SingleCameraDataManager : MonoBehaviour
 
         if (showStatus) UpdateDeviceStatus(DeviceStatusType.Processing, pointCloudProcessor.ProcessingType, "Parsing synchronized frame...");
 
-        bool frameOk = device.ParseRecord(useGPUOptimization);
+        // Run parsing in background thread
+        bool frameOk = await device.ParseRecordAsync(useGPUOptimization);
 
         if (showStatus) UpdateDeviceStatus(DeviceStatusType.Processing, pointCloudProcessor.ProcessingType, "Frame data parsed");
 
@@ -302,6 +304,7 @@ public class SingleCameraDataManager : MonoBehaviour
         {
             if (showStatus) UpdateDeviceStatus(DeviceStatusType.Processing, pointCloudProcessor.ProcessingType, "Updating mesh...");
 
+            device.UpdateTexture(useGPUOptimization);
             // Use the unified interface - no more branching logic!
             pointCloudProcessor.UpdateMesh(depthMesh, device);
 

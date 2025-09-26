@@ -48,7 +48,7 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
         var colorField = sensorHeader.record_format.FirstOrDefault(f => f.name == "image");
         if (colorField == null)
         {
-            Debug.LogError("record_format に 'image' フィールドがありません");
+            // Debug.LogError("record_format に 'image' フィールドがありません");
             return false;
         }
 
@@ -71,6 +71,11 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
         CurrentColorBytes = reader.ReadBytes(imageSize);
         if (CurrentColorBytes.Length != imageSize) return false;
 
+        return true;
+    }
+
+    public bool DecodeTexture(bool optimizeForGPU)
+    {
         if (_decodedTexture == null)
             _decodedTexture = new Texture2D(2, 2, TextureFormat.RGB24, false);
 
@@ -92,7 +97,6 @@ public class RcsvSensorDataParser : AbstractSensorDataParser
             Debug.LogWarning("カラー画像の読み込みに失敗しました");
             return false;
         }
-
         return true;
     }
 

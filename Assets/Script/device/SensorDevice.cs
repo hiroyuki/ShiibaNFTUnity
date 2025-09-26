@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using Unity.VisualScripting;
 using UnityEngine;
 
@@ -202,6 +203,28 @@ public class SensorDevice
         bool depthOk = depthParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
         bool colorOk = colorParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
         return depthOk && colorOk;
+    }
+
+    /// <summary>
+    /// Async version - runs parsing in background thread, returns to main thread for result
+    /// </summary>
+    public async Task<bool> ParseRecordAsync(bool useGPUOptimization)
+    {
+        // Run the parsing in a background thread (thread-safe operations only)
+        bool parseResult = await Task.Run(() =>
+        {
+            // Parse both frames with GPU optimization on background thread
+            bool depthOk = depthParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
+            bool colorOk = colorParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
+            return depthOk && colorOk;
+        });
+
+        return parseResult;
+    }
+
+    public bool UpdateTexture(bool useGPUOptimization)
+    {
+        return colorParser.DecodeTexture(optimizeForGPU: useGPUOptimization);
     }
 
     public void ResetParsers()
