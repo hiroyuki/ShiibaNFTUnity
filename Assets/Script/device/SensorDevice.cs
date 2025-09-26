@@ -17,8 +17,7 @@ public enum ProcessingType
 {
     None,
     CPU,
-    GPU,
-    GPU_Binary
+    GPU
 }
 
 [Serializable]
@@ -288,9 +287,8 @@ public class SensorDevice
     {
         string processingPrefix = processingType switch
         {
-            ProcessingType.GPU => "[GPU] ",
             ProcessingType.CPU => "[CPU] ",
-            ProcessingType.GPU_Binary => "[GPU-BINARY] ",
+            ProcessingType.GPU => "[GPU] ",
             _ => ""
         };
 

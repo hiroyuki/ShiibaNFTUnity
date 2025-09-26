@@ -228,7 +228,7 @@ public class SetupStatusUI : MonoBehaviour
             {
                 if (device.statusType == DeviceStatusType.Active)
                     activeDevices++;
-                if (device.processingType == ProcessingType.GPU || device.processingType == ProcessingType.GPU_Binary)
+                if (device.processingType == ProcessingType.GPU)
                     gpuDevices++;
                 if (device.processingType == ProcessingType.CPU)
                     cpuDevices++;

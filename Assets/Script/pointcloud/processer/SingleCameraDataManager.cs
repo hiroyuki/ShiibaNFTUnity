@@ -251,17 +251,14 @@ public class SingleCameraDataManager : MonoBehaviour
                 // Check if we've reached or passed the target timestamp
                 if (depthTs >= targetTimestamp)
                 {
-                    SetupStatusUI.ShowStatus($"Seeking {device.deviceName}: depthTs={depthTs}, colorTs={colorTs}, delta={delta}");
                     // Process the current frame
                     bool success = ProcessFrameWithParsers(depthTs, showStatus: true);
                     if (success)
                     {
-                        Debug.Log($"{device.deviceName}: Seeked to timestamp {targetTimestamp} (actual: {depthTs})");
                         return true;
                     }
                     else
                     {
-                        Debug.LogWarning($"{device.deviceName}: Failed to process frame at timestamp {targetTimestamp} (actual: {depthTs})");
                         return false;
                     }
                 }
@@ -293,7 +290,7 @@ public class SingleCameraDataManager : MonoBehaviour
         if (showStatus) SetupStatusUI.ShowStatus($"Processing frame for {device.deviceName}...");
 
         // Determine optimization based on processor type
-        bool useGPUOptimization = pointCloudProcessor.ProcessingType == ProcessingType.GPU_Binary;
+        bool useGPUOptimization = pointCloudProcessor.ProcessingType == ProcessingType.GPU;
 
         if (showStatus) UpdateDeviceStatus(DeviceStatusType.Processing, pointCloudProcessor.ProcessingType, "Parsing synchronized frame...");
 
@@ -313,12 +310,9 @@ public class SingleCameraDataManager : MonoBehaviour
 
             if (showStatus)
             {
-                SetupStatusUI.ShowStatus($"Processed frame for {device.deviceName}");
-
+                UpdateDeviceStatus(DeviceStatusType.Complete, pointCloudProcessor.ProcessingType, "Frame processed");
                 if (!firstFrameProcessed)
                 {
-                    UpdateDeviceStatus(DeviceStatusType.Active, pointCloudProcessor.ProcessingType, "Processing frames");
-                    SetupStatusUI.ShowStatus($"{device.deviceName} is now rendering point clouds");
                     SetupStatusUI.OnFirstFrameProcessed();
                     firstFrameProcessed = true; // Mark first frame as processed
                 }

@@ -1,135 +1,297 @@
 using UnityEngine;
 using System;
 using System.Linq;
-using System.Collections.Generic;
 
-public class GPUPointCloudProcessor : CPUPointCloudProcessor
+public class GPUPointCloudProcessor : BasePointCloudProcessor
 {
     public override ProcessingType ProcessingType => ProcessingType.GPU;
 
-    // CPU/GPU Hybrid specific resources
-    public ComputeShader depthPixelProcessor;
-    private ComputeBuffer depthBuffer;
-    private ComputeBuffer colorBuffer;
+    // GPU-specific resources
+    private ComputeShader depthProcessor;
+    private ComputeBuffer depthDataBuffer;
     private ComputeBuffer lutBuffer;
     private ComputeBuffer outputBuffer;
     private ComputeBuffer validCountBuffer;
 
-    // Cached arrays and buffer size tracking for performance
-    private Vector4[] cachedColorData;
+    // Cached GPU resources
+    private Texture2D colorTexture;
     private Vector2[] cachedLutData;
-    private uint[] cachedDepthDataUint;
-    private bool lutCacheInitialized = false;
-    private int currentDepthBufferSize = -1;
-    private int currentColorBufferSize = -1;
+    private int currentDepthDataSize = -1;
 
     private struct VertexData
     {
         public Vector3 vertex;
-        public Vector4 color;  // Changed from Color32 to Vector4 to match compute shader
+        public Vector4 color;
         public int isValid;
-        // Size: 12 + 16 + 4 = 32 bytes (matches compute shader)
     }
 
     public GPUPointCloudProcessor(string deviceName) : base(deviceName)
     {
+        depthProcessor = Resources.Load<ComputeShader>("DepthToPointCloud");
     }
 
     public override bool IsSupported()
     {
-        // CPU processing is always supported
-        return true;
+        return depthProcessor != null && SystemInfo.supportsComputeShaders;
     }
 
     public override void Setup(SensorDevice device, float depthBias)
     {
+        if (!IsSupported())
+        {
+            throw new System.NotSupportedException("GPU Binary processing is not supported on this system");
+        }
+
         // Call base implementation for common setup
         base.Setup(device, depthBias);
-        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Loading, ProcessingType, "GPU processor setup complete"));
+
+        CacheLUTData();
+        // Setup constant compute shader parameters once
+        SetupComputeShaderConstantParameters();
+        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Loading, ProcessingType, "Binary processor setup complete"));
     }
 
-    protected override void ProcessDepthPixels(ushort[] depthValues, Color32[] colorPixels, List<Vector3> validVertices, List<Color32> validColors, List<int> validIndices)
+
+    public override void UpdateMesh(Mesh mesh, SensorDevice device)
     {
-        int totalPixels = depthValues.Length;
-        // SetupStatusUI.UpdateDeviceStatus(deviceName, $"Total depth pixels: {totalPixels}");
-        // Initialize compute buffers
-        InitializeComputeBuffers(totalPixels);
+        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Processing raw binary data..."));
 
-        // Platform-specific depth data handling (always needed per frame)
-        SetDepthBufferData(depthValues);
+        var depthRecordBytes = device.GetLatestDepthData();
+        var colorTexture = device.GetLatestColorTexture();
+        int metadataSize = device.GetMetaDataSize();
 
-        // SetupStatusUI.UpdateDeviceStatus(deviceName, "Settting depth buffer data done.");
-        // Cache and reuse color data conversion (only if changed)
-        if (cachedColorData == null || cachedColorData.Length != latestColorPixels.Length)
+        if (depthRecordBytes != null && colorTexture != null)
         {
-            cachedColorData = new Vector4[latestColorPixels.Length];
+            UpdateMeshFromRawBinary(mesh, depthRecordBytes, colorTexture, metadataSize, device);
         }
 
-        // Convert color pixels to Vector4 array
-        for (int i = 0; i < latestColorPixels.Length; i++)
-        {
-            Color32 c = latestColorPixels[i];
-            cachedColorData[i] = new Vector4(c.r / 255f, c.g / 255f, c.b / 255f, c.a / 255f);
-        }
-        colorBuffer.SetData(cachedColorData);
+        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Complete, ProcessingType, "Binary processing complete"));
+    }
 
-        // SetupStatusUI.UpdateDeviceStatus(deviceName, "Setting color buffer data done.");
-        // Cache LUT data (only convert once as it never changes)
-        if (!lutCacheInitialized)
+    private void UpdateMeshFromRawBinary(Mesh mesh, byte[] depthRecordBytes, Texture2D colorTexture, int metadataSize, SensorDevice device)
+    {
+        if (!IsSupported())
         {
-            if (cachedLutData == null || cachedLutData.Length != depthWidth * depthHeight)
-            {
-                cachedLutData = new Vector2[depthWidth * depthHeight];
-            }
-
-            for (int y = 0; y < depthHeight; y++)
-            {
-                for (int x = 0; x < depthWidth; x++)
-                {
-                    cachedLutData[y * depthWidth + x] = depthUndistortLUT[x, y];
-                }
-            }
-            lutCacheInitialized = true;
-            Debug.Log("LUT cache initialized");
+            SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Error, ProcessingType, "Fallback: No binary compute shader"));
+            return;
         }
+
+        try
+        {
+            SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Dispatching compute shader..."));
+            ProcessRawBinaryData(mesh, depthRecordBytes, colorTexture, metadataSize);
+            SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Complete, ProcessingType, "GPU processing complete"));
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"GPU Binary processing failed: {ex.Message}");
+            SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Error, ProcessingType, "GPU processing failed"));
+        }
+    }
+
+    private void ProcessRawBinaryData(Mesh mesh, byte[] depthRecordBytes, Texture2D colorTexture, int metadataSize)
+    {
+        if (depthProcessor == null)
+        {
+            // SetupStatusUI.UpdateDeviceStatus(deviceName, "[CPU] Fallback: No binary compute shader");
+            // Could fallback to original CPU processing here
+            return;
+        }
+
+        // SetupStatusUI.UpdateDeviceStatus(deviceName, "[GPU] Processing raw binary data...");
+
+        // Convert raw bytes to structured data for Metal compatibility
+        uint[] depthAsUints = ConvertRawBytesToUints(depthRecordBytes, metadataSize);
+
+        // Initialize GPU resources
+        InitializeGPUResources(depthAsUints.Length);
+
+        // Upload structured depth data (Metal-friendly)
+        depthDataBuffer.SetData(depthAsUints);
+
+        // Cache color texture (upload once per frame)
+        this.colorTexture = colorTexture;
+
         lutBuffer.SetData(cachedLutData);
 
         // Reset valid count
         validCountBuffer.SetData(new int[] { 0 });
-        // SetupStatusUI.UpdateDeviceStatus(deviceName, "Setting LUT buffer data done.");
-        // Set compute shader parameters
-        SetComputeShaderParameters(cameraParams);
 
+        // Set dynamic compute shader parameters (only the ones that might change)
+        UpdateComputeShaderDynamicParameters(metadataSize);
 
-        // SetupStatusUI.UpdateDeviceStatus(deviceName, "Setting compute shader buffers...");
-        // Set buffers
-        int kernelIndex = depthPixelProcessor.FindKernel("ProcessDepthPixels");
-        depthPixelProcessor.SetBuffer(kernelIndex, "depthValues", depthBuffer);
-        depthPixelProcessor.SetBuffer(kernelIndex, "colorPixels", colorBuffer);
-        depthPixelProcessor.SetBuffer(kernelIndex, "depthUndistortLUT", lutBuffer);
-        depthPixelProcessor.SetBuffer(kernelIndex, "outputVertices", outputBuffer);
-        depthPixelProcessor.SetBuffer(kernelIndex, "validCount", validCountBuffer);
+        // Set buffers and textures
+        int kernelIndex = depthProcessor.FindKernel("ProcessRawDepthData");
+        depthProcessor.SetBuffer(kernelIndex, "rawDepthData", depthDataBuffer);
+        depthProcessor.SetTexture(kernelIndex, "colorTexture", colorTexture);
+        depthProcessor.SetBuffer(kernelIndex, "depthUndistortLUT", lutBuffer);
+        depthProcessor.SetBuffer(kernelIndex, "outputVertices", outputBuffer);
+        depthProcessor.SetBuffer(kernelIndex, "validCount", validCountBuffer);
 
         // Dispatch compute shader
+        int totalPixels = depthWidth * depthHeight;
         int threadGroups = Mathf.CeilToInt(totalPixels / 64f);
+        depthProcessor.Dispatch(kernelIndex, threadGroups, 1, 1);
 
-        // SetupStatusUI.UpdateDeviceStatus(deviceName, "Dispatching compute shader...");
+        // Read results and apply to mesh
+        ApplyResultsToMesh(mesh, totalPixels);
+    }
 
-        depthPixelProcessor.Dispatch(kernelIndex, threadGroups, 1, 1);
+    private uint[] ConvertRawBytesToUints(byte[] rawData, int metadataSize)
+    {
+        // Skip metadata and convert depth bytes to uint array for structured buffer
+        int depthDataStart = metadataSize;
+        int depthByteCount = rawData.Length - metadataSize;
+        int depthPixelCount = depthByteCount / 2; // 2 bytes per ushort
+        
+        uint[] depthAsUints = new uint[depthPixelCount];
+        
+        for (int i = 0; i < depthPixelCount; i++)
+        {
+            int byteIndex = depthDataStart + i * 2;
+            if (byteIndex + 1 < rawData.Length)
+            {
+                // Read ushort as little-endian and store as uint
+                ushort depthValue = (ushort)(rawData[byteIndex] | (rawData[byteIndex + 1] << 8));
+                depthAsUints[i] = depthValue;
+            }
+        }
+        
+        return depthAsUints;
+    }
 
-        // SetupStatusUI.UpdateDeviceStatus(deviceName, "Reading back results...");
-        // Read results
+    private void InitializeGPUResources(int depthPixelCount)
+    {
+        bool needsResize = currentDepthDataSize != depthPixelCount;
+        
+        if (needsResize)
+        {
+            // Dispose old buffers
+            if (depthDataBuffer != null) { depthDataBuffer.Dispose(); depthDataBuffer = null; }
+            if (outputBuffer != null) { outputBuffer.Dispose(); outputBuffer = null; }
+            
+            // Create new buffers for structured depth data
+            depthDataBuffer = new ComputeBuffer(depthPixelCount, sizeof(uint)); // 4 bytes per uint
+            
+            int totalPixels = depthWidth * depthHeight;
+            outputBuffer = new ComputeBuffer(totalPixels, 32); // VertexData struct size
+            
+            currentDepthDataSize = depthPixelCount;
+            // SetupStatusUI.UpdateDeviceStatus(deviceName, $"[GPU] Buffers created for {depthPixelCount} pixels");
+        }
+        
+        // Create LUT buffer (only once)
+        if (lutBuffer == null)
+        {
+            int totalPixels = depthWidth * depthHeight;
+            lutBuffer = new ComputeBuffer(totalPixels, sizeof(float) * 2);
+        }
+        
+        // Create validCountBuffer (only once)
+        if (validCountBuffer == null)
+        {
+            validCountBuffer = new ComputeBuffer(1, sizeof(int));
+        }
+    }
+
+    private void CacheLUTData()
+    {
+        int totalPixels = depthWidth * depthHeight;
+        cachedLutData = new Vector2[totalPixels];
+        
+        for (int y = 0; y < depthHeight; y++)
+        {
+            for (int x = 0; x < depthWidth; x++)
+            {
+                cachedLutData[y * depthWidth + x] = depthUndistortLUT[x, y];
+            }
+        }
+        // SetupStatusUI.UpdateDeviceStatus(deviceName, "[GPU] LUT cache initialized");
+    }
+    // Setup constant parameters once during initialization
+    private void SetupComputeShaderConstantParameters()
+    {
+        if (depthProcessor == null) return;
+
+
+        depthProcessor.SetFloat("depthScaleFactor", depthScaleFactor);
+        depthProcessor.SetFloat("depthBias", depthBias);
+
+        // Camera intrinsics (constant)
+        depthProcessor.SetFloat("fx_d", depthIntrinsics[0]);
+        depthProcessor.SetFloat("fy_d", depthIntrinsics[1]);
+        depthProcessor.SetFloat("cx_d", depthIntrinsics[2]);
+        depthProcessor.SetFloat("cy_d", depthIntrinsics[3]);
+        depthProcessor.SetFloat("fx_c", colorIntrinsics[0]);
+        depthProcessor.SetFloat("fy_c", colorIntrinsics[1]);
+        depthProcessor.SetFloat("cx_c", colorIntrinsics[2]);
+        depthProcessor.SetFloat("cy_c", colorIntrinsics[3]);
+
+        // Color distortion parameters (constant)
+        if (colorDistortion != null && colorDistortion.Length >= 8)
+        {
+            depthProcessor.SetVector("colorDistortion",
+                new Vector4(colorDistortion[0], colorDistortion[1], colorDistortion[6], colorDistortion[7])); // k1, k2, p1, p2
+            depthProcessor.SetVector("colorDistortion2",
+                new Vector4(colorDistortion[2], colorDistortion[3], colorDistortion[4], colorDistortion[5])); // k3, k4, k5, k6
+        }
+
+        // Image dimensions (constant)
+        depthProcessor.SetInt("depthWidth", depthWidth);
+        depthProcessor.SetInt("depthHeight", depthHeight);
+        depthProcessor.SetInt("colorWidth", colorWidth);
+        depthProcessor.SetInt("colorHeight", colorHeight);
+
+        // Constant processing options
+        depthProcessor.SetBool("useOpenCVLUT", true);
+
+    }
+
+    // Update only dynamic parameters per frame (if they actually change)
+    private void UpdateComputeShaderDynamicParameters(int metadataSize)
+    {
+        // Transform parameters (constant for this camera)
+        Matrix4x4 rotMatrix = Matrix4x4.Rotate(rotation);
+        depthProcessor.SetMatrix("rotationMatrix", rotMatrix);
+        depthProcessor.SetVector("translation", translation);
+
+
+        // Static transform matrices (set once if they don't move)
+        if (depthViewerTransform != null)
+        {
+            depthProcessor.SetMatrix("depthViewerTransform", depthViewerTransform.localToWorldMatrix);
+        }
+
+        // Binary format parameters (might vary per frame - though usually constant per dataset)
+        depthProcessor.SetInt("metadataSize", metadataSize);
+        depthProcessor.SetInt("depthDataOffset", metadataSize);
+
+        // Runtime settings that can change
+        depthProcessor.SetBool("showAllPoints", PointCloudSettings.showAllPoints);
+        depthProcessor.SetBool("hasBoundingVolume", boundingVolume != null);
+
+        // Transform matrices that might move at runtime
+        if (boundingVolume != null)
+        {
+            depthProcessor.SetMatrix("boundingVolumeInverseTransform", boundingVolume.worldToLocalMatrix);
+        }
+    }
+
+        private void ApplyResultsToMesh(Mesh mesh, int totalPixels)
+    {
         VertexData[] results = new VertexData[totalPixels];
         outputBuffer.GetData(results);
-        // SetupStatusUI.UpdateDeviceStatus(deviceName, "Read back results done.");
-
-        // Process results
+        
+        var validVertices = new System.Collections.Generic.List<Vector3>();
+        var validColors = new System.Collections.Generic.List<Color32>();
+        var validIndices = new System.Collections.Generic.List<int>();
+        
         for (int i = 0; i < results.Length; i++)
         {
             if (results[i].isValid == 1)
             {
                 validVertices.Add(results[i].vertex);
-
+                
                 // Convert Vector4 color back to Color32
                 Vector4 colorVec = results[i].color;
                 Color32 color32 = new Color32(
@@ -142,149 +304,30 @@ public class GPUPointCloudProcessor : CPUPointCloudProcessor
                 validIndices.Add(validVertices.Count - 1);
             }
         }
-
-        // SetupStatusUI.UpdateDeviceStatus(deviceName, "Processing done. Valid points: " + validVertices.Count);
-    }
-    private void InitializeComputeBuffers(int totalPixels)
-    {
-        int colorPixelCount = colorWidth * colorHeight;
         
-        // Only recreate buffers if size changed
-        bool needsDepthBufferResize = currentDepthBufferSize != totalPixels;
-        bool needsColorBufferResize = currentColorBufferSize != colorPixelCount;
+        // Apply to mesh
+        mesh.Clear();
+        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        mesh.vertices = validVertices.ToArray();
+        mesh.colors32 = validColors.ToArray();
+        mesh.SetIndices(validIndices.ToArray(), MeshTopology.Points, 0);
+        mesh.RecalculateBounds();
         
-        if (needsDepthBufferResize)
-        {
-            // Dispose and recreate depth-related buffers
-            if (depthBuffer != null) { depthBuffer.Dispose(); depthBuffer = null; }
-            if (lutBuffer != null) { lutBuffer.Dispose(); lutBuffer = null; }
-            if (outputBuffer != null) { outputBuffer.Dispose(); outputBuffer = null; }
-            
-            int depthBufferElementSize = IsMetalPlatform() ? sizeof(uint) : sizeof(ushort);
-            depthBuffer = new ComputeBuffer(totalPixels, depthBufferElementSize);
-            lutBuffer = new ComputeBuffer(totalPixels, sizeof(float) * 2);
-            outputBuffer = new ComputeBuffer(totalPixels, 32); // Vector3 + Vector4 + int
-            
-            currentDepthBufferSize = totalPixels;
-            lutCacheInitialized = false; // Need to rebuild LUT cache
-            
-            // SetupStatusUI.UpdateDeviceStatus(deviceName, $"Depth Buffers recreated for {totalPixels} pixels");
-        }
-        
-        if (needsColorBufferResize)
-        {
-            // Dispose and recreate color buffer
-            if (colorBuffer != null) { colorBuffer.Dispose(); colorBuffer = null; }
-            colorBuffer = new ComputeBuffer(colorPixelCount, sizeof(float) * 4);
-            
-            currentColorBufferSize = colorPixelCount;
-            cachedColorData = null; // Need to rebuild color cache
-            
-            //  SetupStatusUI.UpdateDeviceStatus(deviceName, $"Recreated color buffer for {colorPixelCount} pixels");
-        }
-        
-        // Create validCountBuffer only once (always size 1)
-        if (validCountBuffer == null)
-        {
-            validCountBuffer = new ComputeBuffer(1, sizeof(int));
-        }
-    }
-
-    private bool IsMetalPlatform()
-    {
-        #if UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX || UNITY_IOS
-            return SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Metal;
-        #else
-            return false;
-        #endif
-    }
-    
-    private void SetDepthBufferData(ushort[] depthValues)
-    {
-        if (IsMetalPlatform())
-        {
-            // Cache and reuse uint array for Metal compatibility
-            if (cachedDepthDataUint == null || cachedDepthDataUint.Length != depthValues.Length)
-            {
-                cachedDepthDataUint = new uint[depthValues.Length];
-            }
-
-            // Convert ushort to uint
-            for (int i = 0; i < depthValues.Length; i++)
-            {
-                cachedDepthDataUint[i] = depthValues[i];
-            }
-            depthBuffer.SetData(cachedDepthDataUint);
-        }
-        else
-        {
-            // Use ushort directly on Windows/DirectX for better memory efficiency
-            depthBuffer.SetData(depthValues);
-        }
-    }
-    
-    private void SetComputeShaderParameters(CameraParameters cameraParams)
-    {
-        // Convert rotation quaternion to matrix
-        Matrix4x4 rotMatrix = Matrix4x4.Rotate(rotation);
-        depthPixelProcessor.SetMatrix("rotationMatrix", rotMatrix);
-        depthPixelProcessor.SetVector("translation", translation);
-        depthPixelProcessor.SetFloat("depthScaleFactor", depthScaleFactor);
-        depthPixelProcessor.SetFloat("depthBias", depthBias);
-        
-        // Camera parameters
-        depthPixelProcessor.SetFloat("fx_d", cameraParams.fx_d);
-        depthPixelProcessor.SetFloat("fy_d", cameraParams.fy_d);
-        depthPixelProcessor.SetFloat("cx_d", cameraParams.cx_d);
-        depthPixelProcessor.SetFloat("cy_d", cameraParams.cy_d);
-        depthPixelProcessor.SetFloat("fx_c", cameraParams.fx_c);
-        depthPixelProcessor.SetFloat("fy_c", cameraParams.fy_c);
-        depthPixelProcessor.SetFloat("cx_c", cameraParams.cx_c);
-        depthPixelProcessor.SetFloat("cy_c", cameraParams.cy_c);
-        
-        // Color distortion parameters
-        if (colorDistortion != null && colorDistortion.Length >= 8)
-        {
-            depthPixelProcessor.SetVector("colorDistortion", new Vector4(colorDistortion[0], colorDistortion[1], colorDistortion[6], colorDistortion[7])); // k1, k2, p1, p2
-            depthPixelProcessor.SetVector("colorDistortion2", new Vector4(colorDistortion[2], colorDistortion[3], colorDistortion[4], colorDistortion[5])); // k3, k4, k5, k6
-        }
-        
-        // Image dimensions
-        depthPixelProcessor.SetInt("depthWidth", depthWidth);
-        depthPixelProcessor.SetInt("depthHeight", depthHeight);
-        depthPixelProcessor.SetInt("colorWidth", colorWidth);
-        depthPixelProcessor.SetInt("colorHeight", colorHeight);
-        
-        // Options
-        depthPixelProcessor.SetBool("useOpenCVLUT", true);
-        depthPixelProcessor.SetBool("showAllPoints", PointCloudSettings.showAllPoints);
-        depthPixelProcessor.SetBool("hasBoundingVolume", boundingVolume != null);
-        
-        // Transforms for bounding volume check
-        if (boundingVolume != null)
-        {
-            depthPixelProcessor.SetMatrix("boundingVolumeTransform", boundingVolume.localToWorldMatrix);
-            depthPixelProcessor.SetMatrix("boundingVolumeInverseTransform", boundingVolume.worldToLocalMatrix);
-        }
-        
-        if (depthViewerTransform != null)
-        {
-            depthPixelProcessor.SetMatrix("depthViewerTransform", depthViewerTransform.localToWorldMatrix);
-        }
-    }
-    
-    private void DisposeComputeBuffers()
-    {
-        if (depthBuffer != null) { depthBuffer.Dispose(); depthBuffer = null; }
-        if (colorBuffer != null) { colorBuffer.Dispose(); colorBuffer = null; }
-        if (lutBuffer != null) { lutBuffer.Dispose(); lutBuffer = null; }
-        if (outputBuffer != null) { outputBuffer.Dispose(); outputBuffer = null; }
-        if (validCountBuffer != null) { validCountBuffer.Dispose(); validCountBuffer = null; }
+        // SetupStatusUI.UpdateDeviceStatus(deviceName, $"[GPU] Valid points: {validVertices.Count}");
     }
 
     public override void Dispose()
     {
-        DisposeComputeBuffers();
+        depthDataBuffer?.Dispose();
+        lutBuffer?.Dispose();
+        outputBuffer?.Dispose();
+        validCountBuffer?.Dispose();
+
+        if (colorTexture != null)
+        {
+            UnityEngine.Object.DestroyImmediate(colorTexture);
+        }
+
         base.Dispose(); // Call base class cleanup
     }
 }
