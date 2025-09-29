@@ -253,15 +253,7 @@ public class SingleCameraDataManager : MonoBehaviour
                 if (depthTs >= targetTimestamp)
                 {
                     // Process the current frame
-                    bool success = ProcessFrameWithParsers(depthTs, showStatus: true);
-                    if (success)
-                    {
-                        return true;
-                    }
-                    else
-                    {
-                        return false;
-                    }
+                    return ProcessFrameWithParsersAsync(depthTs, showStatus: true).Result;
                 }
 
                 device.SkipCurrentRecord();
