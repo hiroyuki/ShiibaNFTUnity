@@ -24,9 +24,8 @@ public class SingleCameraDataManager : MonoBehaviour
     // Store current timestamp for efficient leading camera detection
     private ulong currentTimestamp = 0;
     private ExtrinsicsLoader extrisics;
-    
+
     // Timeline scrubbing support
-    private int currentFrameIndex = -1;
     private int totalFrameCount = -1;
 
     public void Initialize(string dir, string hostname, string deviceName)
@@ -175,148 +174,108 @@ public class SingleCameraDataManager : MonoBehaviour
         // Auto-load first frame on startup (disabled - MultiCamPointCloudManager handles this)
         if (autoLoadFirstFrame && !firstFrameProcessed)
         {
-            SeekToFrame(0);
+            ulong targetTimestamp = device.GetTimestampForFrame(0);
+            bool success = ProcessFrame(targetTimestamp);
             autoLoadFirstFrame = false; // Prevent auto-loading again
         }
     }
-    
-    
-    public void SeekToFrame(int frameIndex)
-    {
-        if (frameIndex < 0) frameIndex = 0;
-        if (totalFrameCount > 0 && frameIndex >= totalFrameCount) 
-            frameIndex = totalFrameCount - 1;
-            
-        if (frameIndex == currentFrameIndex) return;
-        
-        try
-        {
-            // Convert frame index to timestamp for unified seeking
-            ulong targetTimestamp = device.GetTimestampForFrame(frameIndex);
-            bool success = SeekToTimestampInternal(targetTimestamp);
-            
-            if (success)
-            {
-                currentFrameIndex = frameIndex;
-            }
-            else
-            {
-                Debug.LogWarning($"{device.deviceName}: Failed to seek to frame {frameIndex}");
-            }
-        }
-        catch (System.Exception ex)
-        {
-            Debug.LogError($"Error in SeekToFrame: {ex.Message}");
-        }
-    }
-    
+   
     public void ResetToFirstFrame()
     {
         Debug.Log("Reset To First Frame");
-        SeekToFrame(0);
+        
+            ulong targetTimestamp = device.GetTimestampForFrame(0);
+            bool success = ProcessFrame(targetTimestamp);
     }
-    
-    public void SeekToTimestamp(ulong targetTimestamp)
+
+    public bool ProcessFrame(ulong targetTimestamp)
     {
-        try
+        ulong actualTimestamp = 0;
+        bool synchronized = SeekToTimestamp(targetTimestamp, out actualTimestamp);
+        if (synchronized)
         {
-            Debug.Log($"{device.deviceName}: Seek to timestamp {targetTimestamp}");
-            bool success = SeekToTimestampInternal(targetTimestamp);
-            
-            if (!success)
-            {
-                Debug.LogWarning($"{device.deviceName}: No suitable frame found for timestamp {targetTimestamp}");
-            }
+            // Process the synchronized frame
+            bool parseOk = ParseRecord(showStatus: true);
+            if (parseOk) UpdateMesh(actualTimestamp, showStatus: true);
+            return parseOk;
         }
-        catch (System.Exception ex)
+        else
         {
-            Debug.LogError($"Error in SeekToTimestamp: {ex.Message}");
+            Debug.LogWarning($"No synchronized frame found for timestamp {targetTimestamp}");
+            UpdateDeviceStatus(DeviceStatusType.Error, pointCloudProcessor.ProcessingType, "No synchronized frame");
+            return false;
         }
     }
     
-           // Simplified timestamp-only seeking logic
-    public bool SeekToTimestampInternal(ulong targetTimestamp)
+    // Simplified timestamp-only seeking logic
+    public bool SeekToTimestamp(ulong targetTimestamp, out ulong depthTs)
     {
         // Reset parsers to beginning
-        device.ResetParsers();
-        
-        while (true)
+        if(currentTimestamp > targetTimestamp) device.ResetParsers();
+        bool synchronized = false;
+        depthTs = 0;
+        while (!synchronized)
         {
             // Check synchronization using unified method
-            bool synchronized = device.CheckSynchronization(out ulong depthTs, out ulong colorTs, out long delta);
-            if (!synchronized && depthTs == 0 && colorTs == 0) break; // No more data
-            
-            if (synchronized)
-            {   
-                
-                // Check if we've reached or passed the target timestamp
-                if (depthTs >= targetTimestamp)
-                {
-                    // Process the current frame
-                    return ProcessFrameWithParsersAsync(depthTs, showStatus: true).Result;
-                }
-
-                device.SkipCurrentRecord();
-            }
-            else
+            synchronized = device.CheckSynchronization(out depthTs, out ulong colorTs, out long delta);
+            if (!synchronized)
             {
-                // Skip the earlier timestamp to catch up
-                if (delta < 0)
-                {
-                    // Debug.LogWarning($"{device.deviceName}: Depth is behind color by {-delta} ticks, skipping depth frame depthTs={depthTs}, colorTs={colorTs}");
-                    device.SkipDepthRecord();
-                }
+                if (depthTs == 0 && colorTs == 0) break; // No more data
                 else
                 {
-                    // Debug.LogWarning($"{device.deviceName}: Color is behind depth by {-delta} ticks, skipping color frame depthTs={depthTs}, colorTs={colorTs}");
-                    device.SkipColorRecord();
+                    // Skip the earlier timestamp to catch up
+                    if (delta < 0)
+                    {
+                        // Debug.LogWarning($"{device.deviceName}: Depth is behind color by {-delta} ticks, skipping depth frame depthTs={depthTs}, colorTs={colorTs}");
+                        device.SkipDepthRecord();
+                    }
+                    else
+                    {
+                        // Debug.LogWarning($"{device.deviceName}: Color is behind depth by {-delta} ticks, skipping color frame depthTs={depthTs}, colorTs={colorTs}");
+                        device.SkipColorRecord();
+                    }
                 }
             }
+            if (depthTs < targetTimestamp)
+            {
+                synchronized = false;
+                device.SkipCurrentRecord();
+            }
         }
-        
-        return false;
+        return synchronized;
     }
 
-    // Unified frame processing logic using the interface
-    private async Task<bool> ProcessFrameWithParsersAsync(ulong frameTimestamp, bool showStatus = false)
+    private bool ParseRecord(bool showStatus = false)
     {
-        if (showStatus) SetupStatusUI.ShowStatus($"Processing frame for {device.deviceName}...");
-
-        // Determine optimization based on processor type
-        bool useGPUOptimization = pointCloudProcessor.ProcessingType == ProcessingType.GPU;
 
         if (showStatus) UpdateDeviceStatus(DeviceStatusType.Processing, pointCloudProcessor.ProcessingType, "Parsing synchronized frame...");
-
         // Run parsing in background thread
-        bool frameOk = await device.ParseRecordAsync(useGPUOptimization);
+        var frameOk = device.ParseRecord(pointCloudProcessor.ProcessingType == ProcessingType.GPU);
 
         if (showStatus) UpdateDeviceStatus(DeviceStatusType.Processing, pointCloudProcessor.ProcessingType, "Frame data parsed");
+        return frameOk;
+    }
+    // Unified frame processing logic using the interface
+    private void UpdateMesh(ulong frameTimestamp, bool showStatus = false)
+    {
+        if (showStatus) UpdateDeviceStatus(DeviceStatusType.Processing, pointCloudProcessor.ProcessingType, "Updating mesh...");
 
-        if (frameOk)
+        device.UpdateTexture(pointCloudProcessor.ProcessingType == ProcessingType.GPU);
+        // Use the unified interface - no more branching logic!
+        pointCloudProcessor.UpdateMesh(depthMesh, device);
+
+        // Store the current timestamp for efficient leading camera detection
+        currentTimestamp = frameTimestamp;
+
+        if (showStatus)
         {
-            if (showStatus) UpdateDeviceStatus(DeviceStatusType.Processing, pointCloudProcessor.ProcessingType, "Updating mesh...");
-
-            device.UpdateTexture(useGPUOptimization);
-            // Use the unified interface - no more branching logic!
-            pointCloudProcessor.UpdateMesh(depthMesh, device);
-
-            // Store the current timestamp for efficient leading camera detection
-            currentTimestamp = frameTimestamp;
-
-            if (showStatus)
+            UpdateDeviceStatus(DeviceStatusType.Complete, pointCloudProcessor.ProcessingType, "Frame processed");
+            if (!firstFrameProcessed)
             {
-                UpdateDeviceStatus(DeviceStatusType.Complete, pointCloudProcessor.ProcessingType, "Frame processed");
-                if (!firstFrameProcessed)
-                {
-                    SetupStatusUI.OnFirstFrameProcessed();
-                    firstFrameProcessed = true; // Mark first frame as processed
-                }
+                SetupStatusUI.OnFirstFrameProcessed();
+                firstFrameProcessed = true; // Mark first frame as processed
             }
-
-            return true;
         }
-
-        return false;
     }
 
 
@@ -325,11 +284,6 @@ public class SingleCameraDataManager : MonoBehaviour
         return totalFrameCount;
     }
     
-    public int GetCurrentFrameIndex()
-    {
-        return currentFrameIndex;
-    }
-
     private void ResetParsers()
     {
         device.ResetParsers();

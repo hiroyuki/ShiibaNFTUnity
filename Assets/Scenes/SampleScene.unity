@@ -434,7 +434,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9039e76ce998ee8438ea22f790141f0e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  rootDirectory: /Volumes/horristicSSD2T/Dropbox/projects/shiiba/datas/2025-04-12_20-17-26_video
+  rootDirectory: /Users/horihiroyuki/Dropbox/projects/shiiba/datas/2025-04-12_20-17-26_video
 --- !u!4 &954508064
 Transform:
   m_ObjectHideFlags: 0

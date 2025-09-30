@@ -7,6 +7,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using YamlDotNet.Serialization;
 using PointCloud;
+using System.Threading.Tasks;
 
 public class MultiCameraPointCloudManager : MonoBehaviour
 {
@@ -21,11 +22,12 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     // Async processing infrastructure
     private readonly List<CameraProcessor> cameraProcessors = new();
     private readonly ConcurrentDictionary<string, FrameResult> completedFrames = new();
-    private CancellationTokenSource cancellationTokenSource;
+    
     private volatile bool isProcessing = false;
 
     void Start()
     {
+        Debug.Log("Start method called on thread: " + Thread.CurrentThread.ManagedThreadId);
         SetupStatusUI.ShowStatus("Starting Multi-Camera Point Cloud Manager...");
         
         // Disable timeline auto-play
@@ -81,11 +83,11 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
             if (File.Exists(depthPath) && File.Exists(colorPath))
             {
-                // if (deviceDirName != "FemtoBolt_CL8F253004Z")
-                // {
-                //     Debug.Log($"スキップ: {deviceDirName}");
-                // }
-                // else
+                if (deviceDirName != "FemtoBolt_CL8F253004Z")
+                {
+                    Debug.Log($"スキップ: {deviceDirName}");
+                }
+                else
                 {
                     
                     GameObject dataManagerObj = new GameObject("SingleCameraDataManager_" + deviceDirName);
@@ -104,9 +106,6 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             
             deviceIndex++;
         }
-        
-        // Initialize async processing
-        cancellationTokenSource = new CancellationTokenSource();
 
         SetupStatusUI.SetProgress(1f);
         SetupStatusUI.ShowStatus($"SingleCameraDataManager を {dataManagerObjects.Count} 個作成しました - first frames will load individually");
@@ -251,7 +250,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                 {
                     try
                     {
-                        dataManager.SeekToTimestamp(targetTimestamp);
+                        dataManager.ProcessFrame(targetTimestamp);
                         successCount++;
                     }
                     catch (System.Exception ex)
@@ -354,11 +353,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     }
     
     void OnDestroy()
-    {
-        // Clean up async resources
-        cancellationTokenSource?.Cancel();
-        cancellationTokenSource?.Dispose();
-        
+    {   
         foreach (var processor in cameraProcessors)
         {
             processor.Dispose();

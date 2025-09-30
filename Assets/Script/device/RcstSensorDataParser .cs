@@ -63,7 +63,7 @@ public class RcstSensorDataParser : AbstractSensorDataParser
     byte[] recordBytes = reader.ReadBytes(recordSize);
     if (recordBytes.Length != recordSize)
     {
-      Debug.LogWarning("Record size does not match expected size");
+      // Debug.LogWarning("Record size does not match expected size");
       return false;
     }
 
@@ -112,7 +112,7 @@ public class RcstSensorDataParser : AbstractSensorDataParser
       try
       {
           long originalPos = reader.BaseStream.Position;
-          Debug.Log("Peeking next timestamp at position: " + originalPos + " for device: " + deviceName);
+          // Debug.Log("Peeking next timestamp at position: " + originalPos + " for device: " + deviceName);
           int metadataSize = sensorHeader.MetadataSize;
           byte[] metadataBytes = reader.ReadBytes(metadataSize);
           if (metadataBytes.Length != metadataSize)

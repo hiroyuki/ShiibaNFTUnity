@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Unity.VisualScripting;
 using UnityEngine;
@@ -199,28 +200,28 @@ public class SensorDevice
 
     public bool ParseRecord(bool useGPUOptimization)
     {
+
+        Debug.Log("ParseRecord called on thread: " + Thread.CurrentThread.ManagedThreadId);
         // Parse both frames with GPU optimization
         bool depthOk = depthParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
         bool colorOk = colorParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
+
+        // bool depthOk = await Task.Run(() => depthParser.ParseNextRecord(optimizeForGPU: useGPUOptimization));
+        // bool colorOk = await Task.Run(() => colorParser.ParseNextRecord(optimizeForGPU: useGPUOptimization));
         return depthOk && colorOk;
     }
+
 
     /// <summary>
     /// Async version - runs parsing in background thread, returns to main thread for result
     /// </summary>
-    public async Task<bool> ParseRecordAsync(bool useGPUOptimization)
-    {
-        // Run the parsing in a background thread (thread-safe operations only)
-        bool parseResult = await Task.Run(() =>
-        {
-            // Parse both frames with GPU optimization on background thread
-            bool depthOk = depthParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
-            bool colorOk = colorParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
-            return depthOk && colorOk;
-        });
-
-        return parseResult;
-    }
+    // public bool ParseRecord(bool useGPUOptimization)
+    // {
+    //     // Parse both frames with GPU optimization on background thread
+    //     bool depthOk = depthParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
+    //     bool colorOk = colorParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
+    //     return depthOk && colorOk;
+    // }
 
     public bool UpdateTexture(bool useGPUOptimization)
     {
