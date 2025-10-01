@@ -6,7 +6,6 @@ using System.Threading;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using YamlDotNet.Serialization;
-using PointCloud;
 using System.Threading.Tasks;
 
 public class MultiCameraPointCloudManager : MonoBehaviour
@@ -18,10 +17,6 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     
     // Frame navigation tracking
     private int leadingCameraIndex = 0; // Index of camera that currently has the head timestamp
-    
-    // Async processing infrastructure
-    private readonly List<CameraProcessor> cameraProcessors = new();
-    private readonly ConcurrentDictionary<string, FrameResult> completedFrames = new();
     
     private volatile bool isProcessing = false;
 
@@ -83,11 +78,11 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
             if (File.Exists(depthPath) && File.Exists(colorPath))
             {
-                if (deviceDirName != "FemtoBolt_CL8F253004Z")
-                {
-                    Debug.Log($"スキップ: {deviceDirName}");
-                }
-                else
+                // if (deviceDirName != "FemtoBolt_CL8F253004Z")
+                // {
+                //     Debug.Log($"スキップ: {deviceDirName}");
+                // }
+                // else
                 {
                     
                     GameObject dataManagerObj = new GameObject("SingleCameraDataManager_" + deviceDirName);
@@ -99,8 +94,8 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                     dataManagerObjects.Add(dataManagerObj);
                     
                     // Create async processor for this camera
-                    var cameraProcessor = new CameraProcessor(deviceDirName, dataManager);
-                    cameraProcessors.Add(cameraProcessor);
+                    // var cameraProcessor = new CameraProcessor(deviceDirName, dataManager);
+                    // cameraProcessors.Add(cameraProcessor);
                 }
             }
             
@@ -354,9 +349,5 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     
     void OnDestroy()
     {   
-        foreach (var processor in cameraProcessors)
-        {
-            processor.Dispose();
-        }
     }
 }

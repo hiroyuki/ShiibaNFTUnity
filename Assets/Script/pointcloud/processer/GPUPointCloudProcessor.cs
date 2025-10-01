@@ -48,13 +48,13 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         CacheLUTData();
         // Setup constant compute shader parameters once
         SetupComputeShaderConstantParameters();
-        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Loading, ProcessingType, "GPU processor setup complete"));
+        // SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Loading, ProcessingType, "GPU processor setup complete"));
     }
 
 
     public override void UpdateMesh(Mesh mesh, SensorDevice device)
     {
-        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Processing depth data..."));
+        // SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Processing depth data..."));
 
         var depthDataUints = device.GetLatestDepthData();
         var colorTexture = device.GetLatestColorTexture();
@@ -64,22 +64,21 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
             UpdateMeshFromDepthData(mesh, depthDataUints, colorTexture, device);
         }
 
-        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Complete, ProcessingType, "GPU processing complete"));
+        // SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Complete, ProcessingType, "GPU processing complete"));
     }
 
     private void UpdateMeshFromDepthData(Mesh mesh, uint[] depthDataUints, Texture2D colorTexture, SensorDevice device)
     {
         if (!IsSupported())
         {
-            SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Error, ProcessingType, "Fallback: No compute shader"));
+            // SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Error, ProcessingType, "Fallback: No compute shader"));
             return;
         }
 
         try
         {
-            SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Dispatching compute shader..."));
+            // SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Dispatching compute shader..."));
             ProcessDepthData(mesh, depthDataUints, colorTexture);
-            SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Complete, ProcessingType, "GPU processing complete"));
         }
         catch (System.Exception ex)
         {

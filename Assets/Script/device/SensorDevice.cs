@@ -200,8 +200,6 @@ public class SensorDevice
 
     public bool ParseRecord(bool useGPUOptimization)
     {
-
-        Debug.Log("ParseRecord called on thread: " + Thread.CurrentThread.ManagedThreadId);
         // Parse both frames with GPU optimization
         bool depthOk = depthParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
         bool colorOk = colorParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);

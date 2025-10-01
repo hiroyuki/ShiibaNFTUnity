@@ -184,20 +184,29 @@ public class SingleCameraDataManager : MonoBehaviour
     {
         Debug.Log("Reset To First Frame");
         
-            ulong targetTimestamp = device.GetTimestampForFrame(0);
-            bool success = ProcessFrame(targetTimestamp);
+        ulong targetTimestamp = device.GetTimestampForFrame(0);
+        bool success = ProcessFrame(targetTimestamp);
     }
 
     public bool ProcessFrame(ulong targetTimestamp)
     {
         ulong actualTimestamp = 0;
+
+        UpdateDeviceStatus(DeviceStatusType.Ready, pointCloudProcessor.ProcessingType, "Starting frame processing...");
         bool synchronized = SeekToTimestamp(targetTimestamp, out actualTimestamp);
+        UpdateDeviceStatus(DeviceStatusType.Ready, pointCloudProcessor.ProcessingType, "Frame seek complete");
         if (synchronized)
         {
             // Process the synchronized frame
-            bool parseOk = ParseRecord(showStatus: true);
-            if (parseOk) UpdateMesh(actualTimestamp, showStatus: true);
-            return parseOk;
+            
+            var frameOk = device.ParseRecord(pointCloudProcessor.ProcessingType == ProcessingType.GPU);
+            UpdateDeviceStatus(DeviceStatusType.Processing, pointCloudProcessor.ProcessingType, "Frame data parsed");
+            if (frameOk)
+            {
+                UpdateMesh(actualTimestamp, showStatus: false);
+                UpdateDeviceStatus(DeviceStatusType.Complete, pointCloudProcessor.ProcessingType, "Mesh updated");
+            }
+            return frameOk;
         }
         else
         {
@@ -244,21 +253,9 @@ public class SingleCameraDataManager : MonoBehaviour
         }
         return synchronized;
     }
-
-    private bool ParseRecord(bool showStatus = false)
-    {
-
-        if (showStatus) UpdateDeviceStatus(DeviceStatusType.Processing, pointCloudProcessor.ProcessingType, "Parsing synchronized frame...");
-        // Run parsing in background thread
-        var frameOk = device.ParseRecord(pointCloudProcessor.ProcessingType == ProcessingType.GPU);
-
-        if (showStatus) UpdateDeviceStatus(DeviceStatusType.Processing, pointCloudProcessor.ProcessingType, "Frame data parsed");
-        return frameOk;
-    }
     // Unified frame processing logic using the interface
     private void UpdateMesh(ulong frameTimestamp, bool showStatus = false)
     {
-        if (showStatus) UpdateDeviceStatus(DeviceStatusType.Processing, pointCloudProcessor.ProcessingType, "Updating mesh...");
 
         device.UpdateTexture(pointCloudProcessor.ProcessingType == ProcessingType.GPU);
         // Use the unified interface - no more branching logic!
@@ -270,11 +267,12 @@ public class SingleCameraDataManager : MonoBehaviour
         if (showStatus)
         {
             UpdateDeviceStatus(DeviceStatusType.Complete, pointCloudProcessor.ProcessingType, "Frame processed");
-            if (!firstFrameProcessed)
-            {
-                SetupStatusUI.OnFirstFrameProcessed();
-                firstFrameProcessed = true; // Mark first frame as processed
-            }
+        }
+
+        if (!firstFrameProcessed)
+        {
+            SetupStatusUI.OnFirstFrameProcessed();
+            firstFrameProcessed = true; // Mark first frame as processed
         }
     }
 
