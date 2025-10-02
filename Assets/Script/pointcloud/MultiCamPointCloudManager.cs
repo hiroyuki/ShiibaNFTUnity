@@ -83,11 +83,11 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
             if (File.Exists(depthPath) && File.Exists(colorPath))
             {
-                if (deviceDirName != "FemtoBolt_CL8F253004Z")
-                {
-                    Debug.Log($"スキップ: {deviceDirName}");
-                }
-                else
+                // if (deviceDirName != "FemtoBolt_CL8F253004Z")
+                // {
+                //     Debug.Log($"スキップ: {deviceDirName}");
+                // }
+                // else
                 {
                     
                     GameObject dataManagerObj = new GameObject("SingleCameraDataManager_" + deviceDirName);
