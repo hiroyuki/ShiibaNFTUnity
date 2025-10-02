@@ -5,7 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
 
-public class SingleCameraDataManager : MonoBehaviour
+public class SinglePointCloudView : MonoBehaviour
 {
     public ProcessingType processingType { get; private set; }
     // Configuration constants

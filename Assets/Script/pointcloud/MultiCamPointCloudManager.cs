@@ -96,8 +96,8 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                 // else
                 {
 
-                    GameObject dataManagerObj = new GameObject("SingleCameraDataManager_" + deviceDirName);
-                    var dataManager = dataManagerObj.AddComponent<SingleCameraDataManager>();
+                    GameObject dataManagerObj = new GameObject("SinglePointCloudView_" + deviceDirName);
+                    var dataManager = dataManagerObj.AddComponent<SinglePointCloudView>();
                     // dataManagerObj.transform.parent = this.transform;
 
                     // Initialize the data manager with required parameters
@@ -118,7 +118,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         }
 
         SetupStatusUI.SetProgress(1f);
-        SetupStatusUI.ShowStatus($"SingleCameraDataManager を {dataManagerObjects.Count} 個作成しました - first frames will load individually");
+        SetupStatusUI.ShowStatus($"SinglePointCloudView を {dataManagerObjects.Count} 個作成しました - first frames will load individually");
 
         // // Initialize multi-camera processing if enabled
         // if (useMultiCameraProcessing && dataManagerObjects.Count > 0)
@@ -139,7 +139,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         // Register all camera managers with the processor
         foreach (var dataManagerObj in dataManagerObjects)
         {
-            var dataManager = dataManagerObj.GetComponent<SingleCameraDataManager>();
+            var dataManager = dataManagerObj.GetComponent<SinglePointCloudView>();
             if (dataManager != null)
             {
                 multiCameraProcessor.RegisterCameraManager(dataManager);
@@ -155,7 +155,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     {
         foreach (var dataManagerObj in dataManagerObjects)
         {
-            var dataManager = dataManagerObj.GetComponent<SingleCameraDataManager>();
+            var dataManager = dataManagerObj.GetComponent<SinglePointCloudView>();
             if (dataManager != null)
             {
                 int index = dataManagerObjects.IndexOf(dataManagerObj);
@@ -214,7 +214,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         
         for (int i = 0; i < dataManagerObjects.Count; i++)
         {
-            var dataManager = dataManagerObjects[i].GetComponent<SingleCameraDataManager>();
+            var dataManager = dataManagerObjects[i].GetComponent<SinglePointCloudView>();
             if (dataManager == null) continue;
             
             // Use stored current timestamp instead of peeking metadata
@@ -229,7 +229,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         if (newLeadingIndex != leadingCameraIndex)
         {
             leadingCameraIndex = newLeadingIndex;
-            var leadingCamera = dataManagerObjects[leadingCameraIndex].GetComponent<SingleCameraDataManager>();
+            var leadingCamera = dataManagerObjects[leadingCameraIndex].GetComponent<SinglePointCloudView>();
         }
     }
     
@@ -244,7 +244,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                 return 0;
             }
             
-            var leadingCamera = dataManagerObjects[leadingCameraIndex].GetComponent<SingleCameraDataManager>();
+            var leadingCamera = dataManagerObjects[leadingCameraIndex].GetComponent<SinglePointCloudView>();
             if (leadingCamera == null)
             {
                 Debug.LogError($"Leading camera at index {leadingCameraIndex} is null");
@@ -305,7 +305,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                 int successCount = 0;
                 foreach (var dataManagerObj in dataManagerObjects)
                 {
-                    var dataManager = dataManagerObj.GetComponent<SingleCameraDataManager>();
+                    var dataManager = dataManagerObj.GetComponent<SinglePointCloudView>();
                     if (dataManager != null)
                     {
                         try
@@ -344,7 +344,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         // Use first data manager as reference for timestamp calculation
         if (dataManagerObjects.Count > 0)
         {
-            var dataManager = dataManagerObjects[0].GetComponent<SingleCameraDataManager>();
+            var dataManager = dataManagerObjects[0].GetComponent<SinglePointCloudView>();
             if (dataManager != null)
             {
                 return dataManager.GetTimestampForFrame(frameIndex);
@@ -369,7 +369,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     {
         foreach (var dataManagerObj in dataManagerObjects)
         {
-            var dataManager = dataManagerObj.GetComponent<SingleCameraDataManager>();
+            var dataManager = dataManagerObj.GetComponent<SinglePointCloudView>();
             if (dataManager != null)
             {
                 dataManager.ResetToFirstFrame(pointCloudProcessors[dataManagerObjects.IndexOf(dataManagerObj)]);
@@ -382,7 +382,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         // Return frame count from first data manager (assuming all have same length)
         if (dataManagerObjects.Count > 0)
         {
-            var dataManager = dataManagerObjects[0].GetComponent<SingleCameraDataManager>();
+            var dataManager = dataManagerObjects[0].GetComponent<SinglePointCloudView>();
             return dataManager?.GetTotalFrameCount() ?? -1;
         }
         return -1;
@@ -393,7 +393,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         // Return FPS from first data manager
         if (dataManagerObjects.Count > 0)
         {
-            var dataManager = dataManagerObjects[0].GetComponent<SingleCameraDataManager>();
+            var dataManager = dataManagerObjects[0].GetComponent<SinglePointCloudView>();
             if (dataManager != null)
             {
                 int fps = dataManager.GetFps();

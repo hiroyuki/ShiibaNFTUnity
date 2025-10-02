@@ -6,7 +6,7 @@ using System;
 public class MultiCameraGPUProcessor : MonoBehaviour
 {
     private ComputeShader multiCamProcessor;
-    private List<SingleCameraDataManager> cameraManagers = new List<SingleCameraDataManager>();
+    private List<SinglePointCloudView> cameraManagers = new List<SinglePointCloudView>();
 
     // Multi-camera buffers
     private ComputeBuffer cameraMetadataBuffer;
@@ -45,7 +45,7 @@ public class MultiCameraGPUProcessor : MonoBehaviour
     }
 
 
-    public void RegisterCameraManager(SingleCameraDataManager cameraManager)
+    public void RegisterCameraManager(SinglePointCloudView cameraManager)
     {
         if (!cameraManagers.Contains(cameraManager))
         {
@@ -86,7 +86,7 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         foreach (var manager in cameraManagers)
         {
             // Get depth dimensions from the manager's device
-            var device = manager.GetComponent<SingleCameraDataManager>().GetDevice();
+            var device = manager.GetComponent<SinglePointCloudView>().GetDevice();
             if (device != null)
             {
                 totalPixels += device.GetDepthWidth() * device.GetDepthHeight();
@@ -280,7 +280,7 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         }
     }
 
-    private Vector2[] GetLutDataFromManager(SingleCameraDataManager manager)
+    private Vector2[] GetLutDataFromManager(SinglePointCloudView manager)
     {
         var device = manager.GetDevice();
         if (device == null) return new Vector2[0];
@@ -375,7 +375,7 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         }
     }
 
-    private void UpdateCameraMesh(SingleCameraDataManager manager, VertexData[] results, int validCount)
+    private void UpdateCameraMesh(SinglePointCloudView manager, VertexData[] results, int validCount)
     {
         if (validCount == 0) return;
 
