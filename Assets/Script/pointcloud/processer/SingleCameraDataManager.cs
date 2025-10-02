@@ -7,6 +7,7 @@ using UnityEngine;
 
 public class SingleCameraDataManager : MonoBehaviour
 {
+    public ProcessingType processingType { get; private set; }
     // Configuration constants
     private const float DEFAULT_POINT_SIZE = 3.0f;
     private const float GIZMO_SIZE = 0.1f;
@@ -15,7 +16,6 @@ public class SingleCameraDataManager : MonoBehaviour
     private MeshFilter depthMeshFilter;
     private Mesh depthMesh;
 
-    private IPointCloudProcessor pointCloudProcessor;
     private SensorDevice device;
 
     private bool firstFrameProcessed = false;
@@ -28,22 +28,19 @@ public class SingleCameraDataManager : MonoBehaviour
     // Timeline scrubbing support
     private int totalFrameCount = -1;
 
-    public void Initialize(string dir, string hostname, string deviceName)
+    public void Initialize(string dir, string hostname, string deviceName, ProcessingType processingType)
     {
         this.device = new SensorDevice();
+        this.processingType = processingType;
         this.device.setup(dir, hostname, deviceName);
+        LoadExtrinsicsAndScale();
+        SetupDepthViewer();
     }
 
     void Start()
     {
         SetupStatusUI.UpdateDeviceStatus(device);
-        if (!LoadExtrinsicsAndScale()) return;
-        SetupDepthViewer();
-        SetupProcessors();
-        ConfigureBoundingVolume();
-        ConfigureTransforms();
-        FinalizeSetup();
-    
+
     }
 
     private bool LoadExtrinsicsAndScale()
@@ -102,33 +99,35 @@ public class SingleCameraDataManager : MonoBehaviour
         depthMeshFilter.mesh = depthMesh;
     }
 
-    private void SetupProcessors()
+    public IPointCloudProcessor SetupProcessors()
     {
         // Load depth bias from configuration.yaml
         float depthBias = device.GetDepthBias();
 
         // Create the best available processor using factory pattern
-        pointCloudProcessor = PointCloudProcessorFactory.CreateBestProcessor(device.deviceName);
+        IPointCloudProcessor pointCloudProcessor = PointCloudProcessorFactory.CreateBestProcessor(device.deviceName);
 
-        UpdateDeviceStatus(DeviceStatusType.Loading, pointCloudProcessor.ProcessingType,
-                          $"{pointCloudProcessor.ProcessingType} processing enabled");
+        UpdateDeviceStatus(DeviceStatusType.Loading, processingType,
+                          $"{processingType} processing enabled");
 
         // Setup the processor with all required parameters
         pointCloudProcessor.Setup(device, depthBias);
 
         pointCloudProcessor.SetDepthViewerTransform(depthViewer.transform);
+        
+        return pointCloudProcessor;
     }
 
-    private void UpdateDeviceStatus(DeviceStatusType loading, ProcessingType gPU_Binary, string v)
+    private void UpdateDeviceStatus(DeviceStatusType loading, ProcessingType GPU_Binary, string v)
     {
         device.statusType = loading;
-        device.processingType = gPU_Binary;
+        device.processingType = GPU_Binary;
         device.statusMessage = v;
         device.lastUpdated = DateTime.Now;
         SetupStatusUI.UpdateDeviceStatus(device);
     }
 
-    private void ConfigureBoundingVolume()
+    public void ConfigureBoundingVolume(IPointCloudProcessor pointCloudProcessor)
     {
         // Find and set bounding volume
         Transform boundingVolume = GameObject.Find("BoundingVolume")?.transform;
@@ -142,7 +141,7 @@ public class SingleCameraDataManager : MonoBehaviour
         }
     }
 
-    private void ConfigureTransforms()
+    public void ConfigureTransforms(IPointCloudProcessor pointCloudProcessor)
     {
         string serial = device.deviceName.Split('_')[^1];
         if (extrisics.TryGetDepthToColorTransform(serial, out Vector3 d2cTranslation, out Quaternion d2cRotation))
@@ -171,51 +170,24 @@ public class SingleCameraDataManager : MonoBehaviour
         SetupStatusUI.ShowStatus($"Setup complete for {device.deviceName}");
     }
 
-    void Update()
+    public void ProcessFirstFrameIfNeeded(IPointCloudProcessor pointCloudProcessor)
     {
         // Auto-load first frame on startup (disabled - MultiCamPointCloudManager handles this)
         if (autoLoadFirstFrame && !firstFrameProcessed)
         {
             ulong targetTimestamp = device.GetTimestampForFrame(0);
-            bool success = ProcessFrame(targetTimestamp);
+            ConfigureBoundingVolume(pointCloudProcessor);
+            bool success = ProcessFrame(targetTimestamp, pointCloudProcessor);
             autoLoadFirstFrame = false; // Prevent auto-loading again
         }
     }
    
-    public void ResetToFirstFrame()
+    public void ResetToFirstFrame(IPointCloudProcessor pointCloudProcessor)
     {
         Debug.Log("Reset To First Frame");
         
         ulong targetTimestamp = device.GetTimestampForFrame(0);
-        bool success = ProcessFrame(targetTimestamp);
-    }
-
-    public bool ProcessFrame(ulong targetTimestamp)
-    {
-        ulong actualTimestamp = 0;
-
-        UpdateDeviceStatus(DeviceStatusType.Ready, pointCloudProcessor.ProcessingType, "Starting frame processing...");
-        bool synchronized = SeekToTimestamp(targetTimestamp, out actualTimestamp);
-        UpdateDeviceStatus(DeviceStatusType.Ready, pointCloudProcessor.ProcessingType, "Frame seek complete");
-        if (synchronized)
-        {
-            // Process the synchronized frame
-            
-            var frameOk = device.ParseRecord(pointCloudProcessor.ProcessingType == ProcessingType.GPU);
-            UpdateDeviceStatus(DeviceStatusType.Processing, pointCloudProcessor.ProcessingType, "Frame data parsed");
-            if (frameOk)
-            {
-                UpdateMesh(actualTimestamp, showStatus: false);
-                UpdateDeviceStatus(DeviceStatusType.Complete, pointCloudProcessor.ProcessingType, "Mesh updated");
-            }
-            return frameOk;
-        }
-        else
-        {
-            Debug.LogWarning($"No synchronized frame found for timestamp {targetTimestamp}");
-            UpdateDeviceStatus(DeviceStatusType.Error, pointCloudProcessor.ProcessingType, "No synchronized frame");
-            return false;
-        }
+        bool success = ProcessFrame(targetTimestamp, pointCloudProcessor);
     }
     
     // Simplified timestamp-only seeking logic
@@ -255,26 +227,75 @@ public class SingleCameraDataManager : MonoBehaviour
         }
         return synchronized;
     }
-    // Unified frame processing logic using the interface
-    private void UpdateMesh(ulong frameTimestamp, bool showStatus = false)
+
+
+    public void UpdateTexture()
     {
+        device.UpdateTexture(processingType != ProcessingType.CPU);
+    }
 
-        device.UpdateTexture(pointCloudProcessor.ProcessingType == ProcessingType.GPU);
-        // Use the unified interface - no more branching logic!
-        pointCloudProcessor.UpdateMesh(depthMesh, device);
+    public void UpdateCurrentTimestamp(ulong timestamp)
+    {
+        currentTimestamp = timestamp;
+    }
 
-        // Store the current timestamp for efficient leading camera detection
-        currentTimestamp = frameTimestamp;
-
-        if (showStatus)
-        {
-            UpdateDeviceStatus(DeviceStatusType.Complete, pointCloudProcessor.ProcessingType, "Frame processed");
-        }
-
+    // // Unified frame processing logic using the interface
+    // private void UpdateMesh(ulong frameTimestamp, bool showStatus = false)
+    // {
+    //     if (processingType != ProcessingType.MultiGPU)
+    //     {
+    //         // Use the unified interface - no more branching logic!
+    //         pointCloudProcessor.UpdateMesh(depthMesh, device);
+    //     }
+    // }
+    
+    public void NotifyFirstFrameProcessed()
+    {
         if (!firstFrameProcessed)
         {
             SetupStatusUI.OnFirstFrameProcessed();
             firstFrameProcessed = true; // Mark first frame as processed
+        }
+    }
+
+    public bool ParseRecord()
+    {
+        return device.ParseRecord(processingType != ProcessingType.CPU);
+    }
+
+
+    public bool ProcessFrame(ulong targetTimestamp, IPointCloudProcessor pointCloudProcessor)
+    {
+        ulong actualTimestamp = 0;
+
+        UpdateDeviceStatus(DeviceStatusType.Ready, processingType, "Starting frame processing...");
+        bool synchronized = SeekToTimestamp(targetTimestamp, out actualTimestamp);
+        UpdateDeviceStatus(DeviceStatusType.Ready, processingType, "Frame seek complete");
+        if (synchronized)
+        {
+            // Process the synchronized frame
+
+            var frameOk = ParseRecord();
+            UpdateDeviceStatus(DeviceStatusType.Processing, processingType, "Frame data parsed");
+            if (frameOk)
+            {
+                UpdateTexture();
+                if (processingType != ProcessingType.MultiGPU)
+                {
+                    // Use the unified interface - no more branching logic!
+                    pointCloudProcessor.UpdateMesh(depthMesh, device);
+                }
+                UpdateCurrentTimestamp(actualTimestamp);
+                NotifyFirstFrameProcessed();
+                UpdateDeviceStatus(DeviceStatusType.Complete, processingType, "Mesh updated");
+            }
+            return frameOk;
+        }
+        else
+        {
+            Debug.LogWarning($"No synchronized frame found for timestamp {targetTimestamp}");
+            UpdateDeviceStatus(DeviceStatusType.Error, processingType, "No synchronized frame");
+            return false;
         }
     }
 
@@ -335,12 +356,14 @@ public class SingleCameraDataManager : MonoBehaviour
 
     private ProcessingType GetCurrentProcessingType()
     {
-        return pointCloudProcessor?.ProcessingType ?? ProcessingType.CPU;
+        return processingType;
     }
+
+    // Public getters for multi-camera processing
+    public SensorDevice GetDevice() => device;
 
     void OnDestroy()
     {
         device?.Dispose();
-        pointCloudProcessor?.Dispose();
     }
 }

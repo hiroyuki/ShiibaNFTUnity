@@ -20,7 +20,8 @@ public enum ProcessingType
 {
     None,
     CPU,
-    GPU
+    GPU,
+    MultiGPU
 }
 
 [Serializable]

@@ -14,11 +14,16 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     private string rootDirectory; // datasetを含むディレクトリ
 
     private List<GameObject> dataManagerObjects = new();
-    
+    private List<IPointCloudProcessor> pointCloudProcessors = new();
+
     // Frame navigation tracking
     private int leadingCameraIndex = 0; // Index of camera that currently has the head timestamp
-    
+
     private volatile bool isProcessing = false;
+
+    // Multi-camera GPU processing
+    private MultiCameraGPUProcessor multiCameraProcessor;
+    private bool useMultiCameraProcessing = false;
 
     void Start()
     {
@@ -78,20 +83,22 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
             if (File.Exists(depthPath) && File.Exists(colorPath))
             {
-                // if (deviceDirName != "FemtoBolt_CL8F253004Z")
-                // {
-                //     Debug.Log($"スキップ: {deviceDirName}");
-                // }
-                // else
+                if (deviceDirName != "FemtoBolt_CL8F253004Z")
                 {
-                    
+                    Debug.Log($"スキップ: {deviceDirName}");
+                }
+                else
+                {
+
                     GameObject dataManagerObj = new GameObject("SingleCameraDataManager_" + deviceDirName);
                     var dataManager = dataManagerObj.AddComponent<SingleCameraDataManager>();
                     dataManagerObj.transform.parent = this.transform;
 
                     // Initialize the data manager with required parameters
-                    dataManager.Initialize(rootDirectory, Path.GetFileName(hostDir), deviceDirName);
+                    dataManager.Initialize(rootDirectory, Path.GetFileName(hostDir), deviceDirName, ProcessingType.GPU);
                     dataManagerObjects.Add(dataManagerObj);
+                    IPointCloudProcessor processor = dataManager.SetupProcessors();
+                    pointCloudProcessors.Add(processor);
                     
                     // Create async processor for this camera
                     // var cameraProcessor = new CameraProcessor(deviceDirName, dataManager);
@@ -104,10 +111,48 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
         SetupStatusUI.SetProgress(1f);
         SetupStatusUI.ShowStatus($"SingleCameraDataManager を {dataManagerObjects.Count} 個作成しました - first frames will load individually");
+
+        // Initialize multi-camera processing if enabled
+        if (useMultiCameraProcessing && dataManagerObjects.Count > 0)
+        {
+            InitializeMultiCameraProcessing();
+        }
     }
-    
+
+    private void InitializeMultiCameraProcessing()
+    {
+        SetupStatusUI.ShowStatus("Initializing multi-camera GPU processing...");
+
+        // Create multi-camera processor GameObject
+        GameObject processorObj = new GameObject("MultiCameraGPUProcessor");
+        processorObj.transform.parent = this.transform;
+        multiCameraProcessor = processorObj.AddComponent<MultiCameraGPUProcessor>();
+
+        // Register all camera managers with the processor
+        foreach (var dataManagerObj in dataManagerObjects)
+        {
+            var dataManager = dataManagerObj.GetComponent<SingleCameraDataManager>();
+            if (dataManager != null)
+            {
+                multiCameraProcessor.RegisterCameraManager(dataManager);
+            }
+        }
+
+        // Initialize the processor immediately since all cameras are already initialized
+        multiCameraProcessor.InitializeMultiCameraProcessing();
+        SetupStatusUI.ShowStatus($"Multi-camera GPU processing initialized for {dataManagerObjects.Count} cameras");
+    }
+
     void Update()
     {
+        foreach (var dataManagerObj in dataManagerObjects)
+        {
+            var dataManager = dataManagerObj.GetComponent<SingleCameraDataManager>();
+            if (dataManager != null)
+            {
+                dataManager.ProcessFirstFrameIfNeeded(pointCloudProcessors[dataManagerObjects.IndexOf(dataManagerObj)]);
+            }
+        }
         HandleSynchronizedFrameNavigation();
     }
     
@@ -235,27 +280,38 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
         try
         {
-            SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} across {dataManagerObjects.Count} cameras...");
-
-            int successCount = 0;
-            foreach (var dataManagerObj in dataManagerObjects)
+            if (useMultiCameraProcessing && multiCameraProcessor != null)
             {
-                var dataManager = dataManagerObj.GetComponent<SingleCameraDataManager>();
-                if (dataManager != null)
+                // Use multi-camera GPU processing for all scenarios (single or multiple cameras)
+                SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} using multi-camera GPU processing ({dataManagerObjects.Count} camera(s))...");
+                multiCameraProcessor.ProcessAllCamerasFrame(targetTimestamp);
+                SetupStatusUI.ShowStatus($"Multi-camera GPU processing complete for {dataManagerObjects.Count} camera(s)");
+            }
+            else
+            {
+                // Fall back to individual camera processing only if multi-camera processor is not available
+                SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} across {dataManagerObjects.Count} cameras (fallback mode)...");
+
+                int successCount = 0;
+                foreach (var dataManagerObj in dataManagerObjects)
                 {
-                    try
+                    var dataManager = dataManagerObj.GetComponent<SingleCameraDataManager>();
+                    if (dataManager != null)
                     {
-                        dataManager.ProcessFrame(targetTimestamp);
-                        successCount++;
-                    }
-                    catch (System.Exception ex)
-                    {
-                        Debug.LogError($"Failed to process camera {dataManagerObj.name}: {ex.Message}");
+                        try
+                        {
+                            dataManager.ProcessFrame(targetTimestamp, pointCloudProcessors[dataManagerObjects.IndexOf(dataManagerObj)]);
+                            successCount++;
+                        }
+                        catch (System.Exception ex)
+                        {
+                            Debug.LogError($"Failed to process camera {dataManagerObj.name}: {ex.Message}");
+                        }
                     }
                 }
-            }
 
-            SetupStatusUI.ShowStatus($"Frame processing complete: {successCount}/{dataManagerObjects.Count} cameras processed successfully");
+                SetupStatusUI.ShowStatus($"Frame processing complete: {successCount}/{dataManagerObjects.Count} cameras processed successfully");
+            }
 
             // Update leading camera index after processing for next navigation
             UpdateLeadingCameraIndex();
@@ -305,7 +361,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             var dataManager = dataManagerObj.GetComponent<SingleCameraDataManager>();
             if (dataManager != null)
             {
-                dataManager.ResetToFirstFrame();
+                dataManager.ResetToFirstFrame(pointCloudProcessors[dataManagerObjects.IndexOf(dataManagerObj)]);
             }
         }
     }
@@ -348,6 +404,11 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     }
     
     void OnDestroy()
-    {   
+    {
+        // Cleanup multi-camera processor
+        if (multiCameraProcessor != null)
+        {
+            DestroyImmediate(multiCameraProcessor.gameObject);
+        }
     }
 }

@@ -124,7 +124,7 @@ public class SetupStatusUI : MonoBehaviour
 
         // Debug: List all available fonts
         Font[] allFonts = UnityEngine.Resources.FindObjectsOfTypeAll<Font>();
-        Debug.Log($"Available fonts: {string.Join(", ", allFonts.Select(f => f.name))}");
+        // Debug.Log($"Available fonts: {string.Join(", ", allFonts.Select(f => f.name))}");
 
         // Try multiple approaches to load Japanese font
         Font notoSansJP = null;
@@ -145,7 +145,7 @@ public class SetupStatusUI : MonoBehaviour
 
         if (notoSansJP != null)
         {
-            Debug.Log($"Found Japanese font: {notoSansJP.name}");
+            // Debug.Log($"Found Japanese font: {notoSansJP.name}");
             // Try to create TMP_FontAsset
             try
             {
@@ -153,7 +153,7 @@ public class SetupStatusUI : MonoBehaviour
                 if (japaneseFont != null)
                 {
                     statusText.font = japaneseFont;
-                    Debug.Log("Successfully applied Japanese font to statusText");
+                    // Debug.Log("Successfully applied Japanese font to statusText");
                 }
                 else
                 {

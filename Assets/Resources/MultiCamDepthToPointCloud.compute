@@ -1,0 +1,218 @@
+#pragma kernel ProcessMultiCamDepthData
+
+// Camera count (set from C#)
+uint cameraCount;
+
+// Per-camera metadata
+struct CameraMetadata
+{
+    // Transform matrices
+    float4x4 rotationMatrix;
+    float3 translation;
+    float4x4 depthViewerTransform;
+
+    // Camera intrinsics (from arrays depthIntrinsics[4] and colorIntrinsics[4])
+    float fx_d, fy_d, cx_d, cy_d; // Depth camera
+    float fx_c, fy_c, cx_c, cy_c; // Color camera
+
+    // Distortion parameters (from colorDistortion[8] array: k1~k6, p1, p2)
+    float4 colorDistortion; // k1, k2, p1, p2
+    float4 colorDistortion2; // k3, k4, k5, k6
+
+    // Image dimensions
+    uint depthWidth;
+    uint depthHeight;
+    uint colorWidth;
+    uint colorHeight;
+
+    // Processing parameters
+    float depthScaleFactor;
+    float depthBias;
+    bool useOpenCVLUT;
+
+    // Bounding volume parameters
+    bool hasBoundingVolume;
+    bool showAllPoints;
+    float4x4 boundingVolumeInverseTransform;
+
+    // Buffer offsets for this camera
+    uint depthDataOffset;
+    uint lutDataOffset;
+    uint outputOffset;
+};
+
+// Multi-camera data buffers
+RWStructuredBuffer<CameraMetadata> cameraMetadata;
+RWStructuredBuffer<uint> allDepthData; // All cameras' depth data concatenated
+RWStructuredBuffer<float2> allLutData; // All cameras' LUT data concatenated
+Texture2DArray colorTextureArray; // All cameras' color textures in array
+SamplerState samplercolorTextureArray;
+
+// Output buffers
+struct VertexData
+{
+    float3 vertex;
+    float4 color;
+    int isValid;
+    uint cameraIndex; // Which camera this point belongs to
+};
+
+RWStructuredBuffer<VertexData> allOutputVertices; // All cameras' output concatenated
+RWStructuredBuffer<int> validCountPerCamera; // Valid count for each camera
+
+// Utility functions
+float2 DistortColorProjection(float x_norm, float y_norm, CameraMetadata cam)
+{
+    float k1 = cam.colorDistortion.x, k2 = cam.colorDistortion.y, k3 = cam.colorDistortion2.x;
+    float k4 = cam.colorDistortion2.y, k5 = cam.colorDistortion2.z, k6 = cam.colorDistortion2.w;
+    float p1 = cam.colorDistortion.z, p2 = cam.colorDistortion.w;
+
+    float r2 = x_norm * x_norm + y_norm * y_norm;
+    float r4 = r2 * r2;
+    float r6 = r4 * r2;
+
+    float radial = 1 + k1 * r2 + k2 * r4 + k3 * r6;
+    float x_d = x_norm * radial + 2 * p1 * x_norm * y_norm + p2 * (r2 + 2 * x_norm * x_norm);
+    float y_d = y_norm * radial + 2 * p2 * x_norm * y_norm + p1 * (r2 + 2 * y_norm * y_norm);
+
+    float u = cam.fx_c * x_d + cam.cx_c;
+    float v = cam.fy_c * y_d + cam.cy_c;
+
+    return float2(u, v);
+}
+
+bool IsPointInBoundingVolume(float3 worldPoint, CameraMetadata cam)
+{
+    if (!cam.hasBoundingVolume) return true;
+
+    float4 localPoint4 = mul(cam.boundingVolumeInverseTransform, float4(worldPoint, 1.0));
+    float3 localPoint = localPoint4.xyz;
+
+    return (abs(localPoint.x) <= 0.5) && (abs(localPoint.y) <= 0.5) && (abs(localPoint.z) <= 0.5);
+}
+
+[numthreads(32, 1, 1)]
+void ProcessMultiCamDepthData(uint3 id : SV_DispatchThreadID)
+{
+    uint globalThreadId = id.x;
+
+    // Calculate which camera and which pixel within that camera
+    uint totalPixelsProcessed = 0;
+    uint cameraIndex = 0;
+    uint pixelIndexInCamera = globalThreadId;
+
+    // Find which camera this thread should process
+    for (uint cam = 0; cam < cameraCount; cam++)
+    {
+        CameraMetadata camData = cameraMetadata[cam];
+        uint cameraPixelCount = camData.depthWidth * camData.depthHeight;
+
+        if (pixelIndexInCamera < cameraPixelCount)
+        {
+            cameraIndex = cam;
+            break;
+        }
+
+        pixelIndexInCamera -= cameraPixelCount;
+        totalPixelsProcessed += cameraPixelCount;
+    }
+
+    // If thread ID exceeds total pixels across all cameras, exit
+    if (cameraIndex >= cameraCount)
+        return;
+
+    // Get camera metadata
+    CameraMetadata cam = cameraMetadata[cameraIndex];
+
+    // Calculate pixel coordinates within this camera
+    uint x = pixelIndexInCamera % cam.depthWidth;
+    uint y = pixelIndexInCamera / cam.depthWidth;
+
+    // Calculate global buffer indices
+    uint depthDataIndex = cam.depthDataOffset + pixelIndexInCamera;
+    uint outputIndex = cam.outputOffset + pixelIndexInCamera;
+
+    // Read depth value
+    uint rawDepthValue = allDepthData[depthDataIndex] & 0xFFFF;
+
+    // Apply depth bias and scale
+    float correctedDepth = rawDepthValue + cam.depthBias;
+    float z = correctedDepth * (cam.depthScaleFactor / 1000.0);
+
+    if (z <= 0)
+    {
+        allOutputVertices[outputIndex].isValid = 0;
+        return;
+    }
+
+    // Calculate 3D point coordinates
+    float px, py;
+
+    if (cam.useOpenCVLUT)
+    {
+        // Use LUT for undistortion
+        uint lutIndex = cam.lutDataOffset + x + y * cam.depthWidth;
+        float2 rayCoords = allLutData[lutIndex];
+        px = rayCoords.x * z;
+        py = rayCoords.y * z;
+    }
+    else
+    {
+        // Simple pinhole camera model
+        px = (x - cam.cx_d) * z / cam.fx_d;
+        py = (y - cam.cy_d) * z / cam.fy_d;
+    }
+
+    // Transform depth point to color camera space
+    float3 dPoint = float3(px, py, z);
+    float3 cPoint = mul(cam.rotationMatrix, float4(dPoint, 1.0)).xyz + cam.translation;
+
+    // Skip points behind camera
+    if (cPoint.z <= 0)
+    {
+        allOutputVertices[outputIndex].isValid = 0;
+        return;
+    }
+
+    // Project to color camera
+    float x_norm = cPoint.x / cPoint.z;
+    float y_norm = cPoint.y / cPoint.z;
+    float2 colorPixelCoord = DistortColorProjection(x_norm, y_norm, cam);
+
+    // Convert to normalized texture coordinates [0,1]
+    float2 colorUV = float2(
+        colorPixelCoord.x / (float)cam.colorWidth,
+        1.0 - (colorPixelCoord.y / (float)cam.colorHeight) // Flip Y
+    );
+
+    // Sample color from texture array using camera index as array slice
+    float4 color = colorTextureArray.SampleLevel(samplercolorTextureArray, float3(colorUV, cameraIndex), 0);
+
+    // Check if color is valid
+    bool hasValidColor = true; // Can add threshold check here if needed
+
+    // Convert to world coordinates for bounding volume check
+    float4 worldPoint4 = mul(cam.depthViewerTransform, float4(cPoint, 1.0));
+    float3 worldPoint = worldPoint4.xyz;
+
+    // Check bounding volume
+    bool withinBounds = cam.showAllPoints;
+    if (!cam.showAllPoints) {
+        withinBounds = IsPointInBoundingVolume(worldPoint, cam);
+    }
+
+    // Write output
+    if (hasValidColor && withinBounds)
+    {
+        allOutputVertices[outputIndex].vertex = cPoint;
+        allOutputVertices[outputIndex].color = color;
+        allOutputVertices[outputIndex].isValid = 1;
+        allOutputVertices[outputIndex].cameraIndex = cameraIndex;
+        InterlockedAdd(validCountPerCamera[cameraIndex], 1);
+    }
+    else
+    {
+        allOutputVertices[outputIndex].isValid = 0;
+        allOutputVertices[outputIndex].cameraIndex = cameraIndex;
+    }
+}

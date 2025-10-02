@@ -3,7 +3,6 @@ using System;
 
 public interface IPointCloudProcessor : IDisposable
 {
-    ProcessingType ProcessingType { get; }
     string DeviceName { get; }
     bool IsSupported();
 

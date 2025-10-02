@@ -95,7 +95,6 @@ public abstract class BasePointCloudProcessor : IPointCloudProcessor
         // Already handled in Setup method for most processors
         // Override if specific processor needs different behavior
     }
-
     // Check if point is within bounding volume (common utility)
     protected virtual bool IsPointInBounds(Vector3 point)
     {
