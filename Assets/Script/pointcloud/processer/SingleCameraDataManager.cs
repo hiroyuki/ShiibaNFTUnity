@@ -23,7 +23,6 @@ public class SingleCameraDataManager : MonoBehaviour
     
     // Store current timestamp for efficient leading camera detection
     private ulong currentTimestamp = 0;
-    private ExtrinsicsLoader extrisics;
 
     // Timeline scrubbing support
     private int totalFrameCount = -1;
@@ -33,37 +32,77 @@ public class SingleCameraDataManager : MonoBehaviour
         this.device = new SensorDevice();
         this.processingType = processingType;
         this.device.setup(dir, hostname, deviceName);
-        LoadExtrinsicsAndScale();
         SetupDepthViewer();
+    }
+
+    public IPointCloudProcessor SetupProcessors()
+    {
+        // Load depth bias from configuration.yaml
+        float depthBias = device.GetDepthBias();
+
+        // Create the best available processor using factory pattern
+        IPointCloudProcessor pointCloudProcessor = PointCloudProcessorFactory.CreateBestProcessor(device.deviceName);
+
+        UpdateDeviceStatus(DeviceStatusType.Loading, processingType,
+                          $"{processingType} processing enabled");
+        
+        // Setup the processor with all required parameters
+        pointCloudProcessor.Setup(device, depthBias);
+
+        pointCloudProcessor.SetDepthViewerTransform(depthViewer.transform);
+        
+        return pointCloudProcessor;
+    }
+
+    public void SetupWithProcessor(IPointCloudProcessor pointCloudProcessor)
+    {
+        ConfigureBoundingVolume(pointCloudProcessor);
+        ConfigureTransforms(pointCloudProcessor);
+        pointCloudProcessor.SetupCameraMetadata(device);
+        FinalizeSetup();
+    }
+
+
+    public void ConfigureBoundingVolume(IPointCloudProcessor pointCloudProcessor)
+    {
+        // Find and set bounding volume
+        Transform boundingVolume = GameObject.Find("BoundingVolume")?.transform;
+        if (boundingVolume != null)
+        {
+            // pointCloudProcessor.SetBoundingVolume(boundingVolume);
+        }
+        else
+        {
+            Debug.LogWarning("BoundingVolume GameObject not found in hierarchy");
+        }
+    }
+
+    public void ConfigureTransforms(IPointCloudProcessor pointCloudProcessor)
+    {
+        // Transforms are already loaded in SensorDevice via LoadExtrinsics()
+        // Just apply them to the processor
+        pointCloudProcessor.ApplyDepthToColorExtrinsics(
+            device.GetDepthToColorTranslation(),
+            device.GetDepthToColorRotation()
+        );
+
+        UpdateDeviceStatus(DeviceStatusType.Loading, ProcessingType.None, "Finalizing setup...");
+        pointCloudProcessor.SetupColorIntrinsics(device.GetColorParser().sensorHeader);
+    }
+
+    private void FinalizeSetup()
+    {
+        // Set reasonable defaults for timeline support
+        totalFrameCount = -1; // Unknown, will be estimated
+
+        UpdateDeviceStatus(DeviceStatusType.Ready, ProcessingType.None, "Waiting for first frame");
+        SetupStatusUI.ShowStatus($"Setup complete for {device.deviceName}");
     }
 
     void Start()
     {
         SetupStatusUI.UpdateDeviceStatus(device);
 
-    }
-
-    private bool LoadExtrinsicsAndScale()
-    {
-        UpdateDeviceStatus(DeviceStatusType.Loading, ProcessingType.None, "Loading extrinsics...");
-        string extrinsicsPath = Path.Combine(device.GetDir(), "calibration", "extrinsics.yaml");
-        string serial = device.GetDeviceName().Split('_')[^1];
-
-        extrisics = new ExtrinsicsLoader(extrinsicsPath);
-        if (!extrisics.IsLoaded)
-        {
-            string errorMsg = "Extrinsics data could not be loaded from: " + extrinsicsPath;
-            Debug.LogError(errorMsg);
-            UpdateDeviceStatus(DeviceStatusType.Error, ProcessingType.None, "Extrinsics failed");
-            return false;
-        }
-
-        float? loadedScale = extrisics.GetDepthScaleFactor(serial);
-        if (loadedScale.HasValue)
-        {
-            device.SetDepthScaleFactor(loadedScale.Value);
-        }
-        return true;
     }
 
     private void SetupDepthViewer()
@@ -79,12 +118,9 @@ public class SingleCameraDataManager : MonoBehaviour
         gizmo.size = GIZMO_SIZE;
 
         // Apply global transform if available
-        string serial = device.deviceName.Split('_')[^1];
-        if (extrisics.TryGetGlobalTransform(serial, out Vector3 pos, out Quaternion rot))
+        if (device.TryGetGlobalTransform(out Vector3 pos, out Quaternion rot))
         {
-            Vector3 unityPosition = new Vector3(pos.x, pos.y, pos.z);
-            Quaternion unityRotation = rot;
-            depthViewer.transform.SetLocalPositionAndRotation(unityPosition, unityRotation);
+            depthViewer.transform.SetLocalPositionAndRotation(pos, rot);
         }
 
         // Setup mesh components
@@ -99,25 +135,6 @@ public class SingleCameraDataManager : MonoBehaviour
         depthMeshFilter.mesh = depthMesh;
     }
 
-    public IPointCloudProcessor SetupProcessors()
-    {
-        // Load depth bias from configuration.yaml
-        float depthBias = device.GetDepthBias();
-
-        // Create the best available processor using factory pattern
-        IPointCloudProcessor pointCloudProcessor = PointCloudProcessorFactory.CreateBestProcessor(device.deviceName);
-
-        UpdateDeviceStatus(DeviceStatusType.Loading, processingType,
-                          $"{processingType} processing enabled");
-
-        // Setup the processor with all required parameters
-        pointCloudProcessor.Setup(device, depthBias);
-
-        pointCloudProcessor.SetDepthViewerTransform(depthViewer.transform);
-        
-        return pointCloudProcessor;
-    }
-
     private void UpdateDeviceStatus(DeviceStatusType loading, ProcessingType GPU_Binary, string v)
     {
         device.statusType = loading;
@@ -127,48 +144,6 @@ public class SingleCameraDataManager : MonoBehaviour
         SetupStatusUI.UpdateDeviceStatus(device);
     }
 
-    public void ConfigureBoundingVolume(IPointCloudProcessor pointCloudProcessor)
-    {
-        // Find and set bounding volume
-        Transform boundingVolume = GameObject.Find("BoundingVolume")?.transform;
-        if (boundingVolume != null)
-        {
-            pointCloudProcessor.SetBoundingVolume(boundingVolume);
-        }
-        else
-        {
-            Debug.LogWarning("BoundingVolume GameObject not found in hierarchy");
-        }
-    }
-
-    public void ConfigureTransforms(IPointCloudProcessor pointCloudProcessor)
-    {
-        string serial = device.deviceName.Split('_')[^1];
-        if (extrisics.TryGetDepthToColorTransform(serial, out Vector3 d2cTranslation, out Quaternion d2cRotation))
-        {
-            // Set transform in both SensorDevice and PointCloudProcessor
-            device.SetDepthToColorTransform(d2cTranslation, d2cRotation);
-            pointCloudProcessor.ApplyDepthToColorExtrinsics(d2cTranslation, d2cRotation);
-        }
-        else
-        {
-            Debug.LogError($"Failed to get depth to color transform for {serial}");
-            UpdateDeviceStatus(DeviceStatusType.Error, ProcessingType.None, "Transform failed");
-            return;
-        }
-
-        UpdateDeviceStatus(DeviceStatusType.Loading, ProcessingType.None, "Finalizing setup...");
-        pointCloudProcessor.SetupColorIntrinsics(device.GetColorParser().sensorHeader);
-    }
-
-    private void FinalizeSetup()
-    {
-        // Set reasonable defaults for timeline support
-        totalFrameCount = -1; // Unknown, will be estimated
-
-        UpdateDeviceStatus(DeviceStatusType.Ready, ProcessingType.None, "Waiting for first frame");
-        SetupStatusUI.ShowStatus($"Setup complete for {device.deviceName}");
-    }
 
     public void ProcessFirstFrameIfNeeded(IPointCloudProcessor pointCloudProcessor)
     {
@@ -176,7 +151,6 @@ public class SingleCameraDataManager : MonoBehaviour
         if (autoLoadFirstFrame && !firstFrameProcessed)
         {
             ulong targetTimestamp = device.GetTimestampForFrame(0);
-            ConfigureBoundingVolume(pointCloudProcessor);
             bool success = ProcessFrame(targetTimestamp, pointCloudProcessor);
             autoLoadFirstFrame = false; // Prevent auto-loading again
         }
@@ -280,7 +254,7 @@ public class SingleCameraDataManager : MonoBehaviour
             if (frameOk)
             {
                 UpdateTexture();
-                if (processingType != ProcessingType.MultiGPU)
+                if (processingType != ProcessingType.SINGLEGPU)
                 {
                     // Use the unified interface - no more branching logic!
                     pointCloudProcessor.UpdateMesh(depthMesh, device);

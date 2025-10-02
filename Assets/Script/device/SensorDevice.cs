@@ -21,7 +21,7 @@ public enum ProcessingType
     None,
     CPU,
     GPU,
-    MultiGPU
+    SINGLEGPU
 }
 
 [Serializable]
@@ -80,6 +80,9 @@ public class SensorDevice
 
         // Initialize camera parameters
         InitializeCameraParameters();
+
+        // Load extrinsics
+        LoadExtrinsics();
     }
 
 
@@ -414,6 +417,116 @@ public class SensorDevice
         depthUndistortLUT = OpenCVUndistortHelper.BuildUndistortLUTFromHeader(depthHeader);
 
         Debug.Log($"Camera parameters initialized for {deviceName}: Depth({depthWidth}x{depthHeight}), Color({colorWidth}x{colorHeight})");
+    }
+
+    private void LoadExtrinsics()
+    {
+        string extrinsicsPath = Path.Combine(dir, "calibration", "extrinsics.yaml");
+        string serial = deviceName.Split('_')[^1];
+
+        ExtrinsicsLoader extrinsics = new ExtrinsicsLoader(extrinsicsPath);
+        if (!extrinsics.IsLoaded)
+        {
+            Debug.LogError($"Extrinsics data could not be loaded from: {extrinsicsPath}");
+            return;
+        }
+
+        if (extrinsics.TryGetDepthToColorTransform(serial, out Vector3 d2cTranslation, out Quaternion d2cRotation))
+        {
+            depthToColorTranslation = d2cTranslation;
+            depthToColorRotation = d2cRotation;
+        }
+
+        float? loadedScale = extrinsics.GetDepthScaleFactor(serial);
+        if (loadedScale.HasValue)
+        {
+            depthScaleFactor = loadedScale.Value;
+        }
+    }
+
+    public bool TryGetGlobalTransform(out Vector3 position, out Quaternion rotation)
+    {
+        string extrinsicsPath = Path.Combine(dir, "calibration", "extrinsics.yaml");
+        string serial = deviceName.Split('_')[^1];
+
+        ExtrinsicsLoader extrinsics = new ExtrinsicsLoader(extrinsicsPath);
+        if (!extrinsics.IsLoaded)
+        {
+            position = Vector3.zero;
+            rotation = Quaternion.identity;
+            return false;
+        }
+
+        return extrinsics.TryGetGlobalTransform(serial, out position, out rotation);
+    }
+
+    public CameraMetadata CreateCameraMetadata(Transform depthViewerTransform = null, Transform boundingVolume = null, bool showAllPoints = false)
+    {
+        CameraMetadata metadata = new CameraMetadata();
+
+        // Transform matrices
+        metadata.d2cRotation = Matrix4x4.Rotate(depthToColorRotation);
+        metadata.d2cTranslation = depthToColorTranslation;
+        if (depthViewerTransform != null)
+        {
+            metadata.depthViewerTransform = depthViewerTransform.localToWorldMatrix;
+        }
+
+        // Camera intrinsics
+        metadata.fx_d = depthIntrinsics[0];
+        metadata.fy_d = depthIntrinsics[1];
+        metadata.cx_d = depthIntrinsics[2];
+        metadata.cy_d = depthIntrinsics[3];
+        metadata.fx_c = colorIntrinsics[0];
+        metadata.fy_c = colorIntrinsics[1];
+        metadata.cx_c = colorIntrinsics[2];
+        metadata.cy_c = colorIntrinsics[3];
+
+        // Distortion parameters
+        if (colorDistortion != null && colorDistortion.Length >= 8)
+        {
+            metadata.k1_c = colorDistortion[0];
+            metadata.k2_c = colorDistortion[1];
+            metadata.k3_c = colorDistortion[2];
+            metadata.k4_c = colorDistortion[3];
+            metadata.k5_c = colorDistortion[4];
+            metadata.k6_c = colorDistortion[5];
+            metadata.p1_c = colorDistortion[6];
+            metadata.p2_c = colorDistortion[7];
+        }
+
+        if (depthDistortion != null && depthDistortion.Length >= 8)
+        {
+            metadata.k1_d = depthDistortion[0];
+            metadata.k2_d = depthDistortion[1];
+            metadata.k3_d = depthDistortion[2];
+            metadata.k4_d = depthDistortion[3];
+            metadata.k5_d = depthDistortion[4];
+            metadata.k6_d = depthDistortion[5];
+            metadata.p1_d = depthDistortion[6];
+            metadata.p2_d = depthDistortion[7];
+        }
+
+        // Image dimensions
+        metadata.depthWidth = (uint)depthWidth;
+        metadata.depthHeight = (uint)depthHeight;
+        metadata.colorWidth = (uint)colorWidth;
+        metadata.colorHeight = (uint)colorHeight;
+
+        // Processing parameters
+        metadata.depthScaleFactor = depthScaleFactor;
+        metadata.depthBias = depthBias;
+        metadata.useOpenCVLUT = 1;
+
+        // Bounding volume parameters
+        metadata.hasBoundingVolume = boundingVolume != null ? 1 : 0;
+        metadata.showAllPoints = showAllPoints ? 1 : 0;
+        if (boundingVolume != null)
+        {
+            metadata.boundingVolumeInverseTransform = boundingVolume.worldToLocalMatrix;
+        }
+
+        return metadata;
     }
 
 }

@@ -1,14 +1,12 @@
 using UnityEngine;
-using System;
-using System.Linq;
 using System.Collections.Generic;
 
 public class CPUPointCloudProcessor : BasePointCloudProcessor
 {
     public override ProcessingType ProcessingType => ProcessingType.CPU;
 
-
     protected Color32[] latestColorPixels;
+    private CameraMetadata metadata;
 
     public CPUPointCloudProcessor(string deviceName) : base(deviceName)
     {
@@ -24,6 +22,10 @@ public class CPUPointCloudProcessor : BasePointCloudProcessor
     {
         // Call base implementation for common setup
         base.Setup(device, depthBias);
+
+        // Setup camera metadata from device
+        metadata = SetupCameraMetadata(device);
+
         SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Loading, ProcessingType, "CPU processor setup complete"));
     }
 
@@ -57,20 +59,23 @@ public class CPUPointCloudProcessor : BasePointCloudProcessor
 
     protected virtual void ProcessDepthPixels(ushort[] depthValues, Color32[] colorPixels, List<Vector3> validVertices, List<Color32> validColors, List<int> validIndices)
     {
+        // Update dynamic metadata parameters
+        UpdateMetadata();
+
         for (int i = 0; i < depthValues.Length; i++)
         {
-            int x = i % depthWidth;
-            int y = i / depthWidth;
-            // Apply depth bias correction and scale factor  
-            float correctedDepth = depthValues[i] + depthBias;
-            float z = correctedDepth * (depthScaleFactor / 1000f);
+            int x = i % (int)metadata.depthWidth;
+            int y = i / (int)metadata.depthWidth;
+
+            // Apply depth bias correction and scale factor
+            float correctedDepth = depthValues[i] + metadata.depthBias;
+            float z = correctedDepth * (metadata.depthScaleFactor / 1000f);
             if (z <= 0) continue; // Skip invalid depth
 
             // Choose between LUT (OpenCV undistortion) or simple pinhole model
             float px, py;
-            bool useOpenCVLUT = true; // Toggle this to test different methods
-            
-            if (useOpenCVLUT)
+
+            if (metadata.useOpenCVLUT == 1)
             {
                 // Method 1: OpenCV-generated undistortion LUT
                 Vector2 rayCoords = depthUndistortLUT[x, y];
@@ -80,12 +85,12 @@ public class CPUPointCloudProcessor : BasePointCloudProcessor
             else
             {
                 // Method 2: Simple pinhole camera model (no distortion correction)
-                px = (x - cameraParams.cx_d) * z / cameraParams.fx_d;
-                py = (y - cameraParams.cy_d) * z / cameraParams.fy_d;
+                px = (x - metadata.cx_d) * z / metadata.fx_d;
+                py = (y - metadata.cy_d) * z / metadata.fy_d;
             }
 
             Vector3 dPoint = new Vector3(px, py, z);
-            Vector3 cPoint = rotation * dPoint + translation;
+            Vector3 cPoint = metadata.d2cRotation.MultiplyPoint3x4(dPoint) + metadata.d2cTranslation;
 
             // Step 2: Project to color camera with distortion
             if (cPoint.z <= 0) continue; // Skip points behind camera
@@ -95,14 +100,14 @@ public class CPUPointCloudProcessor : BasePointCloudProcessor
             Vector2 colorPixel = DistortColorProjection(x_norm, y_norm);
 
             int ui = Mathf.RoundToInt(colorPixel.x);
-            int vi = colorHeight - 1 - Mathf.RoundToInt(colorPixel.y);
+            int vi = (int)metadata.colorHeight - 1 - Mathf.RoundToInt(colorPixel.y);
 
             Color32 color = new Color32(0, 0, 0, 255); // Default: black
             bool hasValidColor = false;
 
-            if (ui >= 0 && ui < colorWidth && vi >= 0 && vi < colorHeight)
+            if (ui >= 0 && ui < metadata.colorWidth && vi >= 0 && vi < metadata.colorHeight)
             {
-                int colorIdx = vi * colorWidth + ui;
+                int colorIdx = vi * (int)metadata.colorWidth + ui;
                 if (colorIdx >= 0 && colorIdx < latestColorPixels.Length)
                 {
                     color = latestColorPixels[colorIdx];
@@ -112,17 +117,31 @@ public class CPUPointCloudProcessor : BasePointCloudProcessor
             }
 
             // Convert cPoint (camera local) to world coordinates for bounding volume check
-            Vector3 worldPoint = depthViewerTransform != null ? 
-                depthViewerTransform.TransformPoint(cPoint) : cPoint;
-                
+            Vector3 worldPoint = metadata.depthViewerTransform.MultiplyPoint3x4(cPoint);
+
             // Only add points with valid (non-black) colors and within bounding volume (unless debug mode)
-            bool withinBounds = PointCloudSettings.showAllPoints || IsPointInBoundingVolume(worldPoint);
+            bool withinBounds = metadata.showAllPoints == 1 || IsPointInBoundingVolume(worldPoint);
             if (hasValidColor && withinBounds)
             {
                 validVertices.Add(cPoint);
                 validColors.Add(color);
                 validIndices.Add(validVertices.Count - 1);
             }
+        }
+    }
+
+    private void UpdateMetadata()
+    {
+        // Update dynamic parameters that might change at runtime
+        metadata.showAllPoints = PointCloudSettings.showAllPoints ? 1 : 0;
+        metadata.hasBoundingVolume = boundingVolume != null ? 1 : 0;
+        if (boundingVolume != null)
+        {
+            metadata.boundingVolumeInverseTransform = boundingVolume.worldToLocalMatrix;
+        }
+        if (depthViewerTransform != null)
+        {
+            metadata.depthViewerTransform = depthViewerTransform.localToWorldMatrix;
         }
     }
 
@@ -136,10 +155,10 @@ public class CPUPointCloudProcessor : BasePointCloudProcessor
 
     private Vector2 DistortColorProjection(float x_norm, float y_norm)
     {
-        float fx = colorIntrinsics[0], fy = colorIntrinsics[1], cx = colorIntrinsics[2], cy = colorIntrinsics[3];
-        float k1 = colorDistortion[0], k2 = colorDistortion[1], k3 = colorDistortion[2];
-        float k4 = colorDistortion[3], k5 = colorDistortion[4], k6 = colorDistortion[5];
-        float p1 = colorDistortion[6], p2 = colorDistortion[7];
+        float fx = metadata.fx_c, fy = metadata.fy_c, cx = metadata.cx_c, cy = metadata.cy_c;
+        float k1 = metadata.k1_c, k2 = metadata.k2_c, k3 = metadata.k3_c;
+        float k4 = metadata.k4_c, k5 = metadata.k5_c, k6 = metadata.k6_c;
+        float p1 = metadata.p1_c, p2 = metadata.p2_c;
 
         float r2 = x_norm * x_norm + y_norm * y_norm;
         float r4 = r2 * r2;
@@ -157,10 +176,10 @@ public class CPUPointCloudProcessor : BasePointCloudProcessor
 
     private bool IsPointInBoundingVolume(Vector3 worldPoint)
     {
-        if (boundingVolume == null) return true; // No culling if no bounding volume
+        if (metadata.hasBoundingVolume == 0) return true; // No culling if no bounding volume
 
         // Convert world point to bounding volume's local space
-        Vector3 localPoint = boundingVolume.InverseTransformPoint(worldPoint);
+        Vector3 localPoint = metadata.boundingVolumeInverseTransform.MultiplyPoint3x4(worldPoint);
 
         // Unity Cube vertices are at [-0.5, 0.5], so check against 0.5
         // This makes the culling range match the visual Cube exactly

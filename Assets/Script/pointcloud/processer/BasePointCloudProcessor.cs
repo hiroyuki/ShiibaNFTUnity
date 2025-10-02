@@ -26,17 +26,11 @@ public abstract class BasePointCloudProcessor : IPointCloudProcessor
     protected float depthBias;
 
     // Common transform parameters
-    protected Quaternion rotation = Quaternion.identity;
-    protected Vector3 translation = Vector3.zero;
+    protected Quaternion d2cRotation = Quaternion.identity;
+    protected Vector3 d2cTranslation = Vector3.zero;
     protected Transform boundingVolume;
     protected Transform depthViewerTransform;
 
-    protected struct CameraParameters
-    {
-        public float fx_d, fy_d, cx_d, cy_d; // Depth camera
-        public float fx_c, fy_c, cx_c, cy_c; // Color camera
-    } 
-    protected CameraParameters cameraParams;
 
     protected BasePointCloudProcessor(string deviceName)
     {
@@ -63,8 +57,6 @@ public abstract class BasePointCloudProcessor : IPointCloudProcessor
         this.depthDistortion = device.GetDepthDistortion();
         this.colorDistortion = device.GetColorDistortion();
         this.depthUndistortLUT = device.GetDepthUndistortLUT();
-
-        SetupCameraParameters();
     }
 
     public virtual void SetDepthViewerTransform(Transform transform)
@@ -79,15 +71,15 @@ public abstract class BasePointCloudProcessor : IPointCloudProcessor
 
     public virtual void ApplyDepthToColorExtrinsics(Vector3 translation, Quaternion rotation)
     {
-        this.translation = translation;
-        this.rotation = rotation;
+        this.d2cTranslation = translation;
+        this.d2cRotation = rotation;
     }
 
     // Alternative method to get transforms from SensorDevice
     protected void LoadTransformsFromDevice(SensorDevice device)
     {
-        this.translation = device.GetDepthToColorTranslation();
-        this.rotation = device.GetDepthToColorRotation();
+        this.d2cTranslation = device.GetDepthToColorTranslation();
+        this.d2cRotation = device.GetDepthToColorRotation();
     }
 
     public virtual void SetupColorIntrinsics(SensorHeader colorHeader)
@@ -111,15 +103,6 @@ public abstract class BasePointCloudProcessor : IPointCloudProcessor
     }
 
 
-    private void SetupCameraParameters()
-    {
-        cameraParams = new CameraParameters
-        {
-            fx_d = depthIntrinsics[0], fy_d = depthIntrinsics[1], cx_d = depthIntrinsics[2], cy_d = depthIntrinsics[3],
-            fx_c = colorIntrinsics[0], fy_c = colorIntrinsics[1], cx_c = colorIntrinsics[2], cy_c = colorIntrinsics[3]
-        };
-    }
-
     // Template method for common cleanup
     public virtual void Dispose()
     {
@@ -129,5 +112,13 @@ public abstract class BasePointCloudProcessor : IPointCloudProcessor
         colorIntrinsics = null;
         colorDistortion = null;
         depthDistortion = null;
+    }
+
+
+     public virtual CameraMetadata SetupCameraMetadata(SensorDevice device)
+    {
+        // Get metadata from device
+        CameraMetadata metadata = device.CreateCameraMetadata(depthViewerTransform, boundingVolume, PointCloudSettings.showAllPoints);
+        return metadata;
     }
 }

@@ -11,6 +11,7 @@ public interface IPointCloudProcessor : IDisposable
     void SetBoundingVolume(Transform boundingVolume);
     void ApplyDepthToColorExtrinsics(Vector3 translation, Quaternion rotation);
     void SetupColorIntrinsics(SensorHeader colorHeader);
+    CameraMetadata SetupCameraMetadata(SensorDevice device);
 
     void UpdateMesh(Mesh mesh, SensorDevice device);
 }

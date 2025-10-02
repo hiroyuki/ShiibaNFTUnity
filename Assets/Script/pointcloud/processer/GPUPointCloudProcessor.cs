@@ -1,6 +1,4 @@
 using UnityEngine;
-using System;
-using System.Linq;
 
 public class GPUPointCloudProcessor : BasePointCloudProcessor
 {
@@ -12,6 +10,7 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
     private ComputeBuffer lutBuffer;
     private ComputeBuffer outputBuffer;
     private ComputeBuffer validCountBuffer;
+    private ComputeBuffer cameraMetadataBuffer;
 
     // Cached GPU resources
     private Texture2D colorTexture;
@@ -46,11 +45,31 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         base.Setup(device, depthBias);
 
         CacheLUTData();
-        // Setup constant compute shader parameters once
-        SetupComputeShaderConstantParameters();
         // SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Loading, ProcessingType, "GPU processor setup complete"));
     }
 
+    public override CameraMetadata SetupCameraMetadata(SensorDevice device)
+    {
+        // Get metadata from device
+        CameraMetadata metadata = device.CreateCameraMetadata(depthViewerTransform, boundingVolume, PointCloudSettings.showAllPoints);
+
+        if (depthProcessor == null) return metadata;
+
+        // Create metadata buffer
+        if (cameraMetadataBuffer == null)
+        {
+            cameraMetadataBuffer = new ComputeBuffer(1, System.Runtime.InteropServices.Marshal.SizeOf<CameraMetadata>());
+        }
+
+        // Upload metadata to GPU
+        cameraMetadataBuffer.SetData(new CameraMetadata[] { metadata });
+
+        // Set buffer to compute shader
+        int kernelIndex = depthProcessor.FindKernel("ProcessRawDepthData");
+        depthProcessor.SetBuffer(kernelIndex, "cameraMetadata", cameraMetadataBuffer);
+
+        return metadata;
+    }
 
     public override void UpdateMesh(Mesh mesh, SensorDevice device)
     {
@@ -167,7 +186,7 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
     {
         int totalPixels = depthWidth * depthHeight;
         cachedLutData = new Vector2[totalPixels];
-        
+
         for (int y = 0; y < depthHeight; y++)
         {
             for (int x = 0; x < depthWidth; x++)
@@ -177,50 +196,14 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         }
         // SetupStatusUI.UpdateDeviceStatus(deviceName, "[GPU] LUT cache initialized");
     }
-    // Setup constant parameters once during initialization
-    private void SetupComputeShaderConstantParameters()
-    {
-        if (depthProcessor == null) return;
-
-        depthProcessor.SetFloat("depthScaleFactor", depthScaleFactor);
-        depthProcessor.SetFloat("depthBias", depthBias);
-
-        // Camera intrinsics (constant)
-        depthProcessor.SetFloat("fx_d", depthIntrinsics[0]);
-        depthProcessor.SetFloat("fy_d", depthIntrinsics[1]);
-        depthProcessor.SetFloat("cx_d", depthIntrinsics[2]);
-        depthProcessor.SetFloat("cy_d", depthIntrinsics[3]);
-        depthProcessor.SetFloat("fx_c", colorIntrinsics[0]);
-        depthProcessor.SetFloat("fy_c", colorIntrinsics[1]);
-        depthProcessor.SetFloat("cx_c", colorIntrinsics[2]);
-        depthProcessor.SetFloat("cy_c", colorIntrinsics[3]);
-
-        // Color distortion parameters (constant)
-        if (colorDistortion != null && colorDistortion.Length >= 8)
-        {
-            depthProcessor.SetVector("colorDistortion",
-                new Vector4(colorDistortion[0], colorDistortion[1], colorDistortion[6], colorDistortion[7])); // k1, k2, p1, p2
-            depthProcessor.SetVector("colorDistortion2",
-                new Vector4(colorDistortion[2], colorDistortion[3], colorDistortion[4], colorDistortion[5])); // k3, k4, k5, k6
-        }
-
-        // Image dimensions (constant)
-        depthProcessor.SetInt("depthWidth", depthWidth);
-        depthProcessor.SetInt("depthHeight", depthHeight);
-        depthProcessor.SetInt("colorWidth", colorWidth);
-        depthProcessor.SetInt("colorHeight", colorHeight);
-
-        // Constant processing options
-        depthProcessor.SetBool("useOpenCVLUT", true);
-    }
 
     // Update only dynamic parameters per frame (if they actually change)
     private void UpdateComputeShaderDynamicParameters()
     {
         // Transform parameters (constant for this camera)
-        Matrix4x4 rotMatrix = Matrix4x4.Rotate(rotation);
+        Matrix4x4 rotMatrix = Matrix4x4.Rotate(d2cRotation);
         depthProcessor.SetMatrix("rotationMatrix", rotMatrix);
-        depthProcessor.SetVector("translation", translation);
+        depthProcessor.SetVector("translation", d2cTranslation);
 
         // Static transform matrices (set once if they don't move)
         if (depthViewerTransform != null)
@@ -235,6 +218,7 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         // Transform matrices that might move at runtime
         if (boundingVolume != null)
         {
+            Debug.Log(DeviceName + $"Updating bounding volume matrix: {boundingVolume.worldToLocalMatrix}");
             depthProcessor.SetMatrix("boundingVolumeInverseTransform", boundingVolume.worldToLocalMatrix);
         }
     }
@@ -284,6 +268,7 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         lutBuffer?.Dispose();
         outputBuffer?.Dispose();
         validCountBuffer?.Dispose();
+        cameraMetadataBuffer?.Dispose();
 
         if (colorTexture != null)
         {

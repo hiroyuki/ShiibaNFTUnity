@@ -83,11 +83,17 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
             if (File.Exists(depthPath) && File.Exists(colorPath))
             {
-                if (deviceDirName != "FemtoBolt_CL8F253004Z")
-                {
-                    Debug.Log($"スキップ: {deviceDirName}");
-                }
-                else
+                // if (deviceDirName != "FemtoBolt_CL8F253004Z")// && deviceDirName != "FemtoBolt_CL8F25300F0"
+                // {
+                //     Debug.Log($"スキップ: {deviceDirName}");
+                // }
+                // else
+                // if (deviceDirName != "FemtoBolt_CL8F25300F0")// && deviceDirName != ""
+                // if (deviceDirName != "FemtoBolt_CL8F253004Z"&& deviceDirName != "FemtoBolt_CL8F25300F0")
+                // {
+                //     Debug.Log($"スキップ: {deviceDirName}");
+                // }
+                // else
                 {
 
                     GameObject dataManagerObj = new GameObject("SingleCameraDataManager_" + deviceDirName);
@@ -98,6 +104,8 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                     dataManager.Initialize(rootDirectory, Path.GetFileName(hostDir), deviceDirName, ProcessingType.GPU);
                     dataManagerObjects.Add(dataManagerObj);
                     IPointCloudProcessor processor = dataManager.SetupProcessors();
+                    dataManager.SetupWithProcessor(processor);
+                    
                     pointCloudProcessors.Add(processor);
                     
                     // Create async processor for this camera
