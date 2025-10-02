@@ -53,8 +53,17 @@ public abstract class BasePointCloudProcessor : IPointCloudProcessor
         this.depthScaleFactor = device.GetDepthScaleFactor();
         this.depthBias = depthBias;
 
-        SetupDepthCamera(device.GetDepthParser().sensorHeader);
-        SetupColorCamera(device.GetColorParser().sensorHeader);
+        // Get camera parameters directly from SensorDevice (centralized)
+        this.depthWidth = device.GetDepthWidth();
+        this.depthHeight = device.GetDepthHeight();
+        this.colorWidth = device.GetColorWidth();
+        this.colorHeight = device.GetColorHeight();
+        this.depthIntrinsics = device.GetDepthIntrinsics();
+        this.colorIntrinsics = device.GetColorIntrinsics();
+        this.depthDistortion = device.GetDepthDistortion();
+        this.colorDistortion = device.GetColorDistortion();
+        this.depthUndistortLUT = device.GetDepthUndistortLUT();
+
         SetupCameraParameters();
     }
 
@@ -74,37 +83,17 @@ public abstract class BasePointCloudProcessor : IPointCloudProcessor
         this.rotation = rotation;
     }
 
+    // Alternative method to get transforms from SensorDevice
+    protected void LoadTransformsFromDevice(SensorDevice device)
+    {
+        this.translation = device.GetDepthToColorTranslation();
+        this.rotation = device.GetDepthToColorRotation();
+    }
+
     public virtual void SetupColorIntrinsics(SensorHeader colorHeader)
     {
         // Already handled in Setup method for most processors
         // Override if specific processor needs different behavior
-    }
-
-    // Common protected methods for shared functionality
-    protected virtual void SetupDepthCamera(SensorHeader depthHeader)
-    {
-        
-        depthWidth = depthHeader.custom.camera_sensor.width;
-        depthHeight = depthHeader.custom.camera_sensor.height;
-        // Parse depth camera intrinsics
-        var depthParams = ParseIntrinsics(depthHeader.custom.additional_info.orbbec_intrinsics_parameters);
-        this.depthIntrinsics = depthParams.Take(4).ToArray(); // fx, fy, cx, cy
-        this.depthDistortion = depthParams.Skip(4).ToArray(); // k1~k6, p1, p2
-
-
-        this.depthUndistortLUT = OpenCVUndistortHelper.BuildUndistortLUTFromHeader(depthHeader);
-    }
-
-    protected virtual void SetupColorCamera(SensorHeader colorHeader)
-    {
-        colorIntrinsics = ParseIntrinsics(colorHeader.custom.additional_info.orbbec_intrinsics_parameters);
-        colorWidth = colorHeader.custom.camera_sensor.width;
-        colorHeight = colorHeader.custom.camera_sensor.height;
-
-        // fx, fy, cx, cy: 最初の4要素
-        // distortion: 残り8要素（k1~k6, p1, p2）
-        this.colorIntrinsics = colorIntrinsics.Take(4).ToArray(); // 4要素
-        this.colorDistortion = colorIntrinsics.Skip(4).ToArray(); // 8要素
     }
 
     // Check if point is within bounding volume (common utility)
@@ -122,12 +111,6 @@ public abstract class BasePointCloudProcessor : IPointCloudProcessor
                Mathf.Abs(localPoint.z) <= 0.5f;
     }
 
-        
-    private float[] ParseIntrinsics(string param)
-    {
-        return param.Trim('[', ']').Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(float.Parse).ToArray();
-    }
 
     private void SetupCameraParameters()
     {

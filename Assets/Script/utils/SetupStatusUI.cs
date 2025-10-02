@@ -121,6 +121,66 @@ public class SetupStatusUI : MonoBehaviour
         statusText.fontSize = 24;
         statusText.color = Color.white;
         statusText.alignment = TextAlignmentOptions.Center;
+
+        // Debug: List all available fonts
+        Font[] allFonts = UnityEngine.Resources.FindObjectsOfTypeAll<Font>();
+        Debug.Log($"Available fonts: {string.Join(", ", allFonts.Select(f => f.name))}");
+
+        // Try multiple approaches to load Japanese font
+        Font notoSansJP = null;
+        TMP_FontAsset japaneseFont = null;
+
+        // Method 1: Search by name containing NotoSans
+        notoSansJP = allFonts.FirstOrDefault(f => f.name.Contains("NotoSans"));
+        if (notoSansJP == null)
+        {
+            // Method 2: Search by exact name
+            notoSansJP = allFonts.FirstOrDefault(f => f.name == "NotoSansJP-VariableFont_wght");
+        }
+        if (notoSansJP == null)
+        {
+            // Method 3: Try to load from Resources (if moved to Resources folder)
+            notoSansJP = Resources.Load<Font>("NotoSansJP-VariableFont_wght");
+        }
+
+        if (notoSansJP != null)
+        {
+            Debug.Log($"Found Japanese font: {notoSansJP.name}");
+            // Try to create TMP_FontAsset
+            try
+            {
+                japaneseFont = TMP_FontAsset.CreateFontAsset(notoSansJP);
+                if (japaneseFont != null)
+                {
+                    statusText.font = japaneseFont;
+                    Debug.Log("Successfully applied Japanese font to statusText");
+                }
+                else
+                {
+                    Debug.LogWarning("Failed to create TMP_FontAsset from NotoSans font");
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"Error creating TMP_FontAsset: {ex.Message}");
+            }
+        }
+        else
+        {
+            Debug.LogWarning("NotoSans font not found. Available fonts: " + string.Join(", ", allFonts.Select(f => f.name)));
+
+            // Fallback: Try using Arial Unicode MS if available
+            Font arialUnicode = allFonts.FirstOrDefault(f => f.name.Contains("Arial") && f.name.Contains("Unicode"));
+            if (arialUnicode != null)
+            {
+                Debug.Log($"Using fallback font: {arialUnicode.name}");
+                japaneseFont = TMP_FontAsset.CreateFontAsset(arialUnicode);
+                if (japaneseFont != null)
+                {
+                    statusText.font = japaneseFont;
+                }
+            }
+        }
         
         RectTransform statusTextRect = statusTextGO.GetComponent<RectTransform>();
         statusTextRect.anchorMin = new Vector2(0.1f, 0.6f);
@@ -136,6 +196,12 @@ public class SetupStatusUI : MonoBehaviour
         detailsText.fontSize = 14;
         detailsText.color = Color.cyan;
         detailsText.alignment = TextAlignmentOptions.TopLeft;
+
+        // Apply same Japanese font to details text
+        if (japaneseFont != null)
+        {
+            detailsText.font = japaneseFont;
+        }
         
         RectTransform detailsTextRect = detailsTextGO.GetComponent<RectTransform>();
         detailsTextRect.anchorMin = new Vector2(0.1f, 0.2f);

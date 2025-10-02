@@ -147,6 +147,8 @@ public class SingleCameraDataManager : MonoBehaviour
         string serial = device.deviceName.Split('_')[^1];
         if (extrisics.TryGetDepthToColorTransform(serial, out Vector3 d2cTranslation, out Quaternion d2cRotation))
         {
+            // Set transform in both SensorDevice and PointCloudProcessor
+            device.SetDepthToColorTransform(d2cTranslation, d2cRotation);
             pointCloudProcessor.ApplyDepthToColorExtrinsics(d2cTranslation, d2cRotation);
         }
         else

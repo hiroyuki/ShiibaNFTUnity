@@ -1,4 +1,6 @@
+using System;
 using System.IO;
+using System.Linq;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -13,5 +15,14 @@ public static class YamlLoader
     {
         using var reader = new StreamReader(filePath);
         return DefaultDeserializer.Deserialize<T>(reader);
+    }
+
+    /// <summary>
+    /// カメラの内蔵パラメータ文字列をパースします。
+    /// </summary>
+    public static float[] ParseIntrinsics(string param)
+    {
+        return param.Trim('[', ']').Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(float.Parse).ToArray();
     }
 }

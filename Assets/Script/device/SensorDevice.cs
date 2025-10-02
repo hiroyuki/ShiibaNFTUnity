@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Unity.VisualScripting;
@@ -42,6 +43,16 @@ public class SensorDevice
 
     private float depthBias = 0f;
 
+    // Camera parameters (centralized from BasePointCloudProcessor)
+    private int depthWidth, depthHeight;
+    private int colorWidth, colorHeight;
+    private float[] depthIntrinsics; // fx, fy, cx, cy
+    private float[] colorIntrinsics; // fx, fy, cx, cy
+    private float[] depthDistortion; // k1~k6, p1, p2
+    private float[] colorDistortion; // k1~k6, p1, p2
+    private Vector2[,] depthUndistortLUT;
+    private Quaternion depthToColorRotation = Quaternion.identity;
+    private Vector3 depthToColorTranslation = Vector3.zero;
 
     RcstSensorDataParser depthParser;
     RcsvSensorDataParser colorParser;
@@ -65,6 +76,9 @@ public class SensorDevice
         lastUpdated = DateTime.Now;
 
         LoadDepthBias(); // Load depth bias from configuration.yaml (if exists
+
+        // Initialize camera parameters
+        InitializeCameraParameters();
     }
 
 
@@ -348,5 +362,57 @@ public class SensorDevice
     public float GetDepthScaleFactor() => depthScaleFactor;
     public void SetDepthScaleFactor(float scale) => depthScaleFactor = scale;
 
+    // Camera parameter getters
+    public int GetDepthWidth() => depthWidth;
+    public int GetDepthHeight() => depthHeight;
+    public int GetColorWidth() => colorWidth;
+    public int GetColorHeight() => colorHeight;
+    public float[] GetDepthIntrinsics() => depthIntrinsics;
+    public float[] GetColorIntrinsics() => colorIntrinsics;
+    public float[] GetDepthDistortion() => depthDistortion;
+    public float[] GetColorDistortion() => colorDistortion;
+    public Vector2[,] GetDepthUndistortLUT() => depthUndistortLUT;
+    public Quaternion GetDepthToColorRotation() => depthToColorRotation;
+    public Vector3 GetDepthToColorTranslation() => depthToColorTranslation;
+
+    // Setter for external configuration (from ExtrinsicsLoader)
+    public void SetDepthToColorTransform(Vector3 translation, Quaternion rotation)
+    {
+        depthToColorTranslation = translation;
+        depthToColorRotation = rotation;
+    }
+
+    private void InitializeCameraParameters()
+    {
+        if (depthParser?.sensorHeader == null || colorParser?.sensorHeader == null)
+        {
+            Debug.LogError($"Cannot initialize camera parameters for {deviceName}: sensor headers not available");
+            return;
+        }
+
+        var depthHeader = depthParser.sensorHeader;
+        var colorHeader = colorParser.sensorHeader;
+
+        // Image dimensions
+        depthWidth = depthHeader.custom.camera_sensor.width;
+        depthHeight = depthHeader.custom.camera_sensor.height;
+        colorWidth = colorHeader.custom.camera_sensor.width;
+        colorHeight = colorHeader.custom.camera_sensor.height;
+
+        // Parse camera intrinsics using YamlLoader
+        var depthParams = YamlLoader.ParseIntrinsics(depthHeader.custom.additional_info.orbbec_intrinsics_parameters);
+        var colorParams = YamlLoader.ParseIntrinsics(colorHeader.custom.additional_info.orbbec_intrinsics_parameters);
+
+        // Split intrinsics and distortion parameters
+        depthIntrinsics = depthParams.Take(4).ToArray(); // fx, fy, cx, cy
+        depthDistortion = depthParams.Skip(4).ToArray(); // k1~k6, p1, p2
+        colorIntrinsics = colorParams.Take(4).ToArray(); // fx, fy, cx, cy
+        colorDistortion = colorParams.Skip(4).ToArray(); // k1~k6, p1, p2
+
+        // Build undistortion LUT
+        depthUndistortLUT = OpenCVUndistortHelper.BuildUndistortLUTFromHeader(depthHeader);
+
+        Debug.Log($"Camera parameters initialized for {deviceName}: Depth({depthWidth}x{depthHeight}), Color({colorWidth}x{colorHeight})");
+    }
 
 }

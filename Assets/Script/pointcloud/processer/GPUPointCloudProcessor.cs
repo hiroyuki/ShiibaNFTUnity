@@ -182,7 +182,6 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
     {
         if (depthProcessor == null) return;
 
-
         depthProcessor.SetFloat("depthScaleFactor", depthScaleFactor);
         depthProcessor.SetFloat("depthBias", depthBias);
 
@@ -213,7 +212,6 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
 
         // Constant processing options
         depthProcessor.SetBool("useOpenCVLUT", true);
-
     }
 
     // Update only dynamic parameters per frame (if they actually change)
