@@ -98,7 +98,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
                     GameObject dataManagerObj = new GameObject("SingleCameraDataManager_" + deviceDirName);
                     var dataManager = dataManagerObj.AddComponent<SingleCameraDataManager>();
-                    dataManagerObj.transform.parent = this.transform;
+                    // dataManagerObj.transform.parent = this.transform;
 
                     // Initialize the data manager with required parameters
                     dataManager.Initialize(rootDirectory, Path.GetFileName(hostDir), deviceDirName, ProcessingType.GPU);
@@ -120,11 +120,11 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         SetupStatusUI.SetProgress(1f);
         SetupStatusUI.ShowStatus($"SingleCameraDataManager を {dataManagerObjects.Count} 個作成しました - first frames will load individually");
 
-        // Initialize multi-camera processing if enabled
-        if (useMultiCameraProcessing && dataManagerObjects.Count > 0)
-        {
-            InitializeMultiCameraProcessing();
-        }
+        // // Initialize multi-camera processing if enabled
+        // if (useMultiCameraProcessing && dataManagerObjects.Count > 0)
+        // {
+        //     InitializeMultiCameraProcessing();
+        // }
     }
 
     private void InitializeMultiCameraProcessing()
@@ -158,7 +158,9 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             var dataManager = dataManagerObj.GetComponent<SingleCameraDataManager>();
             if (dataManager != null)
             {
-                dataManager.ProcessFirstFrameIfNeeded(pointCloudProcessors[dataManagerObjects.IndexOf(dataManagerObj)]);
+                int index = dataManagerObjects.IndexOf(dataManagerObj);
+                Debug.Log($"Update processing for camera {index}");
+                dataManager.ProcessFirstFrameIfNeeded(pointCloudProcessors[index]);
             }
         }
         HandleSynchronizedFrameNavigation();
@@ -308,7 +310,8 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                     {
                         try
                         {
-                            dataManager.ProcessFrame(targetTimestamp, pointCloudProcessors[dataManagerObjects.IndexOf(dataManagerObj)]);
+                            int index = dataManagerObjects.IndexOf(dataManagerObj);
+                            dataManager.ProcessFrame(targetTimestamp, pointCloudProcessors[index]);
                             successCount++;
                         }
                         catch (System.Exception ex)

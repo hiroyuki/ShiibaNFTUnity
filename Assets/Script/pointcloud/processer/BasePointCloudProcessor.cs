@@ -118,7 +118,7 @@ public abstract class BasePointCloudProcessor : IPointCloudProcessor
      public virtual CameraMetadata SetupCameraMetadata(SensorDevice device)
     {
         // Get metadata from device
-        CameraMetadata metadata = device.CreateCameraMetadata(depthViewerTransform, boundingVolume, PointCloudSettings.showAllPoints);
+        CameraMetadata metadata = device.CreateCameraMetadata(depthViewerTransform);
         return metadata;
     }
 }

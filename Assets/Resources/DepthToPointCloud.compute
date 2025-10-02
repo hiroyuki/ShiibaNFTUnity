@@ -43,11 +43,6 @@ struct CameraMetadata
     float depthBias;
     int useOpenCVLUT;
 
-    // Bounding volume parameters
-    int hasBoundingVolume;
-    int showAllPoints;
-    float4x4 boundingVolumeInverseTransform;
-
     // Buffer offsets (for multi-camera, not used in single camera)
     uint depthDataOffset;
     uint lutDataOffset;
@@ -57,7 +52,10 @@ struct CameraMetadata
 StructuredBuffer<CameraMetadata> cameraMetadata;
 RWStructuredBuffer<float2> depthUndistortLUT;
 
-// No longer need metadata/offset parameters - data is pre-processed on CPU
+// Global bounding volume parameters (shared across all cameras)
+int hasBoundingVolume;
+int showAllPoints;
+float4x4 boundingVolumeInverseTransform;
 
 float2 DistortColorProjection(float x_norm, float y_norm, CameraMetadata meta)
 {
@@ -79,12 +77,12 @@ float2 DistortColorProjection(float x_norm, float y_norm, CameraMetadata meta)
     return float2(u, v);
 }
 
-bool IsPointInBoundingVolume(float3 worldPoint, CameraMetadata meta)
+bool IsPointInBoundingVolume(float3 worldPoint)
 {
     // Early return if no bounding volume is set
-    if (meta.hasBoundingVolume == 0) return true;
+    if (hasBoundingVolume == 0) return true;
 
-    float4 localPoint4 = mul(meta.boundingVolumeInverseTransform, float4(worldPoint, 1.0));
+    float4 localPoint4 = mul(boundingVolumeInverseTransform, float4(worldPoint, 1.0));
     float3 localPoint = localPoint4.xyz;
 
     return (abs(localPoint.x) <= 0.5) && (abs(localPoint.y) <= 0.5) && (abs(localPoint.z) <= 0.5);
@@ -164,10 +162,7 @@ void ProcessRawDepthData(uint3 id : SV_DispatchThreadID)
     float3 worldPoint = worldPoint4.xyz;
 
     // Only add points with valid colors and within bounding volume
-    bool withinBounds = (meta.showAllPoints == 1);
-    if (meta.showAllPoints == 0) {
-        withinBounds = IsPointInBoundingVolume(worldPoint, meta);
-    }
+    bool withinBounds = (showAllPoints == 1) || IsPointInBoundingVolume(worldPoint);
 
     if (hasValidColor && withinBounds)
     {

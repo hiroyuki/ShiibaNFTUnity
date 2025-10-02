@@ -26,11 +26,6 @@ public struct CameraMetadata
     public float depthBias;
     public int useOpenCVLUT;
 
-    // Bounding volume parameters
-    public int hasBoundingVolume;
-    public int showAllPoints;
-    public Matrix4x4 boundingVolumeInverseTransform;
-
     // Buffer offsets (for multi-camera processing)
     public uint depthDataOffset;
     public uint lutDataOffset;

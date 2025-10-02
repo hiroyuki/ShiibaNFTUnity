@@ -69,7 +69,7 @@ public class SingleCameraDataManager : MonoBehaviour
         Transform boundingVolume = GameObject.Find("BoundingVolume")?.transform;
         if (boundingVolume != null)
         {
-            // pointCloudProcessor.SetBoundingVolume(boundingVolume);
+            pointCloudProcessor.SetBoundingVolume(boundingVolume);
         }
         else
         {

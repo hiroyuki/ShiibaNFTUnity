@@ -181,11 +181,6 @@ public class MultiCameraGPUProcessor : MonoBehaviour
             metadata.d2cTranslation = device.GetDepthToColorTranslation();
             metadata.depthViewerTransform = manager.transform.localToWorldMatrix;
 
-            // Bounding volume (placeholder - needs implementation)
-            metadata.hasBoundingVolume = 0;
-            metadata.showAllPoints = 1;
-            metadata.boundingVolumeInverseTransform = Matrix4x4.identity;
-
             // Buffer offsets
             metadata.depthDataOffset = currentDepthOffset;
             metadata.lutDataOffset = currentLutOffset;

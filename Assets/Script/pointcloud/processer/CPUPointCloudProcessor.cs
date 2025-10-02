@@ -120,7 +120,7 @@ public class CPUPointCloudProcessor : BasePointCloudProcessor
             Vector3 worldPoint = metadata.depthViewerTransform.MultiplyPoint3x4(cPoint);
 
             // Only add points with valid (non-black) colors and within bounding volume (unless debug mode)
-            bool withinBounds = metadata.showAllPoints == 1 || IsPointInBoundingVolume(worldPoint);
+            bool withinBounds = PointCloudSettings.showAllPoints || IsPointInBoundingVolume(worldPoint);
             if (hasValidColor && withinBounds)
             {
                 validVertices.Add(cPoint);
@@ -133,12 +133,6 @@ public class CPUPointCloudProcessor : BasePointCloudProcessor
     private void UpdateMetadata()
     {
         // Update dynamic parameters that might change at runtime
-        metadata.showAllPoints = PointCloudSettings.showAllPoints ? 1 : 0;
-        metadata.hasBoundingVolume = boundingVolume != null ? 1 : 0;
-        if (boundingVolume != null)
-        {
-            metadata.boundingVolumeInverseTransform = boundingVolume.worldToLocalMatrix;
-        }
         if (depthViewerTransform != null)
         {
             metadata.depthViewerTransform = depthViewerTransform.localToWorldMatrix;
@@ -176,10 +170,10 @@ public class CPUPointCloudProcessor : BasePointCloudProcessor
 
     private bool IsPointInBoundingVolume(Vector3 worldPoint)
     {
-        if (metadata.hasBoundingVolume == 0) return true; // No culling if no bounding volume
+        if (boundingVolume == null) return true; // No culling if no bounding volume
 
         // Convert world point to bounding volume's local space
-        Vector3 localPoint = metadata.boundingVolumeInverseTransform.MultiplyPoint3x4(worldPoint);
+        Vector3 localPoint = boundingVolume.worldToLocalMatrix.MultiplyPoint3x4(worldPoint);
 
         // Unity Cube vertices are at [-0.5, 0.5], so check against 0.5
         // This makes the culling range match the visual Cube exactly

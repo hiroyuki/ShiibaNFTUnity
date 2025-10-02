@@ -114,7 +114,6 @@ public class SensorDevice
                 }
             }
 
-            Debug.LogWarning("depthBias not found in configuration.yaml, using 0");
         }
         catch (System.Exception ex)
         {
@@ -379,12 +378,6 @@ public class SensorDevice
     public Quaternion GetDepthToColorRotation() => depthToColorRotation;
     public Vector3 GetDepthToColorTranslation() => depthToColorTranslation;
 
-    // Setter for external configuration (from ExtrinsicsLoader)
-    public void SetDepthToColorTransform(Vector3 translation, Quaternion rotation)
-    {
-        depthToColorTranslation = translation;
-        depthToColorRotation = rotation;
-    }
 
     private void InitializeCameraParameters()
     {
@@ -460,7 +453,7 @@ public class SensorDevice
         return extrinsics.TryGetGlobalTransform(serial, out position, out rotation);
     }
 
-    public CameraMetadata CreateCameraMetadata(Transform depthViewerTransform = null, Transform boundingVolume = null, bool showAllPoints = false)
+    public CameraMetadata CreateCameraMetadata(Transform depthViewerTransform = null)
     {
         CameraMetadata metadata = new CameraMetadata();
 
@@ -517,14 +510,6 @@ public class SensorDevice
         metadata.depthScaleFactor = depthScaleFactor;
         metadata.depthBias = depthBias;
         metadata.useOpenCVLUT = 1;
-
-        // Bounding volume parameters
-        metadata.hasBoundingVolume = boundingVolume != null ? 1 : 0;
-        metadata.showAllPoints = showAllPoints ? 1 : 0;
-        if (boundingVolume != null)
-        {
-            metadata.boundingVolumeInverseTransform = boundingVolume.worldToLocalMatrix;
-        }
 
         return metadata;
     }
