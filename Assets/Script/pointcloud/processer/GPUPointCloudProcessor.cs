@@ -1,6 +1,4 @@
 using UnityEngine;
-using System;
-using System.Linq;
 
 public class GPUPointCloudProcessor : BasePointCloudProcessor
 {
@@ -12,6 +10,7 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
     private ComputeBuffer lutBuffer;
     private ComputeBuffer outputBuffer;
     private ComputeBuffer validCountBuffer;
+    private ComputeBuffer cameraMetadataBuffer;
 
     // Cached GPU resources
     private Texture2D colorTexture;
@@ -27,7 +26,12 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
 
     public GPUPointCloudProcessor(string deviceName) : base(deviceName)
     {
-        depthProcessor = Resources.Load<ComputeShader>("DepthToPointCloud");
+        // Instantiate a copy so each camera has its own compute shader instance
+        ComputeShader original = Resources.Load<ComputeShader>("DepthToPointCloud");
+        if (original != null)
+        {
+            depthProcessor = UnityEngine.Object.Instantiate(original);
+        }
     }
 
     public override bool IsSupported()
@@ -46,15 +50,59 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         base.Setup(device, depthBias);
 
         CacheLUTData();
-        // Setup constant compute shader parameters once
-        SetupComputeShaderConstantParameters();
-        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Loading, ProcessingType, "GPU processor setup complete"));
+        // SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Loading, ProcessingType, "GPU processor setup complete"));
     }
 
+    public override CameraMetadata SetupCameraMetadata(SensorDevice device)
+    {
+        // Get metadata from device
+        CameraMetadata metadata = device.CreateCameraMetadata(depthViewerTransform);
+
+        // Update bounding volume parameters from settings
+        if (boundingVolume != null)
+        {
+            metadata.hasBoundingVolume = 1;
+            metadata.showAllPoints = PointCloudSettings.showAllPoints ? 1 : 0;
+            metadata.boundingVolumeInverseTransform = boundingVolume.worldToLocalMatrix;
+            Debug.Log($"[GPU Setup] Bounding volume active: hasBoundingVolume=1, showAllPoints={metadata.showAllPoints}, PointCloudSettings.showAllPoints={PointCloudSettings.showAllPoints}, BV={boundingVolume.name}");
+        }
+        else
+        {
+            metadata.hasBoundingVolume = 0;
+            metadata.showAllPoints = 1; // Show all points when no bounding volume
+            metadata.boundingVolumeInverseTransform = Matrix4x4.identity;
+            Debug.LogWarning("[GPU Setup] No bounding volume found - showing all points");
+        }
+
+        if (depthProcessor == null) return metadata;
+
+        // Create metadata buffer
+        if (cameraMetadataBuffer == null)
+        {
+            cameraMetadataBuffer = new ComputeBuffer(1, System.Runtime.InteropServices.Marshal.SizeOf<CameraMetadata>());
+        }
+
+        // Upload metadata to GPU
+        cameraMetadataBuffer.SetData(new CameraMetadata[] { metadata });
+
+        // Set buffer to compute shader
+        int kernelIndex = depthProcessor.FindKernel("ProcessRawDepthData");
+        depthProcessor.SetBuffer(kernelIndex, "cameraMetadata", cameraMetadataBuffer);
+
+        // Initialize global bounding volume parameters
+        depthProcessor.SetInt("hasBoundingVolume", boundingVolume != null ? 1 : 0);
+        depthProcessor.SetInt("showAllPoints", PointCloudSettings.showAllPoints ? 1 : 0);
+        if (boundingVolume != null)
+        {
+            depthProcessor.SetMatrix("boundingVolumeInverseTransform", boundingVolume.worldToLocalMatrix);
+        }
+
+        return metadata;
+    }
 
     public override void UpdateMesh(Mesh mesh, SensorDevice device)
     {
-        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Processing depth data..."));
+        // SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Processing depth data..."));
 
         var depthDataUints = device.GetLatestDepthData();
         var colorTexture = device.GetLatestColorTexture();
@@ -64,31 +112,30 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
             UpdateMeshFromDepthData(mesh, depthDataUints, colorTexture, device);
         }
 
-        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Complete, ProcessingType, "GPU processing complete"));
+        // SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Complete, ProcessingType, "GPU processing complete"));
     }
 
     private void UpdateMeshFromDepthData(Mesh mesh, uint[] depthDataUints, Texture2D colorTexture, SensorDevice device)
     {
         if (!IsSupported())
         {
-            SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Error, ProcessingType, "Fallback: No compute shader"));
+            // SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Error, ProcessingType, "Fallback: No compute shader"));
             return;
         }
 
         try
         {
-            SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Dispatching compute shader..."));
-            ProcessDepthData(mesh, depthDataUints, colorTexture);
-            SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Complete, ProcessingType, "GPU processing complete"));
+            // SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Dispatching compute shader..."));
+            ProcessDepthData(mesh, depthDataUints, colorTexture, device);
         }
         catch (System.Exception ex)
         {
             Debug.LogError($"GPU processing failed: {ex.Message}");
-            SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Error, ProcessingType, "GPU processing failed"));
+            device.UpdateDeviceStatus(DeviceStatusType.Error, ProcessingType, "GPU processing failed");
         }
     }
 
-    private void ProcessDepthData(Mesh mesh, uint[] depthDataUints, Texture2D colorTexture)
+    private void ProcessDepthData(Mesh mesh, uint[] depthDataUints, Texture2D colorTexture, SensorDevice device)
     {
         if (depthProcessor == null)
         {
@@ -109,8 +156,8 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         // Reset valid count
         validCountBuffer.SetData(new int[] { 0 });
 
-        // Set dynamic compute shader parameters
-        UpdateComputeShaderDynamicParameters();
+        // Update dynamic metadata (bounding volume might have moved)
+        UpdateCameraMetadata(device);
 
         // Set buffers and textures
         int kernelIndex = depthProcessor.FindKernel("ProcessRawDepthData");
@@ -127,6 +174,7 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
 
         // Read results and apply to mesh
         ApplyResultsToMesh(mesh, totalPixels);
+        Debug.Log($"device {DeviceName} valid points: {mesh.vertexCount}");
     }
 
 
@@ -168,7 +216,7 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
     {
         int totalPixels = depthWidth * depthHeight;
         cachedLutData = new Vector2[totalPixels];
-        
+
         for (int y = 0; y < depthHeight; y++)
         {
             for (int x = 0; x < depthWidth; x++)
@@ -178,68 +226,29 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         }
         // SetupStatusUI.UpdateDeviceStatus(deviceName, "[GPU] LUT cache initialized");
     }
-    // Setup constant parameters once during initialization
-    private void SetupComputeShaderConstantParameters()
+
+    // Update camera metadata buffer with bounding volume parameters
+    private void UpdateCameraMetadata(SensorDevice device)
     {
-        if (depthProcessor == null) return;
+        // Get updated metadata from device
+        CameraMetadata metadata = device.CreateCameraMetadata(depthViewerTransform);
 
-
-        depthProcessor.SetFloat("depthScaleFactor", depthScaleFactor);
-        depthProcessor.SetFloat("depthBias", depthBias);
-
-        // Camera intrinsics (constant)
-        depthProcessor.SetFloat("fx_d", depthIntrinsics[0]);
-        depthProcessor.SetFloat("fy_d", depthIntrinsics[1]);
-        depthProcessor.SetFloat("cx_d", depthIntrinsics[2]);
-        depthProcessor.SetFloat("cy_d", depthIntrinsics[3]);
-        depthProcessor.SetFloat("fx_c", colorIntrinsics[0]);
-        depthProcessor.SetFloat("fy_c", colorIntrinsics[1]);
-        depthProcessor.SetFloat("cx_c", colorIntrinsics[2]);
-        depthProcessor.SetFloat("cy_c", colorIntrinsics[3]);
-
-        // Color distortion parameters (constant)
-        if (colorDistortion != null && colorDistortion.Length >= 8)
-        {
-            depthProcessor.SetVector("colorDistortion",
-                new Vector4(colorDistortion[0], colorDistortion[1], colorDistortion[6], colorDistortion[7])); // k1, k2, p1, p2
-            depthProcessor.SetVector("colorDistortion2",
-                new Vector4(colorDistortion[2], colorDistortion[3], colorDistortion[4], colorDistortion[5])); // k3, k4, k5, k6
-        }
-
-        // Image dimensions (constant)
-        depthProcessor.SetInt("depthWidth", depthWidth);
-        depthProcessor.SetInt("depthHeight", depthHeight);
-        depthProcessor.SetInt("colorWidth", colorWidth);
-        depthProcessor.SetInt("colorHeight", colorHeight);
-
-        // Constant processing options
-        depthProcessor.SetBool("useOpenCVLUT", true);
-
-    }
-
-    // Update only dynamic parameters per frame (if they actually change)
-    private void UpdateComputeShaderDynamicParameters()
-    {
-        // Transform parameters (constant for this camera)
-        Matrix4x4 rotMatrix = Matrix4x4.Rotate(rotation);
-        depthProcessor.SetMatrix("rotationMatrix", rotMatrix);
-        depthProcessor.SetVector("translation", translation);
-
-        // Static transform matrices (set once if they don't move)
-        if (depthViewerTransform != null)
-        {
-            depthProcessor.SetMatrix("depthViewerTransform", depthViewerTransform.localToWorldMatrix);
-        }
-
-        // Runtime settings that can change
-        depthProcessor.SetBool("showAllPoints", PointCloudSettings.showAllPoints);
-        depthProcessor.SetBool("hasBoundingVolume", boundingVolume != null);
-
-        // Transform matrices that might move at runtime
+        // Update bounding volume parameters from settings
         if (boundingVolume != null)
         {
-            depthProcessor.SetMatrix("boundingVolumeInverseTransform", boundingVolume.worldToLocalMatrix);
+            metadata.hasBoundingVolume = 1;
+            metadata.showAllPoints = PointCloudSettings.showAllPoints ? 1 : 0;
+            metadata.boundingVolumeInverseTransform = boundingVolume.worldToLocalMatrix;
         }
+        else
+        {
+            metadata.hasBoundingVolume = 0;
+            metadata.showAllPoints = 1; // Show all points when no bounding volume
+            metadata.boundingVolumeInverseTransform = Matrix4x4.identity;
+        }
+
+        // Upload updated metadata to GPU
+        cameraMetadataBuffer.SetData(new CameraMetadata[] { metadata });
     }
 
         private void ApplyResultsToMesh(Mesh mesh, int totalPixels)
@@ -287,10 +296,17 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         lutBuffer?.Dispose();
         outputBuffer?.Dispose();
         validCountBuffer?.Dispose();
+        cameraMetadataBuffer?.Dispose();
 
         if (colorTexture != null)
         {
             UnityEngine.Object.DestroyImmediate(colorTexture);
+        }
+
+        // Destroy the instantiated compute shader copy
+        if (depthProcessor != null)
+        {
+            UnityEngine.Object.DestroyImmediate(depthProcessor);
         }
 
         base.Dispose(); // Call base class cleanup

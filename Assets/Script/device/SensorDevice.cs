@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Unity.VisualScripting;
@@ -19,7 +20,8 @@ public enum ProcessingType
 {
     None,
     CPU,
-    GPU
+    GPU,
+    ONESHADER
 }
 
 [Serializable]
@@ -42,6 +44,16 @@ public class SensorDevice
 
     private float depthBias = 0f;
 
+    // Camera parameters (centralized from BasePointCloudProcessor)
+    private int depthWidth, depthHeight;
+    private int colorWidth, colorHeight;
+    private float[] depthIntrinsics; // fx, fy, cx, cy
+    private float[] colorIntrinsics; // fx, fy, cx, cy
+    private float[] depthDistortion; // k1~k6, p1, p2
+    private float[] colorDistortion; // k1~k6, p1, p2
+    private Vector2[,] depthUndistortLUT;
+    private Quaternion depthToColorRotation = Quaternion.identity;
+    private Vector3 depthToColorTranslation = Vector3.zero;
 
     RcstSensorDataParser depthParser;
     RcsvSensorDataParser colorParser;
@@ -65,6 +77,12 @@ public class SensorDevice
         lastUpdated = DateTime.Now;
 
         LoadDepthBias(); // Load depth bias from configuration.yaml (if exists
+
+        // Initialize camera parameters
+        InitializeCameraParameters();
+
+        // Load extrinsics
+        LoadExtrinsics();
     }
 
 
@@ -96,7 +114,6 @@ public class SensorDevice
                 }
             }
 
-            Debug.LogWarning("depthBias not found in configuration.yaml, using 0");
         }
         catch (System.Exception ex)
         {
@@ -104,14 +121,15 @@ public class SensorDevice
         }
     }
 
-    public SensorDevice UpdateStatus(DeviceStatusType newStatusType, ProcessingType newProcessingType = ProcessingType.None, string newStatusMessage = "")
+    public void UpdateDeviceStatus(DeviceStatusType newStatusType, ProcessingType newProcessingType = ProcessingType.None, string newStatusMessage = "")
     {
         this.statusType = newStatusType;
         this.processingType = newProcessingType;
         this.statusMessage = newStatusMessage;
         this.lastUpdated = DateTime.Now;
-        return this;
+        SetupStatusUI.UpdateDeviceStatus(this);
     }
+
 
     public SensorDevice UpdateStatus(string statusString)
     {
@@ -200,8 +218,6 @@ public class SensorDevice
 
     public bool ParseRecord(bool useGPUOptimization)
     {
-
-        Debug.Log("ParseRecord called on thread: " + Thread.CurrentThread.ManagedThreadId);
         // Parse both frames with GPU optimization
         bool depthOk = depthParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
         bool colorOk = colorParser.ParseNextRecord(optimizeForGPU: useGPUOptimization);
@@ -350,5 +366,148 @@ public class SensorDevice
     public float GetDepthScaleFactor() => depthScaleFactor;
     public void SetDepthScaleFactor(float scale) => depthScaleFactor = scale;
 
+    // Camera parameter getters
+    public int GetDepthWidth() => depthWidth;
+    public int GetDepthHeight() => depthHeight;
+    public int GetColorWidth() => colorWidth;
+    public int GetColorHeight() => colorHeight;
+    public float[] GetDepthIntrinsics() => depthIntrinsics;
+    public float[] GetColorIntrinsics() => colorIntrinsics;
+    public float[] GetDepthDistortion() => depthDistortion;
+    public float[] GetColorDistortion() => colorDistortion;
+    public Vector2[,] GetDepthUndistortLUT() => depthUndistortLUT;
+    public Quaternion GetDepthToColorRotation() => depthToColorRotation;
+    public Vector3 GetDepthToColorTranslation() => depthToColorTranslation;
+
+
+    private void InitializeCameraParameters()
+    {
+        if (depthParser?.sensorHeader == null || colorParser?.sensorHeader == null)
+        {
+            Debug.LogError($"Cannot initialize camera parameters for {deviceName}: sensor headers not available");
+            return;
+        }
+
+        var depthHeader = depthParser.sensorHeader;
+        var colorHeader = colorParser.sensorHeader;
+
+        // Image dimensions
+        depthWidth = depthHeader.custom.camera_sensor.width;
+        depthHeight = depthHeader.custom.camera_sensor.height;
+        colorWidth = colorHeader.custom.camera_sensor.width;
+        colorHeight = colorHeader.custom.camera_sensor.height;
+
+        // Parse camera intrinsics using YamlLoader
+        var depthParams = YamlLoader.ParseIntrinsics(depthHeader.custom.additional_info.orbbec_intrinsics_parameters);
+        var colorParams = YamlLoader.ParseIntrinsics(colorHeader.custom.additional_info.orbbec_intrinsics_parameters);
+
+        // Split intrinsics and distortion parameters
+        depthIntrinsics = depthParams.Take(4).ToArray(); // fx, fy, cx, cy
+        depthDistortion = depthParams.Skip(4).ToArray(); // k1~k6, p1, p2
+        colorIntrinsics = colorParams.Take(4).ToArray(); // fx, fy, cx, cy
+        colorDistortion = colorParams.Skip(4).ToArray(); // k1~k6, p1, p2
+
+        // Build undistortion LUT
+        depthUndistortLUT = OpenCVUndistortHelper.BuildUndistortLUTFromHeader(depthHeader);
+
+        Debug.Log($"Camera parameters initialized for {deviceName}: Depth({depthWidth}x{depthHeight}), Color({colorWidth}x{colorHeight})");
+    }
+
+    private void LoadExtrinsics()
+    {
+        string extrinsicsPath = Path.Combine(dir, "calibration", "extrinsics.yaml");
+        string serial = deviceName.Split('_')[^1];
+
+        ExtrinsicsLoader extrinsics = new ExtrinsicsLoader(extrinsicsPath);
+        if (!extrinsics.IsLoaded)
+        {
+            Debug.LogError($"Extrinsics data could not be loaded from: {extrinsicsPath}");
+            return;
+        }
+
+        if (extrinsics.TryGetDepthToColorTransform(serial, out Vector3 d2cTranslation, out Quaternion d2cRotation))
+        {
+            depthToColorTranslation = d2cTranslation;
+            depthToColorRotation = d2cRotation;
+        }
+
+        float? loadedScale = extrinsics.GetDepthScaleFactor(serial);
+        if (loadedScale.HasValue)
+        {
+            depthScaleFactor = loadedScale.Value;
+        }
+    }
+
+    public bool TryGetGlobalTransform(out Vector3 position, out Quaternion rotation)
+    {
+        string extrinsicsPath = Path.Combine(dir, "calibration", "extrinsics.yaml");
+        string serial = deviceName.Split('_')[^1];
+
+        ExtrinsicsLoader extrinsics = new ExtrinsicsLoader(extrinsicsPath);
+        if (!extrinsics.IsLoaded)
+        {
+            position = Vector3.zero;
+            rotation = Quaternion.identity;
+            return false;
+        }
+
+        return extrinsics.TryGetGlobalTransform(serial, out position, out rotation);
+    }
+
+    public CameraMetadata CreateCameraMetadata(Transform depthViewerTransform = null)
+    {
+        CameraMetadata metadata = new CameraMetadata();
+
+        // Transform matrices
+        metadata.d2cRotation = Matrix4x4.Rotate(depthToColorRotation);
+        metadata.d2cTranslation = depthToColorTranslation;
+        if (depthViewerTransform != null)
+        {
+            metadata.depthViewerTransform = depthViewerTransform.localToWorldMatrix;
+        }
+
+        // Camera intrinsics
+        metadata.fx_d = depthIntrinsics[0];
+        metadata.fy_d = depthIntrinsics[1];
+        metadata.cx_d = depthIntrinsics[2];
+        metadata.cy_d = depthIntrinsics[3];
+        metadata.fx_c = colorIntrinsics[0];
+        metadata.fy_c = colorIntrinsics[1];
+        metadata.cx_c = colorIntrinsics[2];
+        metadata.cy_c = colorIntrinsics[3];
+
+        // Color distortion parameters (matches ComputeShader layout: k1, k2, p1, p2, k3, k4, k5, k6)
+        // Note: Depth distortion is pre-computed in LUT, not sent to GPU
+        if (colorDistortion != null && colorDistortion.Length >= 8)
+        {
+            metadata.k1_c = colorDistortion[0]; // k1
+            metadata.k2_c = colorDistortion[1]; // k2
+            metadata.p1_c = colorDistortion[6]; // p1
+            metadata.p2_c = colorDistortion[7]; // p2
+            metadata.k3_c = colorDistortion[2]; // k3
+            metadata.k4_c = colorDistortion[3]; // k4
+            metadata.k5_c = colorDistortion[4]; // k5
+            metadata.k6_c = colorDistortion[5]; // k6
+        }
+
+        // Image dimensions
+        metadata.depthWidth = (uint)depthWidth;
+        metadata.depthHeight = (uint)depthHeight;
+        metadata.colorWidth = (uint)colorWidth;
+        metadata.colorHeight = (uint)colorHeight;
+
+        // Processing parameters
+        metadata.depthScaleFactor = depthScaleFactor;
+        metadata.depthBias = depthBias;
+        metadata.useOpenCVLUT = 1;
+
+        // Bounding volume parameters
+        // Note: Bounding volume will be set by processor if available
+        metadata.hasBoundingVolume = 0; // Will be updated by processor
+        metadata.showAllPoints = PointCloudSettings.showAllPoints ? 1 : 0;
+        metadata.boundingVolumeInverseTransform = Matrix4x4.identity; // Will be updated by processor
+
+        return metadata;
+    }
 
 }

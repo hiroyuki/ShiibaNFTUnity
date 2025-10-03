@@ -141,7 +141,6 @@ public class RcstSensorDataParser : AbstractSensorDataParser
       {
           int metadataSize = sensorHeader.MetadataSize;
           int imageSize = sensorHeader.ImageSize;
-          int recordSize = metadataSize + imageSize;
           
           // Read only metadata for timestamp, skip image data
           byte[] metadataBytes = reader.ReadBytes(metadataSize);

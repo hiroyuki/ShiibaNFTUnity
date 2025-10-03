@@ -92,3 +92,5 @@ crashlytics-build.properties
 /[Aa]ssets/OpenCVForUnity/
 /[Aa]ssets/OpenCVForUnity.meta
 /Assets/OpenCVForUnity
+.DS_Store
+**/.DS_Store

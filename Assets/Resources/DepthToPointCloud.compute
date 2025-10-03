@@ -16,44 +16,54 @@ struct VertexData
 RWStructuredBuffer<VertexData> outputVertices;
 RWStructuredBuffer<int> validCount;
 
-// Camera and transform parameters
-float4x4 rotationMatrix;
-float3 translation;
-float depthScaleFactor;
-float depthBias;
+// Camera metadata structure
+// IMPORTANT: Must match C# CameraMetadata struct layout exactly
+struct CameraMetadata
+{
+    // Transform matrices
+    float4x4 d2cRotation;
+    float3 d2cTranslation;
+    float4x4 depthViewerTransform;
 
-// Depth camera intrinsics
-float fx_d, fy_d, cx_d, cy_d;
-// Color camera intrinsics  
-float fx_c, fy_c, cx_c, cy_c;
+    // Camera intrinsics
+    float fx_d, fy_d, cx_d, cy_d; // Depth camera
+    float fx_c, fy_c, cx_c, cy_c; // Color camera
 
-// Distortion parameters
-float4 colorDistortion; // k1, k2, p1, p2
-float4 colorDistortion2; // k3, k4, k5, k6
+    // Color distortion parameters (matches C# layout: k1, k2, p1, p2, k3, k4, k5, k6)
+    // Note: Depth distortion is pre-computed in LUT, not in this struct
+    float k1_c, k2_c, p1_c, p2_c; // colorDistortion (k1, k2, p1, p2)
+    float k3_c, k4_c, k5_c, k6_c; // colorDistortion2 (k3, k4, k5, k6)
 
-// Image dimensions
-int depthWidth;
-int depthHeight;
-int colorWidth;
-int colorHeight;
+    // Image dimensions
+    uint depthWidth;
+    uint depthHeight;
+    uint colorWidth;
+    uint colorHeight;
 
-// Processing options
-bool useOpenCVLUT;
+    // Processing parameters
+    float depthScaleFactor;
+    float depthBias;
+    int useOpenCVLUT;
+
+    // Bounding volume parameters (now part of struct instead of global)
+    int hasBoundingVolume;
+    int showAllPoints;
+    float4x4 boundingVolumeInverseTransform;
+
+    // Buffer offsets (for multi-camera, not used in single camera)
+    uint depthDataOffset;
+    uint lutDataOffset;
+    uint outputOffset;
+};
+
+StructuredBuffer<CameraMetadata> cameraMetadata;
 RWStructuredBuffer<float2> depthUndistortLUT;
 
-// Bounding volume for culling
-bool hasBoundingVolume;
-bool showAllPoints;
-float4x4 boundingVolumeInverseTransform;
-float4x4 depthViewerTransform;
-
-// No longer need metadata/offset parameters - data is pre-processed on CPU
-
-float2 DistortColorProjection(float x_norm, float y_norm)
+float2 DistortColorProjection(float x_norm, float y_norm, CameraMetadata meta)
 {
-    float k1 = colorDistortion.x, k2 = colorDistortion.y, k3 = colorDistortion2.x;
-    float k4 = colorDistortion2.y, k5 = colorDistortion2.z, k6 = colorDistortion2.w;
-    float p1 = colorDistortion.z, p2 = colorDistortion.w;
+    float k1 = meta.k1_c, k2 = meta.k2_c, k3 = meta.k3_c;
+    float k4 = meta.k4_c, k5 = meta.k5_c, k6 = meta.k6_c;
+    float p1 = meta.p1_c, p2 = meta.p2_c;
 
     float r2 = x_norm * x_norm + y_norm * y_norm;
     float r4 = r2 * r2;
@@ -63,18 +73,18 @@ float2 DistortColorProjection(float x_norm, float y_norm)
     float x_d = x_norm * radial + 2 * p1 * x_norm * y_norm + p2 * (r2 + 2 * x_norm * x_norm);
     float y_d = y_norm * radial + 2 * p2 * x_norm * y_norm + p1 * (r2 + 2 * y_norm * y_norm);
 
-    float u = fx_c * x_d + cx_c;
-    float v = fy_c * y_d + cy_c;
+    float u = meta.fx_c * x_d + meta.cx_c;
+    float v = meta.fy_c * y_d + meta.cy_c;
 
     return float2(u, v);
 }
 
-bool IsPointInBoundingVolume(float3 worldPoint)
+bool IsPointInBoundingVolume(float3 worldPoint, CameraMetadata meta)
 {
     // Early return if no bounding volume is set
-    if (!hasBoundingVolume) return true;
+    if (meta.hasBoundingVolume == 0) return true;
 
-    float4 localPoint4 = mul(boundingVolumeInverseTransform, float4(worldPoint, 1.0));
+    float4 localPoint4 = mul(meta.boundingVolumeInverseTransform, float4(worldPoint, 1.0));
     float3 localPoint = localPoint4.xyz;
 
     return (abs(localPoint.x) <= 0.5) && (abs(localPoint.y) <= 0.5) && (abs(localPoint.z) <= 0.5);
@@ -85,78 +95,77 @@ bool IsPointInBoundingVolume(float3 worldPoint)
 [numthreads(64,1,1)]
 void ProcessRawDepthData(uint3 id : SV_DispatchThreadID)
 {
+    CameraMetadata meta = cameraMetadata[0];
+
     uint i = id.x;
-    uint totalPixels = depthWidth * depthHeight;
-    
+    uint totalPixels = meta.depthWidth * meta.depthHeight;
+
     if (i >= totalPixels) return;
-    
-    int x = i % depthWidth;
-    int y = i / depthWidth;
-    
+
+    int x = i % meta.depthWidth;
+    int y = i / meta.depthWidth;
+
     // Read depth value directly from structured buffer (metadata already skipped)
     uint rawDepthValue = rawDepthData[i] & 0xFFFF; // Extract 16-bit depth value
-    
+
     // Apply depth bias correction and scale factor
-    float correctedDepth = rawDepthValue + depthBias;
-    float z = correctedDepth * (depthScaleFactor / 1000.0);
-    if (z <= 0) 
+    float correctedDepth = rawDepthValue + meta.depthBias;
+    float z = correctedDepth * (meta.depthScaleFactor / 1000.0);
+    if (z <= 0)
     {
         outputVertices[i].isValid = 0;
         return;
     }
-    
+
     float px, py;
-    
-    if (useOpenCVLUT)
+
+    if (meta.useOpenCVLUT == 1)
     {
         // Method 1: OpenCV-generated undistortion LUT
-        float2 rayCoords = depthUndistortLUT[x + y * depthWidth];
+        float2 rayCoords = depthUndistortLUT[x + y * meta.depthWidth];
         px = rayCoords.x * z;
         py = rayCoords.y * z;
     }
     else
     {
         // Method 2: Simple pinhole camera model
-        px = (x - cx_d) * z / fx_d;
-        py = (y - cy_d) * z / fy_d;
+        px = (x - meta.cx_d) * z / meta.fx_d;
+        py = (y - meta.cy_d) * z / meta.fy_d;
     }
-    
+
     float3 dPoint = float3(px, py, z);
-    float3 cPoint = mul(rotationMatrix, float4(dPoint, 1.0)).xyz + translation;
-    
+    float3 cPoint = mul(meta.d2cRotation, float4(dPoint, 1.0)).xyz + meta.d2cTranslation;
+
     // Skip points behind camera
     if (cPoint.z <= 0)
     {
         outputVertices[i].isValid = 0;
         return;
     }
-    
+
     float x_norm = cPoint.x / cPoint.z;
     float y_norm = cPoint.y / cPoint.z;
-    float2 colorPixelCoord = DistortColorProjection(x_norm, y_norm);
-    
+    float2 colorPixelCoord = DistortColorProjection(x_norm, y_norm, meta);
+
     // Convert to normalized texture coordinates [0,1]
     float2 colorUV = float2(
-        colorPixelCoord.x / (float)colorWidth,
-        1.0 - (colorPixelCoord.y / (float)colorHeight) // Flip Y
+        colorPixelCoord.x / (float)meta.colorWidth,
+        1.0 - (colorPixelCoord.y / (float)meta.colorHeight) // Flip Y
     );
-    
+
     // Sample color from GPU texture (no CPU conversion needed!)
     float4 color = colorTexture.SampleLevel(samplercolorTexture, colorUV, 0);
-    
+
     // Check if color is valid (not completely black)
     bool hasValidColor = true;// color.r > 0.02 || color.g > 0.02 || color.b > 0.02; // Slight threshold for float comparison
-    
+
     // Convert cPoint to world coordinates for bounding volume check
-    float4 worldPoint4 = mul(depthViewerTransform, float4(cPoint, 1.0));
+    float4 worldPoint4 = mul(meta.depthViewerTransform, float4(cPoint, 1.0));
     float3 worldPoint = worldPoint4.xyz;
-    
+
     // Only add points with valid colors and within bounding volume
-    bool withinBounds = showAllPoints;
-    if (!showAllPoints) {
-        withinBounds = IsPointInBoundingVolume(worldPoint);
-    }
-    
+    bool withinBounds = (meta.showAllPoints == 1) || IsPointInBoundingVolume(worldPoint, meta);
+
     if (hasValidColor && withinBounds)
     {
         outputVertices[i].vertex = cPoint;
