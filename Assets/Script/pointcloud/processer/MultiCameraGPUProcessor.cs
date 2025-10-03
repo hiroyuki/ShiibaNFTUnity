@@ -197,10 +197,12 @@ public class MultiCameraGPUProcessor : MonoBehaviour
             if (device.TryGetGlobalTransform(out Vector3 pos, out Quaternion rot))
             {
                 metadata.depthViewerTransform = Matrix4x4.TRS(pos, rot, Vector3.one);
+                Debug.Log($"[ONESHADER Camera {i} ({device.deviceName})] Global transform: pos={pos}, rot={rot.eulerAngles}");
             }
             else
             {
                 metadata.depthViewerTransform = Matrix4x4.identity;
+                Debug.LogWarning($"[ONESHADER Camera {i} ({device.deviceName})] Failed to get global transform - using identity");
             }
 
             // Bounding volume parameters (respect PointCloudSettings)
@@ -238,6 +240,13 @@ public class MultiCameraGPUProcessor : MonoBehaviour
             currentOutputOffset += pixelCount;
 
             metadataArray[i] = metadata;
+
+            // Debug log for each camera's key parameters
+            Debug.Log($"[ONESHADER Camera {i} ({device.deviceName})] " +
+                      $"Depth: {metadata.depthWidth}x{metadata.depthHeight}, " +
+                      $"Color: {metadata.colorWidth}x{metadata.colorHeight}, " +
+                      $"Offsets: depth={metadata.depthDataOffset}, lut={metadata.lutDataOffset}, output={metadata.outputOffset}, " +
+                      $"pixelCount={pixelCount}");
         }
 
         cameraMetadataBuffer.SetData(metadataArray);
@@ -347,6 +356,40 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         return lutData;
     }
 
+    private void UpdateBoundingVolumeParameters()
+    {
+        if (!isInitialized || cameraMetadataBuffer == null) return;
+
+        // Read current metadata
+        CameraMetadata[] metadataArray = new CameraMetadata[frameControllers.Count];
+        cameraMetadataBuffer.GetData(metadataArray);
+
+        // Update bounding volume parameters for all cameras
+        bool settingsChanged = false;
+        for (int i = 0; i < metadataArray.Length; i++)
+        {
+            int newShowAllPoints = PointCloudSettings.showAllPoints ? 1 : 0;
+            if (metadataArray[i].showAllPoints != newShowAllPoints)
+            {
+                metadataArray[i].showAllPoints = newShowAllPoints;
+                settingsChanged = true;
+            }
+
+            // Update bounding volume transform (in case it moved)
+            if (boundingVolume != null)
+            {
+                metadataArray[i].boundingVolumeInverseTransform = boundingVolume.worldToLocalMatrix;
+            }
+        }
+
+        // Upload updated metadata if changed
+        if (settingsChanged)
+        {
+            cameraMetadataBuffer.SetData(metadataArray);
+            Debug.Log($"[ONESHADER] Updated showAllPoints to {PointCloudSettings.showAllPoints}");
+        }
+    }
+
     private void UploadDataAndProcess(List<uint[]> allDepthData, List<Vector2[]> allLutData, List<Texture2D> allColorTextures)
     {
         // Concatenate all depth data
@@ -360,11 +403,24 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         // Update color texture array
         for (int i = 0; i < allColorTextures.Count && i < frameControllers.Count; i++)
         {
-            Graphics.CopyTexture(allColorTextures[i], 0, 0, colorTextureArray, i, 0);
+            var tex = allColorTextures[i];
+            if (tex.width != colorTextureArray.width || tex.height != colorTextureArray.height)
+            {
+                Debug.LogError($"[ONESHADER] Camera {i} color texture size mismatch! " +
+                              $"Expected {colorTextureArray.width}x{colorTextureArray.height}, " +
+                              $"Got {tex.width}x{tex.height}");
+            }
+            else
+            {
+                Graphics.CopyTexture(allColorTextures[i], 0, 0, colorTextureArray, i, 0);
+            }
         }
 
         // Reset valid counts
         validCountBuffer.SetData(new int[frameControllers.Count]);
+
+        // Update bounding volume parameters (in case PointCloudSettings changed)
+        UpdateBoundingVolumeParameters();
 
         // Set compute shader parameters
         int kernelIndex = multiCamProcessor.FindKernel("ProcessMultiCamDepthData");
@@ -376,9 +432,16 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         multiCamProcessor.SetBuffer(kernelIndex, "allOutputVertices", allOutputBuffer);
         multiCamProcessor.SetBuffer(kernelIndex, "validCountPerCamera", validCountBuffer);
 
-        // Dispatch compute shader
-        int threadGroups = Mathf.CeilToInt(totalPixels / 32f);
-        multiCamProcessor.Dispatch(kernelIndex, threadGroups, 1, 1);
+        // Dispatch compute shader with multi-dimensional dispatch to avoid 65535 limit
+        // Each thread group processes 32 pixels (numthreads(32, 1, 1))
+        int totalThreadGroups = Mathf.CeilToInt(totalPixels / 32f);
+
+        // Distribute across X and Y dimensions to stay within 65535 limit per dimension
+        int threadGroupsX = Mathf.Min(totalThreadGroups, 65535);
+        int threadGroupsY = Mathf.CeilToInt((float)totalThreadGroups / 65535f);
+
+        Debug.Log($"[ONESHADER] Dispatching {totalThreadGroups} thread groups as ({threadGroupsX}, {threadGroupsY}, 1) for {totalPixels} total pixels");
+        multiCamProcessor.Dispatch(kernelIndex, threadGroupsX, threadGroupsY, 1);
 
         // Apply results to unified or individual camera meshes
         ApplyResultsToMeshes();

@@ -15,9 +15,9 @@ struct CameraMetadata
     float fx_d, fy_d, cx_d, cy_d; // Depth camera
     float fx_c, fy_c, cx_c, cy_c; // Color camera
 
-    // Distortion parameters (from colorDistortion[8] array: k1~k6, p1, p2)
-    float4 colorDistortion; // k1, k2, p1, p2
-    float4 colorDistortion2; // k3, k4, k5, k6
+    // Distortion parameters (matches C# layout: individual floats, not float4)
+    float k1_c, k2_c, p1_c, p2_c; // colorDistortion (k1, k2, p1, p2)
+    float k3_c, k4_c, k5_c, k6_c; // colorDistortion2 (k3, k4, k5, k6)
 
     // Image dimensions
     uint depthWidth;
@@ -28,11 +28,11 @@ struct CameraMetadata
     // Processing parameters
     float depthScaleFactor;
     float depthBias;
-    bool useOpenCVLUT;
+    int useOpenCVLUT; // int (not bool) to match C# layout
 
     // Bounding volume parameters
-    bool hasBoundingVolume;
-    bool showAllPoints;
+    int hasBoundingVolume; // int (not bool) to match C# layout
+    int showAllPoints; // int (not bool) to match C# layout
     float4x4 boundingVolumeInverseTransform;
 
     // Buffer offsets for this camera
@@ -63,9 +63,9 @@ RWStructuredBuffer<int> validCountPerCamera; // Valid count for each camera
 // Utility functions
 float2 DistortColorProjection(float x_norm, float y_norm, CameraMetadata cam)
 {
-    float k1 = cam.colorDistortion.x, k2 = cam.colorDistortion.y, k3 = cam.colorDistortion2.x;
-    float k4 = cam.colorDistortion2.y, k5 = cam.colorDistortion2.z, k6 = cam.colorDistortion2.w;
-    float p1 = cam.colorDistortion.z, p2 = cam.colorDistortion.w;
+    float k1 = cam.k1_c, k2 = cam.k2_c, k3 = cam.k3_c;
+    float k4 = cam.k4_c, k5 = cam.k5_c, k6 = cam.k6_c;
+    float p1 = cam.p1_c, p2 = cam.p2_c;
 
     float r2 = x_norm * x_norm + y_norm * y_norm;
     float r4 = r2 * r2;
@@ -83,7 +83,7 @@ float2 DistortColorProjection(float x_norm, float y_norm, CameraMetadata cam)
 
 bool IsPointInBoundingVolume(float3 worldPoint, CameraMetadata cam)
 {
-    if (!cam.hasBoundingVolume) return true;
+    if (cam.hasBoundingVolume == 0) return true;
 
     float4 localPoint4 = mul(cam.boundingVolumeInverseTransform, float4(worldPoint, 1.0));
     float3 localPoint = localPoint4.xyz;
@@ -94,22 +94,31 @@ bool IsPointInBoundingVolume(float3 worldPoint, CameraMetadata cam)
 [numthreads(32, 1, 1)]
 void ProcessMultiCamDepthData(uint3 id : SV_DispatchThreadID)
 {
-    uint globalThreadId = id.x;
+    // SV_DispatchThreadID gives global thread index across all thread groups
+    // id.x ranges from 0 to (threadGroupsX * 32 - 1)
+    // id.y ranges from 0 to (threadGroupsY - 1)
+    // C# dispatches as: Dispatch(threadGroupsX, threadGroupsY, 1) where threadGroupsX <= 65535
+    // So we need: globalThreadId = id.x + (id.y * maxThreadsPerRow)
+    // maxThreadsPerRow = min(totalThreadGroups, 65535) * 32
+    uint maxThreadsPerRow = 65535 * 32; // Maximum threads in X dimension
+    uint globalThreadId = id.x + (id.y * maxThreadsPerRow);
 
     // Calculate which camera and which pixel within that camera
     uint totalPixelsProcessed = 0;
     uint cameraIndex = 0;
     uint pixelIndexInCamera = globalThreadId;
+    bool foundCamera = false;
 
     // Find which camera this thread should process
-    for (uint cam = 0; cam < cameraCount; cam++)
+    for (uint camIdx = 0; camIdx < cameraCount; camIdx++)
     {
-        CameraMetadata camData = cameraMetadata[cam];
+        CameraMetadata camData = cameraMetadata[camIdx];
         uint cameraPixelCount = camData.depthWidth * camData.depthHeight;
 
         if (pixelIndexInCamera < cameraPixelCount)
         {
-            cameraIndex = cam;
+            cameraIndex = camIdx;
+            foundCamera = true;
             break;
         }
 
@@ -118,7 +127,7 @@ void ProcessMultiCamDepthData(uint3 id : SV_DispatchThreadID)
     }
 
     // If thread ID exceeds total pixels across all cameras, exit
-    if (cameraIndex >= cameraCount)
+    if (!foundCamera)
         return;
 
     // Get camera metadata
@@ -148,7 +157,7 @@ void ProcessMultiCamDepthData(uint3 id : SV_DispatchThreadID)
     // Calculate 3D point coordinates
     float px, py;
 
-    if (cam.useOpenCVLUT)
+    if (cam.useOpenCVLUT == 1)
     {
         // Use LUT for undistortion
         uint lutIndex = cam.lutDataOffset + x + y * cam.depthWidth;
@@ -191,20 +200,20 @@ void ProcessMultiCamDepthData(uint3 id : SV_DispatchThreadID)
     // Check if color is valid
     bool hasValidColor = true; // Can add threshold check here if needed
 
-    // Convert to world coordinates for bounding volume check
+    // Convert to world coordinates for bounding volume check AND output
     float4 worldPoint4 = mul(cam.depthViewerTransform, float4(cPoint, 1.0));
     float3 worldPoint = worldPoint4.xyz;
 
     // Check bounding volume
-    bool withinBounds = cam.showAllPoints;
-    if (!cam.showAllPoints) {
+    bool withinBounds = (cam.showAllPoints == 1);
+    if (cam.showAllPoints == 0) {
         withinBounds = IsPointInBoundingVolume(worldPoint, cam);
     }
 
-    // Write output
+    // Write output - use worldPoint for unified mesh (all cameras in same world space)
     if (hasValidColor && withinBounds)
     {
-        allOutputVertices[outputIndex].vertex = cPoint;
+        allOutputVertices[outputIndex].vertex = worldPoint; // Changed from cPoint to worldPoint
         allOutputVertices[outputIndex].color = color;
         allOutputVertices[outputIndex].isValid = 1;
         allOutputVertices[outputIndex].cameraIndex = cameraIndex;

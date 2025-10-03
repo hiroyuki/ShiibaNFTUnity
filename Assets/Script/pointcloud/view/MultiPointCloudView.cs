@@ -39,8 +39,8 @@ public class MultiPointCloudView : MonoBehaviour
         unifiedMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32; // Support large meshes
         unifiedMeshFilter.mesh = unifiedMesh;
 
-        // Setup material for point cloud rendering
-        Material pointCloudMaterial = new Material(Shader.Find("Custom/PointCloud"));
+        // Setup material for point cloud rendering (use same shader as SinglePointCloudView)
+        Material pointCloudMaterial = new Material(Shader.Find("Unlit/VertexColor"));
         pointCloudMaterial.SetFloat("_PointSize", DEFAULT_POINT_SIZE);
         meshRenderer.material = pointCloudMaterial;
 
