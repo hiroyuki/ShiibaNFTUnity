@@ -23,6 +23,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
     // Multi-camera GPU processing
     private MultiCameraGPUProcessor multiCameraProcessor;
+    private MultiPointCloudView multiPointCloudView;
     private bool useMultiCameraProcessing = false;
 
     void Start()
@@ -131,24 +132,24 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     {
         SetupStatusUI.ShowStatus("Initializing multi-camera GPU processing...");
 
-        // Create multi-camera processor GameObject
-        GameObject processorObj = new GameObject("MultiCameraGPUProcessor");
-        processorObj.transform.parent = this.transform;
-        multiCameraProcessor = processorObj.AddComponent<MultiCameraGPUProcessor>();
+        // Create MultiPointCloudView GameObject
+        GameObject multiViewObj = new GameObject("MultiPointCloudView");
+        multiViewObj.transform.parent = this.transform;
+        multiPointCloudView = multiViewObj.AddComponent<MultiPointCloudView>();
 
-        // Register all camera managers with the processor
+        // Register all camera views
         foreach (var dataManagerObj in dataManagerObjects)
         {
-            var dataManager = dataManagerObj.GetComponent<SinglePointCloudView>();
-            if (dataManager != null)
+            var cameraView = dataManagerObj.GetComponent<SinglePointCloudView>();
+            if (cameraView != null)
             {
-                multiCameraProcessor.RegisterCameraManager(dataManager);
+                multiPointCloudView.RegisterCameraView(cameraView);
             }
         }
 
-        // Initialize the processor immediately since all cameras are already initialized
-        multiCameraProcessor.InitializeMultiCameraProcessing();
-        SetupStatusUI.ShowStatus($"Multi-camera GPU processing initialized for {dataManagerObjects.Count} cameras");
+        // Initialize multi-camera processing
+        multiPointCloudView.InitializeMultiCameraProcessing();
+        SetupStatusUI.ShowStatus($"Multi-camera view initialized for {dataManagerObjects.Count} cameras");
     }
 
     void Update()
@@ -290,11 +291,11 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
         try
         {
-            if (useMultiCameraProcessing && multiCameraProcessor != null)
+            if (useMultiCameraProcessing && multiPointCloudView != null)
             {
                 // Use multi-camera GPU processing for all scenarios (single or multiple cameras)
                 SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} using multi-camera GPU processing ({dataManagerObjects.Count} camera(s))...");
-                multiCameraProcessor.ProcessAllCamerasFrame(targetTimestamp);
+                multiPointCloudView.ProcessFrame(targetTimestamp);
                 SetupStatusUI.ShowStatus($"Multi-camera GPU processing complete for {dataManagerObjects.Count} camera(s)");
             }
             else
@@ -416,10 +417,10 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     
     void OnDestroy()
     {
-        // Cleanup multi-camera processor
-        if (multiCameraProcessor != null)
+        // Cleanup multi-camera view
+        if (multiPointCloudView != null)
         {
-            DestroyImmediate(multiCameraProcessor.gameObject);
+            DestroyImmediate(multiPointCloudView.gameObject);
         }
     }
 }

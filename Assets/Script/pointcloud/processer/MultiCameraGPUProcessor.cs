@@ -30,6 +30,9 @@ public class MultiCameraGPUProcessor : MonoBehaviour
     private bool isInitialized = false;
     private int totalPixels = 0;
 
+    // Callback for unified mesh update
+    private System.Action<Mesh> onUnifiedMeshUpdated;
+
     void Start()
     {
         multiCamProcessor = Resources.Load<ComputeShader>("MultiCamDepthToPointCloud");
@@ -52,6 +55,16 @@ public class MultiCameraGPUProcessor : MonoBehaviour
             cameraManagers.Add(cameraManager);
             Debug.Log($"Registered camera: {cameraManager.name}, Total cameras: {cameraManagers.Count}");
         }
+    }
+
+    public void SetUnifiedMeshCallback(System.Action<Mesh> callback)
+    {
+        onUnifiedMeshUpdated = callback;
+    }
+
+    public void ProcessAllCameras(ulong timestamp)
+    {
+        ProcessAllCamerasFrame(timestamp);
     }
 
     public void InitializeMultiCameraProcessing()
@@ -338,7 +351,7 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         int threadGroups = Mathf.CeilToInt(totalPixels / 32f);
         multiCamProcessor.Dispatch(kernelIndex, threadGroups, 1, 1);
 
-        // Apply results to individual camera meshes
+        // Apply results to unified or individual camera meshes
         ApplyResultsToMeshes();
     }
 
@@ -351,6 +364,66 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         int[] validCounts = new int[cameraManagers.Count];
         validCountBuffer.GetData(validCounts);
 
+        // If unified mesh callback is set, create unified mesh
+        if (onUnifiedMeshUpdated != null)
+        {
+            CreateUnifiedMesh(allResults, validCounts);
+        }
+        else
+        {
+            // Otherwise, split results to individual cameras (legacy behavior)
+            UpdateIndividualCameraMeshes(allResults, validCounts);
+        }
+    }
+
+    private void CreateUnifiedMesh(VertexData[] allResults, int[] validCounts)
+    {
+        // Count total valid points across all cameras
+        int totalValidPoints = 0;
+        foreach (int count in validCounts)
+        {
+            totalValidPoints += count;
+        }
+
+        if (totalValidPoints == 0)
+        {
+            Debug.LogWarning("No valid points in unified mesh");
+            return;
+        }
+
+        // Extract all valid vertices and colors
+        Vector3[] vertices = new Vector3[totalValidPoints];
+        Color[] colors = new Color[totalValidPoints];
+        int[] indices = new int[totalValidPoints];
+
+        int validIndex = 0;
+        for (int i = 0; i < allResults.Length; i++)
+        {
+            if (allResults[i].isValid == 1)
+            {
+                vertices[validIndex] = allResults[i].vertex;
+                colors[validIndex] = allResults[i].color;
+                indices[validIndex] = validIndex;
+                validIndex++;
+            }
+        }
+
+        // Create unified mesh
+        Mesh unifiedMesh = new Mesh();
+        unifiedMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        unifiedMesh.vertices = vertices;
+        unifiedMesh.colors = colors;
+        unifiedMesh.SetIndices(indices, MeshTopology.Points, 0);
+        unifiedMesh.RecalculateBounds();
+
+        // Invoke callback
+        onUnifiedMeshUpdated?.Invoke(unifiedMesh);
+
+        Debug.Log($"Unified mesh created: {totalValidPoints} points from {cameraManagers.Count} cameras");
+    }
+
+    private void UpdateIndividualCameraMeshes(VertexData[] allResults, int[] validCounts)
+    {
         // Split results back to individual cameras and update their meshes
         uint currentOffset = 0;
         for (int camIndex = 0; camIndex < cameraManagers.Count; camIndex++)
