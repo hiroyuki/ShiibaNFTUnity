@@ -89,6 +89,20 @@ public class MultiPointCloudView : MonoBehaviour
         }
     }
 
+    public void ProcessFirstFramesIfNeeded()
+    {
+        for (int i = 0; i < frameControllers.Count; i++)
+        {
+            var controller = frameControllers[i];
+            if (controller.AutoLoadFirstFrame && !controller.IsFirstFrameProcessed())
+            {
+                ulong targetTimestamp = controller.GetTimestampForFrame(0);
+                ProcessFrame(targetTimestamp);
+                return; // Process one frame at a time for all cameras
+            }
+        }
+    }
+
     public void ProcessFrame(ulong timestamp)
     {
         if (!isInitialized || multiCameraProcessor == null)

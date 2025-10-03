@@ -13,8 +13,6 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     [SerializeField]
     private string rootDirectory; // datasetを含むディレクトリ
 
-    private List<GameObject> pointCloudGameObjcts = new();
-    private List<IPointCloudProcessor> pointCloudProcessors = new();
     private List<CameraFrameController> frameControllers = new(); // Data layer
 
     // Frame navigation tracking
@@ -22,10 +20,14 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
     private volatile bool isProcessing = false;
 
-    // Multi-camera view
+    // Processing mode determines view architecture
+    private ProcessingType processingType = ProcessingType.GPU;
+
+    // For ONESHADER mode: unified view
     private MultiPointCloudView multiPointCloudView;
 
-    private ProcessingType processingType = ProcessingType.GPU;
+    // For GPU/CPU mode: individual views
+    private List<SinglePointCloudView> singlePointCloudViews = new();
 
     void Start()
     {
@@ -85,60 +87,75 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
             if (File.Exists(depthPath) && File.Exists(colorPath))
             {
-                // if (deviceDirName != "FemtoBolt_CL8F253004Z")// && deviceDirName != "FemtoBolt_CL8F25300F0"
-                // {
-                //     Debug.Log($"スキップ: {deviceDirName}");
-                // }
-                // else
-                // if (deviceDirName != "FemtoBolt_CL8F25300F0")// && deviceDirName != ""
-                // if (deviceDirName != "FemtoBolt_CL8F253004Z"&& deviceDirName != "FemtoBolt_CL8F25300F0")
-                // {
-                //     Debug.Log($"スキップ: {deviceDirName}");
-                // }
-                // else
-                {
-                    // Create CameraFrameController (data layer)
-                    var frameController = new CameraFrameController(
-                        rootDirectory,
-                        Path.GetFileName(hostDir),
-                        deviceDirName
-                    );
-                    frameControllers.Add(frameController);
-
-                    // Get global transform for view
-                    var device = frameController.Device;
-                    Vector3 position = Vector3.zero;
-                    Quaternion rotation = Quaternion.identity;
-                    device.TryGetGlobalTransform(out position, out rotation);
-
-                    // Create SinglePointCloudView (pure view layer)
-                    GameObject singlePointCloudContainer = new GameObject("SinglePointCloudView_" + deviceDirName);
-                    var view = singlePointCloudContainer.AddComponent<SinglePointCloudView>();
-
-                    // Initialize view with position/rotation
-                    view.Initialize(deviceDirName, position, rotation);
-                    pointCloudGameObjcts.Add(singlePointCloudContainer);
-
-                    // Create processor (managed by MultiCamPointCloudManager)
-                    IPointCloudProcessor processor = CreateAndSetupProcessor(frameController, view);
-                    pointCloudProcessors.Add(processor);
-                }
+                // Create CameraFrameController (data layer)
+                var frameController = new CameraFrameController(
+                    rootDirectory,
+                    Path.GetFileName(hostDir),
+                    deviceDirName
+                );
+                frameControllers.Add(frameController);
             }
-            
+
             deviceIndex++;
         }
 
         SetupStatusUI.SetProgress(1f);
-        SetupStatusUI.ShowStatus($"SinglePointCloudView を {pointCloudGameObjcts.Count} 個作成しました - first frames will load individually");
+        SetupStatusUI.ShowStatus($"Loaded {frameControllers.Count} camera controllers");
 
-        // Initialize multi-camera processing if enabled
-        if (processingType == ProcessingType.ONESHADER && pointCloudGameObjcts.Count > 0)
+        // Initialize views based on processing type
+        if (processingType == ProcessingType.ONESHADER)
         {
-            InitializeMultiCameraProcessing();
+            InitializeMultiCameraView();
+        }
+        else // GPU or CPU
+        {
+            InitializeSingleCameraViews();
         }
     }
 
-    private IPointCloudProcessor CreateAndSetupProcessor(CameraFrameController frameController, SinglePointCloudView view)
+    private void InitializeMultiCameraView()
+    {
+        SetupStatusUI.ShowStatus("Initializing multi-camera ONESHADER processing...");
+
+        // Create MultiPointCloudView GameObject
+        GameObject multiViewObj = new GameObject("MultiPointCloudView");
+        multiViewObj.transform.parent = this.transform;
+        multiPointCloudView = multiViewObj.AddComponent<MultiPointCloudView>();
+
+        // Initialize with frame controllers
+        multiPointCloudView.Initialize(frameControllers);
+
+        SetupStatusUI.ShowStatus($"Multi-camera view initialized for {frameControllers.Count} cameras");
+    }
+
+    private void InitializeSingleCameraViews()
+    {
+        SetupStatusUI.ShowStatus($"Initializing {frameControllers.Count} individual camera views for {processingType} processing...");
+
+        for (int i = 0; i < frameControllers.Count; i++)
+        {
+            var frameController = frameControllers[i];
+            var device = frameController.Device;
+
+            // Create processor
+            IPointCloudProcessor processor = CreateAndSetupProcessor(frameController);
+
+            // Create view
+            GameObject viewObj = new GameObject($"SinglePointCloudView_{device.deviceName}");
+            viewObj.transform.parent = this.transform;
+            var view = viewObj.AddComponent<SinglePointCloudView>();
+
+            // Initialize view with controller and processor
+            view.Initialize(frameController, processor, processingType);
+            singlePointCloudViews.Add(view);
+
+            device.UpdateDeviceStatus(DeviceStatusType.Ready, ProcessingType.None, "Ready for first frame");
+        }
+
+        SetupStatusUI.ShowStatus($"Initialized {singlePointCloudViews.Count} camera views");
+    }
+
+    private IPointCloudProcessor CreateAndSetupProcessor(CameraFrameController frameController)
     {
         var device = frameController.Device;
 
@@ -152,7 +169,8 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
         // Setup processor with device parameters
         processor.Setup(device, depthBias);
-        processor.SetDepthViewerTransform(view.GetDepthViewerTransform());
+
+        // Note: SetDepthViewerTransform will be called by SinglePointCloudView after initialization
 
         // Configure bounding volume
         Transform boundingVolume = GameObject.Find("BoundingVolume")?.transform;
@@ -169,91 +187,27 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         processor.SetupColorIntrinsics(device.GetColorParser().sensorHeader);
         processor.SetupCameraMetadata(device);
 
-        device.UpdateDeviceStatus(DeviceStatusType.Ready, ProcessingType.None, "Waiting for first frame");
-        SetupStatusUI.ShowStatus($"Setup complete for {device.deviceName}");
+        SetupStatusUI.ShowStatus($"Processor setup complete for {device.deviceName}");
 
         return processor;
     }
 
-    private void InitializeMultiCameraProcessing()
-    {
-        SetupStatusUI.ShowStatus("Initializing multi-camera ONESHADER processing...");
-
-        // Create MultiPointCloudView GameObject
-        GameObject multiViewObj = new GameObject("MultiPointCloudView");
-        multiViewObj.transform.parent = this.transform;
-        multiPointCloudView = multiViewObj.AddComponent<MultiPointCloudView>();
-
-        // Initialize with frame controllers
-        multiPointCloudView.Initialize(frameControllers);
-
-        SetupStatusUI.ShowStatus($"Multi-camera view initialized for {frameControllers.Count} cameras");
-    }
-
     void Update()
     {
-        // Process first frame for each camera if needed
-        ProcessFirstFramesIfNeeded();
-
-        HandleSynchronizedFrameNavigation();
-    }
-
-    private void ProcessFirstFramesIfNeeded()
-    {
-        for (int i = 0; i < frameControllers.Count; i++)
+        // Process first frames if needed
+        if (processingType == ProcessingType.ONESHADER)
         {
-            var controller = frameControllers[i];
-            if (controller.AutoLoadFirstFrame && !controller.IsFirstFrameProcessed())
+            multiPointCloudView?.ProcessFirstFramesIfNeeded();
+        }
+        else
+        {
+            foreach (var view in singlePointCloudViews)
             {
-                ulong targetTimestamp = controller.GetTimestampForFrame(0);
-                ProcessSingleCameraFrame(i, targetTimestamp);
+                view.ProcessFirstFrameIfNeeded();
             }
         }
-    }
 
-    private bool ProcessSingleCameraFrame(int cameraIndex, ulong targetTimestamp)
-    {
-        var controller = frameControllers[cameraIndex];
-        var processor = pointCloudProcessors[cameraIndex];
-        var view = pointCloudGameObjcts[cameraIndex].GetComponent<SinglePointCloudView>();
-        var device = controller.Device;
-
-        // Seek to timestamp
-        device.UpdateDeviceStatus(DeviceStatusType.Ready, processingType, "Starting frame processing...");
-        bool synchronized = controller.SeekToTimestamp(targetTimestamp, out ulong actualTimestamp);
-        device.UpdateDeviceStatus(DeviceStatusType.Ready, processingType, "Frame seek complete");
-
-        if (!synchronized)
-        {
-            Debug.LogWarning($"No synchronized frame found for timestamp {targetTimestamp}");
-            device.UpdateDeviceStatus(DeviceStatusType.Error, processingType, "No synchronized frame");
-            return false;
-        }
-
-        // Parse record
-        bool frameOk = controller.ParseRecord(processingType != ProcessingType.CPU);
-        device.UpdateDeviceStatus(DeviceStatusType.Processing, processingType, "Frame data parsed");
-
-        if (!frameOk)
-        {
-            return false;
-        }
-
-        // Update texture
-        controller.UpdateTexture(processingType != ProcessingType.CPU);
-
-        // Generate mesh using processor
-        if (processingType != ProcessingType.ONESHADER)
-        {
-            processor.UpdateMesh(view.GetMesh(), device);
-        }
-
-        // Update timestamp
-        controller.UpdateCurrentTimestamp(actualTimestamp);
-        controller.NotifyFirstFrameProcessed();
-        device.UpdateDeviceStatus(DeviceStatusType.Complete, processingType, "Mesh updated");
-
-        return true;
+        HandleSynchronizedFrameNavigation();
     }
 
     private void HandleSynchronizedFrameNavigation()
@@ -275,7 +229,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     
     private void NavigateToNextSynchronizedFrame()
     {
-        if (pointCloudGameObjcts.Count == 0) return;
+        if (processingType == ProcessingType.GPU && singlePointCloudViews.Count == 0) return;
 
         // Find next synchronized timestamp from the leading camera
         ulong nextTimestamp = FindNextSynchronizedTimestamp();
@@ -302,17 +256,36 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         int newLeadingIndex = 0;
         ulong foremostTimestamp = ulong.MinValue;
 
-        for (int i = 0; i < frameControllers.Count; i++)
+        if (processingType == ProcessingType.ONESHADER)
         {
-            var controller = frameControllers[i];
-            if (controller == null) continue;
-
-            // Use stored current timestamp
-            ulong timestamp = controller.CurrentTimestamp;
-            if (timestamp > foremostTimestamp)
+            // Use frame controllers directly
+            for (int i = 0; i < frameControllers.Count; i++)
             {
-                foremostTimestamp = timestamp;
-                newLeadingIndex = i;
+                var controller = frameControllers[i];
+                if (controller == null) continue;
+
+                ulong timestamp = controller.CurrentTimestamp;
+                if (timestamp > foremostTimestamp)
+                {
+                    foremostTimestamp = timestamp;
+                    newLeadingIndex = i;
+                }
+            }
+        }
+        else
+        {
+            // Use single point cloud views
+            for (int i = 0; i < singlePointCloudViews.Count; i++)
+            {
+                var view = singlePointCloudViews[i];
+                if (view == null) continue;
+
+                ulong timestamp = view.GetCurrentTimestamp();
+                if (timestamp > foremostTimestamp)
+                {
+                    foremostTimestamp = timestamp;
+                    newLeadingIndex = i;
+                }
             }
         }
 
@@ -326,26 +299,49 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     {
         try
         {
-            // Get the next timestamp from the current leading camera
-            if (leadingCameraIndex >= frameControllers.Count)
+            if (processingType == ProcessingType.ONESHADER)
             {
-                Debug.LogError($"Leading camera index {leadingCameraIndex} is out of range");
-                return 0;
+                // Get the next timestamp from the current leading camera's controller
+                if (leadingCameraIndex >= frameControllers.Count)
+                {
+                    Debug.LogError($"Leading camera index {leadingCameraIndex} is out of range");
+                    return 0;
+                }
+
+                var leadingController = frameControllers[leadingCameraIndex];
+                if (leadingController == null)
+                {
+                    Debug.LogError($"Leading controller at index {leadingCameraIndex} is null");
+                    return 0;
+                }
+
+                if (leadingController.PeekNextTimestamp(out ulong timestamp))
+                {
+                    return timestamp;
+                }
+            }
+            else
+            {
+                // Get the next timestamp from the current leading camera's view
+                if (leadingCameraIndex >= singlePointCloudViews.Count)
+                {
+                    Debug.LogError($"Leading camera index {leadingCameraIndex} is out of range");
+                    return 0;
+                }
+
+                var leadingView = singlePointCloudViews[leadingCameraIndex];
+                if (leadingView == null)
+                {
+                    Debug.LogError($"Leading view at index {leadingCameraIndex} is null");
+                    return 0;
+                }
+
+                if (leadingView.PeekNextTimestamp(out ulong timestamp))
+                {
+                    return timestamp;
+                }
             }
 
-            var leadingController = frameControllers[leadingCameraIndex];
-            if (leadingController == null)
-            {
-                Debug.LogError($"Leading controller at index {leadingCameraIndex} is null");
-                return 0;
-            }
-
-            // Try to get the next frame timestamp from the leading camera
-            if (leadingController.PeekNextTimestamp(out ulong timestamp))
-            {
-                return timestamp;
-            }
-            
             return 0; // No more data
         }
         catch (System.Exception ex)
@@ -379,33 +375,33 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
         try
         {
-            if (processingType == ProcessingType.ONESHADER && multiPointCloudView != null)
+            if (processingType == ProcessingType.ONESHADER)
             {
-                // Use multi-camera GPU processing for all scenarios (single or multiple cameras)
-                SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} using multi-camera GPU processing ({pointCloudGameObjcts.Count} camera(s))...");
-                multiPointCloudView.ProcessFrame(targetTimestamp);
-                SetupStatusUI.ShowStatus($"Multi-camera GPU processing complete for {pointCloudGameObjcts.Count} camera(s)");
+                // Use multi-camera GPU processing
+                SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} using ONESHADER ({frameControllers.Count} cameras)...");
+                multiPointCloudView?.ProcessFrame(targetTimestamp);
+                SetupStatusUI.ShowStatus($"ONESHADER processing complete for {frameControllers.Count} cameras");
             }
             else
             {
-                // Fall back to individual camera processing only if multi-camera processor is not available
-                SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} across {pointCloudGameObjcts.Count} cameras (fallback mode)...");
+                // Individual camera processing (GPU/CPU)
+                SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} across {singlePointCloudViews.Count} cameras ({processingType})...");
 
                 int successCount = 0;
-                for (int i = 0; i < frameControllers.Count; i++)
+                foreach (var view in singlePointCloudViews)
                 {
                     try
                     {
-                        bool success = ProcessSingleCameraFrame(i, targetTimestamp);
+                        bool success = view.ProcessFrame(targetTimestamp);
                         if (success) successCount++;
                     }
                     catch (System.Exception ex)
                     {
-                        Debug.LogError($"Failed to process camera {i}: {ex.Message}");
+                        Debug.LogError($"Failed to process camera: {ex.Message}");
                     }
                 }
 
-                SetupStatusUI.ShowStatus($"Frame processing complete: {successCount}/{frameControllers.Count} cameras processed successfully");
+                SetupStatusUI.ShowStatus($"Frame processing complete: {successCount}/{singlePointCloudViews.Count} cameras processed successfully");
             }
 
             // Update leading camera index after processing for next navigation
@@ -447,51 +443,108 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     
     public void ResetToFirstFrame()
     {
-        for (int i = 0; i < frameControllers.Count; i++)
+        if (processingType == ProcessingType.ONESHADER)
         {
-            ulong targetTimestamp = frameControllers[i].GetTimestampForFrame(0);
-            ProcessSingleCameraFrame(i, targetTimestamp);
+            if (frameControllers.Count > 0)
+            {
+                ulong targetTimestamp = frameControllers[0].GetTimestampForFrame(0);
+                multiPointCloudView?.ProcessFrame(targetTimestamp);
+            }
+        }
+        else
+        {
+            foreach (var view in singlePointCloudViews)
+            {
+                ulong targetTimestamp = view.GetTimestampForFrame(0);
+                view.ProcessFrame(targetTimestamp);
+            }
         }
     }
 
     public int GetTotalFrameCount()
     {
-        // Return frame count from first controller (assuming all have same length)
-        if (frameControllers.Count > 0)
+        if (processingType == ProcessingType.ONESHADER)
         {
-            return frameControllers[0].GetTotalFrameCount();
+            // Return frame count from first controller (assuming all have same length)
+            if (frameControllers.Count > 0)
+            {
+                return frameControllers[0].GetTotalFrameCount();
+            }
+        }
+        else
+        {
+            // Return frame count from first view
+            if (singlePointCloudViews.Count > 0)
+            {
+                return singlePointCloudViews[0].GetTotalFrameCount();
+            }
         }
         return -1;
     }
 
     public int GetFpsFromHeader()
     {
-        // Return FPS from first controller
-        if (frameControllers.Count > 0)
+        if (processingType == ProcessingType.ONESHADER)
         {
-            int fps = frameControllers[0].GetFps();
-            if (fps > 0)
+            // Return FPS from first controller
+            if (frameControllers.Count > 0)
             {
-                return fps;
+                int fps = frameControllers[0].GetFps();
+                if (fps > 0)
+                {
+                    return fps;
+                }
+
+                // Error case: FPS not available in header
+                string errorMsg = "FPS not available from any camera headers. Cannot determine timeline framerate.";
+                Debug.LogError(errorMsg);
+                SetupStatusUI.ShowStatus($"CRITICAL ERROR: {errorMsg}");
+                return -1;
             }
-                
-            // Error case: FPS not available in header
-            string errorMsg = "FPS not available from any camera headers. Cannot determine timeline framerate.";
-            Debug.LogError(errorMsg);
-            SetupStatusUI.ShowStatus($"CRITICAL ERROR: {errorMsg}");
-            return -1;
         }
-        
-        Debug.LogError("No data managers available to get FPS from header");
+        else
+        {
+            // Return FPS from first view
+            if (singlePointCloudViews.Count > 0)
+            {
+                int fps = singlePointCloudViews[0].GetFps();
+                if (fps > 0)
+                {
+                    return fps;
+                }
+
+                string errorMsg = "FPS not available from any camera headers. Cannot determine timeline framerate.";
+                Debug.LogError(errorMsg);
+                SetupStatusUI.ShowStatus($"CRITICAL ERROR: {errorMsg}");
+                return -1;
+            }
+        }
+
+        Debug.LogError("No cameras available to get FPS from header");
         return -1;
     }
     
     void OnDestroy()
     {
-        // Cleanup multi-camera view
-        if (multiPointCloudView != null)
+        if (processingType == ProcessingType.ONESHADER)
         {
-            DestroyImmediate(multiPointCloudView.gameObject);
+            // Cleanup multi-camera view
+            if (multiPointCloudView != null)
+            {
+                DestroyImmediate(multiPointCloudView.gameObject);
+            }
+        }
+        else
+        {
+            // Cleanup single camera views (processors are owned by views)
+            foreach (var view in singlePointCloudViews)
+            {
+                if (view != null)
+                {
+                    DestroyImmediate(view.gameObject);
+                }
+            }
+            singlePointCloudViews.Clear();
         }
 
         // Cleanup frame controllers (data layer)
