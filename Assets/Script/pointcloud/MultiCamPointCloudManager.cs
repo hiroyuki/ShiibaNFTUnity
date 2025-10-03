@@ -87,27 +87,6 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
             if (File.Exists(depthPath) && File.Exists(colorPath))
             {
-<<<<<<< HEAD
-                // if (deviceDirName != "FemtoBolt_CL8F253004Z")
-                // {
-                //     Debug.Log($"スキップ: {deviceDirName}");
-                // }
-                // else
-                {
-                    
-                    GameObject dataManagerObj = new GameObject("SingleCameraDataManager_" + deviceDirName);
-                    var dataManager = dataManagerObj.AddComponent<SingleCameraDataManager>();
-                    dataManagerObj.transform.parent = this.transform;
-
-                    // Initialize the data manager with required parameters
-                    dataManager.Initialize(rootDirectory, Path.GetFileName(hostDir), deviceDirName);
-                    dataManagerObjects.Add(dataManagerObj);
-                    
-                    // Create async processor for this camera
-                    var cameraProcessor = new CameraProcessor(deviceDirName, dataManager);
-                    cameraProcessors.Add(cameraProcessor);
-                }
-=======
                 // Create CameraFrameController (data layer)
                 var frameController = new CameraFrameController(
                     rootDirectory,
@@ -115,7 +94,6 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                     deviceDirName
                 );
                 frameControllers.Add(frameController);
->>>>>>> StoreBinaryInArray
             }
 
             deviceIndex++;
