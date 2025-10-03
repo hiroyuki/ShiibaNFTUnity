@@ -30,6 +30,9 @@ public class MultiCameraGPUProcessor : MonoBehaviour
     private bool isInitialized = false;
     private int totalPixels = 0;
 
+    // Bounding volume (shared across all cameras)
+    private Transform boundingVolume;
+
     // Callback for unified mesh update
     private System.Action<Mesh> onUnifiedMeshUpdated;
 
@@ -59,6 +62,18 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         }
 
         Debug.Log($"Initializing multi-camera GPU processing for {frameControllers.Count} cameras");
+
+        // Find bounding volume in scene
+        GameObject boundingVolumeObj = GameObject.Find("BoundingVolume");
+        if (boundingVolumeObj != null)
+        {
+            boundingVolume = boundingVolumeObj.transform;
+            Debug.Log($"[ONESHADER] Bounding volume found: {boundingVolume.name}, PointCloudSettings.showAllPoints={PointCloudSettings.showAllPoints}");
+        }
+        else
+        {
+            Debug.LogWarning("[ONESHADER] BoundingVolume not found - processing all points");
+        }
 
         // Calculate total buffer sizes
         CalculateBufferSizes();
@@ -156,25 +171,17 @@ public class MultiCameraGPUProcessor : MonoBehaviour
             metadata.cx_c = device.GetColorIntrinsics()[2]; // cx
             metadata.cy_c = device.GetColorIntrinsics()[3]; // cy
 
-            // Depth distortion
-            metadata.k1_d = device.GetDepthDistortion()[0]; // k1
-            metadata.k2_d = device.GetDepthDistortion()[1]; // k2
-            metadata.k3_d = device.GetDepthDistortion()[2]; // k3
-            metadata.k4_d = device.GetDepthDistortion()[3]; // k4
-            metadata.k5_d = device.GetDepthDistortion()[4]; // k5
-            metadata.k6_d = device.GetDepthDistortion()[5]; // k6
-            metadata.p1_d = device.GetDepthDistortion()[6]; // p1
-            metadata.p2_d = device.GetDepthDistortion()[7]; // p2
-
-            // Color distortion
-            metadata.k1_c = device.GetColorDistortion()[0]; // k1
-            metadata.k2_c = device.GetColorDistortion()[1]; // k2
-            metadata.k3_c = device.GetColorDistortion()[2]; // k3
-            metadata.k4_c = device.GetColorDistortion()[3]; // k4
-            metadata.k5_c = device.GetColorDistortion()[4]; // k1
-            metadata.k6_c = device.GetColorDistortion()[5]; // k1
-            metadata.p1_c = device.GetColorDistortion()[6]; // k1
-            metadata.p2_c = device.GetColorDistortion()[7]; // k1
+            // Color distortion (matches ComputeShader layout: k1, k2, p1, p2, k3, k4, k5, k6)
+            // Note: Depth distortion is pre-computed in LUT, not sent to GPU
+            var colorDist = device.GetColorDistortion();
+            metadata.k1_c = colorDist[0]; // k1
+            metadata.k2_c = colorDist[1]; // k2
+            metadata.p1_c = colorDist[6]; // p1
+            metadata.p2_c = colorDist[7]; // p2
+            metadata.k3_c = colorDist[2]; // k3
+            metadata.k4_c = colorDist[3]; // k4
+            metadata.k5_c = colorDist[4]; // k5
+            metadata.k6_c = colorDist[5]; // k6
 
 
             // Processing parameters
@@ -194,6 +201,30 @@ public class MultiCameraGPUProcessor : MonoBehaviour
             else
             {
                 metadata.depthViewerTransform = Matrix4x4.identity;
+            }
+
+            // Bounding volume parameters (respect PointCloudSettings)
+            if (boundingVolume != null)
+            {
+                metadata.hasBoundingVolume = 1;
+                metadata.showAllPoints = PointCloudSettings.showAllPoints ? 1 : 0;
+                metadata.boundingVolumeInverseTransform = boundingVolume.worldToLocalMatrix;
+
+                if (i == 0) // Log once for first camera
+                {
+                    Debug.Log($"[ONESHADER Camera {i}] Bounding volume: hasBoundingVolume=1, showAllPoints={metadata.showAllPoints}, PointCloudSettings.showAllPoints={PointCloudSettings.showAllPoints}");
+                }
+            }
+            else
+            {
+                metadata.hasBoundingVolume = 0;
+                metadata.showAllPoints = 1; // Show all points when no bounding volume
+                metadata.boundingVolumeInverseTransform = Matrix4x4.identity;
+
+                if (i == 0) // Log once for first camera
+                {
+                    Debug.LogWarning($"[ONESHADER Camera {i}] No bounding volume - showing all points");
+                }
             }
 
             // Buffer offsets

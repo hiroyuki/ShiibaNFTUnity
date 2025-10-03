@@ -21,7 +21,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     private volatile bool isProcessing = false;
 
     // Processing mode determines view architecture
-    private ProcessingType processingType = ProcessingType.GPU;
+    private ProcessingType processingType = ProcessingType.ONESHADER;
 
     // For ONESHADER mode: unified view
     private MultiPointCloudView multiPointCloudView;

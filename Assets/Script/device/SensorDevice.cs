@@ -476,29 +476,18 @@ public class SensorDevice
         metadata.cx_c = colorIntrinsics[2];
         metadata.cy_c = colorIntrinsics[3];
 
-        // Distortion parameters
+        // Color distortion parameters (matches ComputeShader layout: k1, k2, p1, p2, k3, k4, k5, k6)
+        // Note: Depth distortion is pre-computed in LUT, not sent to GPU
         if (colorDistortion != null && colorDistortion.Length >= 8)
         {
-            metadata.k1_c = colorDistortion[0];
-            metadata.k2_c = colorDistortion[1];
-            metadata.k3_c = colorDistortion[2];
-            metadata.k4_c = colorDistortion[3];
-            metadata.k5_c = colorDistortion[4];
-            metadata.k6_c = colorDistortion[5];
-            metadata.p1_c = colorDistortion[6];
-            metadata.p2_c = colorDistortion[7];
-        }
-
-        if (depthDistortion != null && depthDistortion.Length >= 8)
-        {
-            metadata.k1_d = depthDistortion[0];
-            metadata.k2_d = depthDistortion[1];
-            metadata.k3_d = depthDistortion[2];
-            metadata.k4_d = depthDistortion[3];
-            metadata.k5_d = depthDistortion[4];
-            metadata.k6_d = depthDistortion[5];
-            metadata.p1_d = depthDistortion[6];
-            metadata.p2_d = depthDistortion[7];
+            metadata.k1_c = colorDistortion[0]; // k1
+            metadata.k2_c = colorDistortion[1]; // k2
+            metadata.p1_c = colorDistortion[6]; // p1
+            metadata.p2_c = colorDistortion[7]; // p2
+            metadata.k3_c = colorDistortion[2]; // k3
+            metadata.k4_c = colorDistortion[3]; // k4
+            metadata.k5_c = colorDistortion[4]; // k5
+            metadata.k6_c = colorDistortion[5]; // k6
         }
 
         // Image dimensions
@@ -511,6 +500,12 @@ public class SensorDevice
         metadata.depthScaleFactor = depthScaleFactor;
         metadata.depthBias = depthBias;
         metadata.useOpenCVLUT = 1;
+
+        // Bounding volume parameters
+        // Note: Bounding volume will be set by processor if available
+        metadata.hasBoundingVolume = 0; // Will be updated by processor
+        metadata.showAllPoints = PointCloudSettings.showAllPoints ? 1 : 0;
+        metadata.boundingVolumeInverseTransform = Matrix4x4.identity; // Will be updated by processor
 
         return metadata;
     }

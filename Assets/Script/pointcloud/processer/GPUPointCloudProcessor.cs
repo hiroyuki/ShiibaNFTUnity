@@ -58,6 +58,22 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         // Get metadata from device
         CameraMetadata metadata = device.CreateCameraMetadata(depthViewerTransform);
 
+        // Update bounding volume parameters from settings
+        if (boundingVolume != null)
+        {
+            metadata.hasBoundingVolume = 1;
+            metadata.showAllPoints = PointCloudSettings.showAllPoints ? 1 : 0;
+            metadata.boundingVolumeInverseTransform = boundingVolume.worldToLocalMatrix;
+            Debug.Log($"[GPU Setup] Bounding volume active: hasBoundingVolume=1, showAllPoints={metadata.showAllPoints}, PointCloudSettings.showAllPoints={PointCloudSettings.showAllPoints}, BV={boundingVolume.name}");
+        }
+        else
+        {
+            metadata.hasBoundingVolume = 0;
+            metadata.showAllPoints = 1; // Show all points when no bounding volume
+            metadata.boundingVolumeInverseTransform = Matrix4x4.identity;
+            Debug.LogWarning("[GPU Setup] No bounding volume found - showing all points");
+        }
+
         if (depthProcessor == null) return metadata;
 
         // Create metadata buffer
@@ -211,23 +227,28 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         // SetupStatusUI.UpdateDeviceStatus(deviceName, "[GPU] LUT cache initialized");
     }
 
-    // Update camera metadata buffer and global bounding volume parameters
+    // Update camera metadata buffer with bounding volume parameters
     private void UpdateCameraMetadata(SensorDevice device)
     {
         // Get updated metadata from device
         CameraMetadata metadata = device.CreateCameraMetadata(depthViewerTransform);
 
-        // Upload updated metadata to GPU
-        cameraMetadataBuffer.SetData(new CameraMetadata[] { metadata });
-
-        // Set global bounding volume parameters (shared across all cameras)
-        int kernelIndex = depthProcessor.FindKernel("ProcessRawDepthData");
-        depthProcessor.SetInt("hasBoundingVolume", boundingVolume != null ? 1 : 0);
-        depthProcessor.SetInt("showAllPoints", PointCloudSettings.showAllPoints ? 1 : 0);
+        // Update bounding volume parameters from settings
         if (boundingVolume != null)
         {
-            depthProcessor.SetMatrix("boundingVolumeInverseTransform", boundingVolume.worldToLocalMatrix);
+            metadata.hasBoundingVolume = 1;
+            metadata.showAllPoints = PointCloudSettings.showAllPoints ? 1 : 0;
+            metadata.boundingVolumeInverseTransform = boundingVolume.worldToLocalMatrix;
         }
+        else
+        {
+            metadata.hasBoundingVolume = 0;
+            metadata.showAllPoints = 1; // Show all points when no bounding volume
+            metadata.boundingVolumeInverseTransform = Matrix4x4.identity;
+        }
+
+        // Upload updated metadata to GPU
+        cameraMetadataBuffer.SetData(new CameraMetadata[] { metadata });
     }
 
         private void ApplyResultsToMesh(Mesh mesh, int totalPixels)
