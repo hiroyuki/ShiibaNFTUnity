@@ -10,8 +10,7 @@ public class MultiPointCloudView : MonoBehaviour
 {
     private const float DEFAULT_POINT_SIZE = 3.0f;
 
-    // References to individual camera views and their frame controllers
-    private List<SinglePointCloudView> cameraViews = new List<SinglePointCloudView>();
+    // Frame controllers (passed from MultiCamPointCloudManager)
     private List<CameraFrameController> frameControllers = new List<CameraFrameController>();
 
     // Unified mesh for all cameras
@@ -23,11 +22,6 @@ public class MultiPointCloudView : MonoBehaviour
     private MultiCameraGPUProcessor multiCameraProcessor;
 
     private bool isInitialized = false;
-
-    void Start()
-    {
-        SetupUnifiedViewer();
-    }
 
     private void SetupUnifiedViewer()
     {
@@ -53,52 +47,31 @@ public class MultiPointCloudView : MonoBehaviour
         Debug.Log("Unified point cloud viewer created");
     }
 
-    public void RegisterCameraView(SinglePointCloudView cameraView)
+    public void Initialize(List<CameraFrameController> controllers)
     {
-        if (!cameraViews.Contains(cameraView))
+        this.frameControllers = controllers;
+
+        if (frameControllers.Count == 0)
         {
-            cameraViews.Add(cameraView);
-
-            // Also register the frame controller
-            var frameController = cameraView.GetFrameController();
-            if (frameController != null && !frameControllers.Contains(frameController))
-            {
-                frameControllers.Add(frameController);
-            }
-
-            Debug.Log($"Registered camera view: {cameraView.name}, Total: {cameraViews.Count}");
-        }
-    }
-
-    public void InitializeMultiCameraProcessing()
-    {
-        if (cameraViews.Count == 0)
-        {
-            Debug.LogWarning("No camera views registered for multi-camera processing");
+            Debug.LogWarning("No frame controllers provided for multi-camera processing");
             return;
         }
 
-        Debug.Log($"Initializing multi-camera processing for {cameraViews.Count} cameras");
+        Debug.Log($"Initializing multi-camera view for {frameControllers.Count} cameras");
+
+        // Setup unified viewer
+        SetupUnifiedViewer();
 
         // Create multi-camera processor
-        if (multiCameraProcessor == null)
-        {
-            GameObject processorObj = new GameObject("MultiCameraGPUProcessor");
-            processorObj.transform.parent = transform;
-            multiCameraProcessor = processorObj.AddComponent<MultiCameraGPUProcessor>();
-        }
+        GameObject processorObj = new GameObject("MultiCameraGPUProcessor");
+        processorObj.transform.parent = transform;
+        multiCameraProcessor = processorObj.AddComponent<MultiCameraGPUProcessor>();
 
-        // Register all camera views with the processor
-        foreach (var cameraView in cameraViews)
-        {
-            multiCameraProcessor.RegisterCameraManager(cameraView);
-        }
+        // Initialize processor with frame controllers
+        multiCameraProcessor.Initialize(frameControllers);
 
         // Set unified mesh callback
         multiCameraProcessor.SetUnifiedMeshCallback(UpdateUnifiedMesh);
-
-        // Initialize the processor
-        multiCameraProcessor.InitializeMultiCameraProcessing();
 
         isInitialized = true;
         Debug.Log("Multi-camera view initialized successfully");
@@ -135,7 +108,7 @@ public class MultiPointCloudView : MonoBehaviour
 
     public int GetCameraCount()
     {
-        return cameraViews.Count;
+        return frameControllers.Count;
     }
 
     void OnDestroy()
