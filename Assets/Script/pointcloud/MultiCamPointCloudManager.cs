@@ -111,6 +111,68 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         {
             InitializeSingleCameraViews();
         }
+
+        // Set timeline duration based on camera 0 data
+        SetupTimelineDuration();
+    }
+
+    private void SetupTimelineDuration()
+    {
+        if (frameControllers.Count == 0)
+        {
+            Debug.LogWarning("No frame controllers available to get duration from");
+            return;
+        }
+
+        // Get FPS from camera 0
+        int fps = GetFpsFromHeader();
+        if (fps <= 0)
+        {
+            Debug.LogError($"Invalid FPS ({fps}). Cannot set timeline duration.");
+            return;
+        }
+
+        // Calculate total frame count from depth binary file
+        var device = frameControllers[0].Device;
+        int totalFrameCount = CalculateTotalFrameCount(device);
+
+        if (totalFrameCount <= 0)
+        {
+            Debug.LogError($"Invalid frame count ({totalFrameCount}). Cannot set timeline duration.");
+            return;
+        }
+
+        // Find TimelineController and set duration
+        var timelineController = FindObjectOfType<TimelineController>();
+        if (timelineController != null)
+        {
+            timelineController.SetDuration(totalFrameCount, fps);
+        }
+    }
+
+    private int CalculateTotalFrameCount(SensorDevice device)
+    {
+        try
+        {
+            var depthParser = device.GetDepthParser();
+            if (depthParser == null) return -1;
+
+            // Get file size and header information
+            long fileSize = new System.IO.FileInfo(device.GetDepthFilePath()).Length;
+            int headerMetadataSize = depthParser.sensorHeader.MetadataSize;
+            int headerImageSize = depthParser.sensorHeader.ImageSize;
+            int recordSize = headerMetadataSize + headerImageSize;
+
+            // Calculate: (fileSize - headerMetadataSize) / recordSize
+            long dataSize = fileSize - headerMetadataSize;
+            int frameCount = (int)(dataSize / recordSize);
+            return frameCount;
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"Failed to calculate frame count: {ex.Message}");
+            return -1;
+        }
     }
 
     private void InitializeMultiCameraView()

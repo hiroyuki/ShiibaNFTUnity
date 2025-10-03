@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Playables;
+using UnityEngine.Timeline;
 using UnityEngine.InputSystem;
 
 public class TimelineController : MonoBehaviour
@@ -128,4 +129,61 @@ public class TimelineController : MonoBehaviour
     public bool IsPlaying => timeline != null && timeline.state == PlayState.Playing;
     public double CurrentTime => timeline != null ? timeline.time : 0;
     public double Duration => timeline != null && timeline.playableAsset != null ? timeline.playableAsset.duration : 0;
+
+    /// <summary>
+    /// Set timeline duration based on total frame count and FPS
+    /// </summary>
+    public void SetDuration(int totalFrameCount, int fps)
+    {
+        if (timeline == null || timeline.playableAsset == null)
+        {
+            Debug.LogError("TimelineController: Cannot set duration - timeline or playable asset is null");
+            return;
+        }
+
+        if (fps <= 0)
+        {
+            Debug.LogError($"TimelineController: Invalid FPS ({fps}). Cannot set duration.");
+            return;
+        }
+
+        // Calculate duration in seconds
+        double durationInSeconds = (double)totalFrameCount / fps;
+
+        // Cast to TimelineAsset
+        TimelineAsset timelineAsset = timeline.playableAsset as TimelineAsset;
+        if (timelineAsset == null)
+        {
+            Debug.LogError("TimelineController: PlayableAsset is not a TimelineAsset");
+            return;
+        }
+
+        // Find PointCloudPlayableAsset clips and set their duration
+        bool foundClip = false;
+        foreach (var track in timelineAsset.GetOutputTracks())
+        {
+            foreach (var clip in track.GetClips())
+            {
+                if (clip.asset is PointCloudPlayableAsset)
+                {
+                    clip.duration = durationInSeconds;
+                    foundClip = true;
+
+#if UNITY_EDITOR
+                    // Mark timeline dirty in editor
+                    UnityEditor.EditorUtility.SetDirty(timelineAsset);
+#endif
+                }
+            }
+        }
+
+        if (!foundClip && showDebugLogs)
+        {
+            Debug.LogWarning("TimelineController: No PointCloudPlayableAsset clips found in timeline");
+        }
+
+        // Also set timeline asset duration
+        timelineAsset.durationMode = TimelineAsset.DurationMode.FixedLength;
+        timelineAsset.fixedDuration = durationInSeconds;
+    }
 }
