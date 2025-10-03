@@ -115,7 +115,7 @@ public class GPUPointCloudProcessor : BasePointCloudProcessor
         catch (System.Exception ex)
         {
             Debug.LogError($"GPU processing failed: {ex.Message}");
-            SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Error, ProcessingType, "GPU processing failed"));
+            device.UpdateDeviceStatus(DeviceStatusType.Error, ProcessingType, "GPU processing failed");
         }
     }
 

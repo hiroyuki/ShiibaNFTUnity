@@ -21,7 +21,7 @@ public enum ProcessingType
     None,
     CPU,
     GPU,
-    SINGLEGPU
+    ONESHADER
 }
 
 [Serializable]
@@ -121,14 +121,15 @@ public class SensorDevice
         }
     }
 
-    public SensorDevice UpdateStatus(DeviceStatusType newStatusType, ProcessingType newProcessingType = ProcessingType.None, string newStatusMessage = "")
+    public void UpdateDeviceStatus(DeviceStatusType newStatusType, ProcessingType newProcessingType = ProcessingType.None, string newStatusMessage = "")
     {
         this.statusType = newStatusType;
         this.processingType = newProcessingType;
         this.statusMessage = newStatusMessage;
         this.lastUpdated = DateTime.Now;
-        return this;
+        SetupStatusUI.UpdateDeviceStatus(this);
     }
+
 
     public SensorDevice UpdateStatus(string statusString)
     {

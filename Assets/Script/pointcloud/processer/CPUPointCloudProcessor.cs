@@ -26,12 +26,12 @@ public class CPUPointCloudProcessor : BasePointCloudProcessor
         // Setup camera metadata from device
         metadata = SetupCameraMetadata(device);
 
-        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Loading, ProcessingType, "CPU processor setup complete"));
+        device.UpdateDeviceStatus(DeviceStatusType.Loading, ProcessingType, "CPU processor setup complete");
     }
 
     public override void UpdateMesh(Mesh mesh, SensorDevice device)
     {
-        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Processing depth pixels..."));
+        device.UpdateDeviceStatus(DeviceStatusType.Processing, ProcessingType, "Processing depth pixels...");
 
         var depthValues = device.GetLatestDepthValues();
         var colorPixels = device.GetLatestColorData();
@@ -50,10 +50,10 @@ public class CPUPointCloudProcessor : BasePointCloudProcessor
         List<Color32> validColors = new List<Color32>();
         List<int> validIndices = new List<int>();
 
-        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Processing depth pixels by CPU..."));
+        device.UpdateDeviceStatus(DeviceStatusType.Processing, ProcessingType, "Processing depth pixels by CPU...");
         ProcessDepthPixels(depthValues, colorPixels, validVertices, validColors, validIndices);
 
-        SetupStatusUI.UpdateDeviceStatus(device.UpdateStatus(DeviceStatusType.Processing, ProcessingType, "Applying data to mesh..."));
+        device.UpdateDeviceStatus(DeviceStatusType.Processing, ProcessingType, "Applying data to mesh...");
         ApplyDataToMesh(mesh, validVertices, validColors, validIndices);
     }
 

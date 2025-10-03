@@ -6,7 +6,8 @@ using System;
 public class MultiCameraGPUProcessor : MonoBehaviour
 {
     private ComputeShader multiCamProcessor;
-    private List<SinglePointCloudView> cameraManagers = new List<SinglePointCloudView>();
+    private List<SinglePointCloudView> cameraViews = new List<SinglePointCloudView>();
+    private List<CameraFrameController> frameControllers = new List<CameraFrameController>();
 
     // Multi-camera buffers
     private ComputeBuffer cameraMetadataBuffer;
@@ -48,12 +49,20 @@ public class MultiCameraGPUProcessor : MonoBehaviour
     }
 
 
-    public void RegisterCameraManager(SinglePointCloudView cameraManager)
+    public void RegisterCameraManager(SinglePointCloudView cameraView)
     {
-        if (!cameraManagers.Contains(cameraManager))
+        if (!cameraViews.Contains(cameraView))
         {
-            cameraManagers.Add(cameraManager);
-            Debug.Log($"Registered camera: {cameraManager.name}, Total cameras: {cameraManagers.Count}");
+            cameraViews.Add(cameraView);
+
+            // Also register frame controller
+            var frameController = cameraView.GetFrameController();
+            if (frameController != null && !frameControllers.Contains(frameController))
+            {
+                frameControllers.Add(frameController);
+            }
+
+            Debug.Log($"Registered camera: {cameraView.name}, Total cameras: {cameraViews.Count}");
         }
     }
 
@@ -69,13 +78,13 @@ public class MultiCameraGPUProcessor : MonoBehaviour
 
     public void InitializeMultiCameraProcessing()
     {
-        if (cameraManagers.Count == 0)
+        if (cameraViews.Count == 0)
         {
-            Debug.LogWarning("No camera managers registered for multi-camera processing");
+            Debug.LogWarning("No camera views registered for multi-camera processing");
             return;
         }
 
-        Debug.Log($"Initializing multi-camera processing for {cameraManagers.Count} cameras");
+        Debug.Log($"Initializing multi-camera processing for {cameraViews.Count} cameras");
 
         // Calculate total buffer sizes
         CalculateBufferSizes();
@@ -96,10 +105,10 @@ public class MultiCameraGPUProcessor : MonoBehaviour
     private void CalculateBufferSizes()
     {
         totalPixels = 0;
-        foreach (var manager in cameraManagers)
+        foreach (var controller in frameControllers)
         {
-            // Get depth dimensions from the manager's device
-            var device = manager.GetComponent<SinglePointCloudView>().GetDevice();
+            // Get depth dimensions from the controller's device
+            var device = controller.Device;
             if (device != null)
             {
                 totalPixels += device.GetDepthWidth() * device.GetDepthHeight();
@@ -111,7 +120,7 @@ public class MultiCameraGPUProcessor : MonoBehaviour
     private void CreateGPUBuffers()
     {
         // Camera metadata buffer
-        cameraMetadataBuffer = new ComputeBuffer(cameraManagers.Count, System.Runtime.InteropServices.Marshal.SizeOf<CameraMetadata>());
+        cameraMetadataBuffer = new ComputeBuffer(cameraViews.Count, System.Runtime.InteropServices.Marshal.SizeOf<CameraMetadata>());
 
         // Combined depth data buffer
         allDepthDataBuffer = new ComputeBuffer(totalPixels, sizeof(uint));
@@ -123,22 +132,22 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         allOutputBuffer = new ComputeBuffer(totalPixels, System.Runtime.InteropServices.Marshal.SizeOf<VertexData>());
 
         // Valid count per camera
-        validCountBuffer = new ComputeBuffer(cameraManagers.Count, sizeof(int));
+        validCountBuffer = new ComputeBuffer(cameraViews.Count, sizeof(int));
 
         Debug.Log("GPU buffers created successfully");
     }
 
     private void SetupCameraMetadata()
     {
-        CameraMetadata[] metadataArray = new CameraMetadata[cameraManagers.Count];
+        CameraMetadata[] metadataArray = new CameraMetadata[cameraViews.Count];
         uint currentDepthOffset = 0;
         uint currentLutOffset = 0;
         uint currentOutputOffset = 0;
 
-        for (int i = 0; i < cameraManagers.Count; i++)
+        for (int i = 0; i < cameraViews.Count; i++)
         {
-            var manager = cameraManagers[i];
-            var device = manager.GetDevice();
+            var controller = frameControllers[i];
+            var device = controller.Device;
 
             if (device == null) continue;
 
@@ -192,7 +201,16 @@ public class MultiCameraGPUProcessor : MonoBehaviour
             // Transform matrices from centralized SensorDevice
             metadata.d2cRotation = Matrix4x4.Rotate(device.GetDepthToColorRotation());
             metadata.d2cTranslation = device.GetDepthToColorTranslation();
-            metadata.depthViewerTransform = manager.transform.localToWorldMatrix;
+
+            // Get global transform from device
+            if (device.TryGetGlobalTransform(out Vector3 pos, out Quaternion rot))
+            {
+                metadata.depthViewerTransform = Matrix4x4.TRS(pos, rot, Vector3.one);
+            }
+            else
+            {
+                metadata.depthViewerTransform = Matrix4x4.identity;
+            }
 
             // Buffer offsets
             metadata.depthDataOffset = currentDepthOffset;
@@ -213,10 +231,10 @@ public class MultiCameraGPUProcessor : MonoBehaviour
 
     private void CreateColorTextureArray()
     {
-        if (cameraManagers.Count == 0) return;
+        if (cameraViews.Count == 0) return;
 
         // Get texture dimensions from first camera
-        var firstDevice = cameraManagers[0].GetDevice();
+        var firstDevice = cameraViews[0].GetDevice();
         if (firstDevice == null) return;
 
         var colorHeader = firstDevice.GetColorParser()?.sensorHeader;
@@ -226,11 +244,11 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         int height = colorHeader.custom.camera_sensor.height;
 
         // Create texture array
-        colorTextureArray = new Texture2DArray(width, height, cameraManagers.Count, TextureFormat.RGB24, false);
+        colorTextureArray = new Texture2DArray(width, height, cameraViews.Count, TextureFormat.RGB24, false);
         colorTextureArray.wrapMode = TextureWrapMode.Clamp;
         colorTextureArray.filterMode = FilterMode.Bilinear;
 
-        Debug.Log($"Created color texture array: {width}x{height}x{cameraManagers.Count}");
+        Debug.Log($"Created color texture array: {width}x{height}x{cameraViews.Count}");
     }
 
     public void ProcessAllCamerasFrame(ulong targetTimestamp)
@@ -246,7 +264,7 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         List<Vector2[]> allLutData = new List<Vector2[]>();
         List<Texture2D> allColorTextures = new List<Texture2D>();
 
-        foreach (var manager in cameraManagers)
+        foreach (var manager in cameraViews)
         {
             var device = manager.GetDevice();
             if (device == null) continue;
@@ -286,10 +304,10 @@ public class MultiCameraGPUProcessor : MonoBehaviour
             UploadDataAndProcess(allDepthData, allLutData, allColorTextures);
         }
         
-        foreach (var manager in cameraManagers)
+        foreach (var frameController in frameControllers)
         {
             
-            manager.NotifyFirstFrameProcessed();
+            frameController.NotifyFirstFrameProcessed();
         }
     }
 
@@ -329,17 +347,17 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         allLutDataBuffer.SetData(combinedLutData);
 
         // Update color texture array
-        for (int i = 0; i < allColorTextures.Count && i < cameraManagers.Count; i++)
+        for (int i = 0; i < allColorTextures.Count && i < cameraViews.Count; i++)
         {
             Graphics.CopyTexture(allColorTextures[i], 0, 0, colorTextureArray, i, 0);
         }
 
         // Reset valid counts
-        validCountBuffer.SetData(new int[cameraManagers.Count]);
+        validCountBuffer.SetData(new int[cameraViews.Count]);
 
         // Set compute shader parameters
         int kernelIndex = multiCamProcessor.FindKernel("ProcessMultiCamDepthData");
-        multiCamProcessor.SetInt("cameraCount", cameraManagers.Count);
+        multiCamProcessor.SetInt("cameraCount", cameraViews.Count);
         multiCamProcessor.SetBuffer(kernelIndex, "cameraMetadata", cameraMetadataBuffer);
         multiCamProcessor.SetBuffer(kernelIndex, "allDepthData", allDepthDataBuffer);
         multiCamProcessor.SetBuffer(kernelIndex, "allLutData", allLutDataBuffer);
@@ -361,7 +379,7 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         VertexData[] allResults = new VertexData[totalPixels];
         allOutputBuffer.GetData(allResults);
 
-        int[] validCounts = new int[cameraManagers.Count];
+        int[] validCounts = new int[cameraViews.Count];
         validCountBuffer.GetData(validCounts);
 
         // If unified mesh callback is set, create unified mesh
@@ -419,16 +437,16 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         // Invoke callback
         onUnifiedMeshUpdated?.Invoke(unifiedMesh);
 
-        Debug.Log($"Unified mesh created: {totalValidPoints} points from {cameraManagers.Count} cameras");
+        Debug.Log($"Unified mesh created: {totalValidPoints} points from {cameraViews.Count} cameras");
     }
 
     private void UpdateIndividualCameraMeshes(VertexData[] allResults, int[] validCounts)
     {
         // Split results back to individual cameras and update their meshes
         uint currentOffset = 0;
-        for (int camIndex = 0; camIndex < cameraManagers.Count; camIndex++)
+        for (int camIndex = 0; camIndex < cameraViews.Count; camIndex++)
         {
-            var manager = cameraManagers[camIndex];
+            var manager = cameraViews[camIndex];
             var device = manager.GetDevice();
             if (device == null) continue;
 

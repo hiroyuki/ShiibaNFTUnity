@@ -13,18 +13,19 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     [SerializeField]
     private string rootDirectory; // datasetを含むディレクトリ
 
-    private List<GameObject> dataManagerObjects = new();
+    private List<GameObject> pointCloudGameObjcts = new();
     private List<IPointCloudProcessor> pointCloudProcessors = new();
+    private List<CameraFrameController> frameControllers = new(); // Data layer
 
     // Frame navigation tracking
     private int leadingCameraIndex = 0; // Index of camera that currently has the head timestamp
 
     private volatile bool isProcessing = false;
 
-    // Multi-camera GPU processing
-    private MultiCameraGPUProcessor multiCameraProcessor;
+    // Multi-camera view
     private MultiPointCloudView multiPointCloudView;
-    private bool useMultiCameraProcessing = false;
+
+    private ProcessingType processingType = ProcessingType.GPU;
 
     void Start()
     {
@@ -96,22 +97,28 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                 // }
                 // else
                 {
+                    // Create CameraFrameController (data layer)
+                    var frameController = new CameraFrameController(
+                        rootDirectory,
+                        Path.GetFileName(hostDir),
+                        deviceDirName
+                    );
+                    frameControllers.Add(frameController);
 
-                    GameObject dataManagerObj = new GameObject("SinglePointCloudView_" + deviceDirName);
-                    var dataManager = dataManagerObj.AddComponent<SinglePointCloudView>();
+                    // Create SinglePointCloudView (view layer)
+                    GameObject singlePointCloudContainer = new GameObject("SinglePointCloudView_" + deviceDirName);
+                    var view = singlePointCloudContainer.AddComponent<SinglePointCloudView>();
                     // dataManagerObj.transform.parent = this.transform;
 
-                    // Initialize the data manager with required parameters
-                    dataManager.Initialize(rootDirectory, Path.GetFileName(hostDir), deviceDirName, ProcessingType.GPU);
-                    dataManagerObjects.Add(dataManagerObj);
-                    IPointCloudProcessor processor = dataManager.SetupProcessors();
-                    dataManager.SetupWithProcessor(processor);
-                    
-                    pointCloudProcessors.Add(processor);
-                    
-                    // Create async processor for this camera
-                    // var cameraProcessor = new CameraProcessor(deviceDirName, dataManager);
-                    // cameraProcessors.Add(cameraProcessor);
+                    // Initialize view with frame controller reference
+                    view.Initialize(frameController, processingType);
+                    pointCloudGameObjcts.Add(singlePointCloudContainer);
+
+                    // Setup processor (owned by view)
+                    view.SetupProcessor();
+                    view.SetupWithProcessor();
+
+                    pointCloudProcessors.Add(view.GetProcessor());
                 }
             }
             
@@ -119,18 +126,18 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         }
 
         SetupStatusUI.SetProgress(1f);
-        SetupStatusUI.ShowStatus($"SinglePointCloudView を {dataManagerObjects.Count} 個作成しました - first frames will load individually");
+        SetupStatusUI.ShowStatus($"SinglePointCloudView を {pointCloudGameObjcts.Count} 個作成しました - first frames will load individually");
 
-        // // Initialize multi-camera processing if enabled
-        // if (useMultiCameraProcessing && dataManagerObjects.Count > 0)
-        // {
-        //     InitializeMultiCameraProcessing();
-        // }
+        // Initialize multi-camera processing if enabled
+        if (processingType == ProcessingType.ONESHADER && pointCloudGameObjcts.Count > 0)
+        {
+            InitializeMultiCameraProcessing();
+        }
     }
 
     private void InitializeMultiCameraProcessing()
     {
-        SetupStatusUI.ShowStatus("Initializing multi-camera GPU processing...");
+        SetupStatusUI.ShowStatus("Initializing multi-camera ONESHADER processing...");
 
         // Create MultiPointCloudView GameObject
         GameObject multiViewObj = new GameObject("MultiPointCloudView");
@@ -138,7 +145,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         multiPointCloudView = multiViewObj.AddComponent<MultiPointCloudView>();
 
         // Register all camera views
-        foreach (var dataManagerObj in dataManagerObjects)
+        foreach (var dataManagerObj in pointCloudGameObjcts)
         {
             var cameraView = dataManagerObj.GetComponent<SinglePointCloudView>();
             if (cameraView != null)
@@ -149,19 +156,17 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
         // Initialize multi-camera processing
         multiPointCloudView.InitializeMultiCameraProcessing();
-        SetupStatusUI.ShowStatus($"Multi-camera view initialized for {dataManagerObjects.Count} cameras");
+        SetupStatusUI.ShowStatus($"Multi-camera view initialized for {pointCloudGameObjcts.Count} cameras");
     }
 
     void Update()
     {
-        foreach (var dataManagerObj in dataManagerObjects)
+        foreach (var pointCloudObj in pointCloudGameObjcts)
         {
-            var dataManager = dataManagerObj.GetComponent<SinglePointCloudView>();
-            if (dataManager != null)
+            var view = pointCloudObj.GetComponent<SinglePointCloudView>();
+            if (view != null)
             {
-                int index = dataManagerObjects.IndexOf(dataManagerObj);
-                Debug.Log($"Update processing for camera {index}");
-                dataManager.ProcessFirstFrameIfNeeded(pointCloudProcessors[index]);
+                view.ProcessFirstFrameIfNeeded();
             }
         }
         HandleSynchronizedFrameNavigation();
@@ -186,7 +191,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     
     private void NavigateToNextSynchronizedFrame()
     {
-        if (dataManagerObjects.Count == 0) return;
+        if (pointCloudGameObjcts.Count == 0) return;
 
         // Find next synchronized timestamp from the leading camera
         ulong nextTimestamp = FindNextSynchronizedTimestamp();
@@ -213,9 +218,9 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         int newLeadingIndex = 0;
         ulong foremostTimestamp = ulong.MinValue;
         
-        for (int i = 0; i < dataManagerObjects.Count; i++)
+        for (int i = 0; i < pointCloudGameObjcts.Count; i++)
         {
-            var dataManager = dataManagerObjects[i].GetComponent<SinglePointCloudView>();
+            var dataManager = pointCloudGameObjcts[i].GetComponent<SinglePointCloudView>();
             if (dataManager == null) continue;
             
             // Use stored current timestamp instead of peeking metadata
@@ -230,7 +235,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         if (newLeadingIndex != leadingCameraIndex)
         {
             leadingCameraIndex = newLeadingIndex;
-            var leadingCamera = dataManagerObjects[leadingCameraIndex].GetComponent<SinglePointCloudView>();
+            var leadingCamera = pointCloudGameObjcts[leadingCameraIndex].GetComponent<SinglePointCloudView>();
         }
     }
     
@@ -239,13 +244,13 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         try
         {
             // Get the next timestamp from the current leading camera
-            if (leadingCameraIndex >= dataManagerObjects.Count)
+            if (leadingCameraIndex >= pointCloudGameObjcts.Count)
             {
                 Debug.LogError($"Leading camera index {leadingCameraIndex} is out of range");
                 return 0;
             }
             
-            var leadingCamera = dataManagerObjects[leadingCameraIndex].GetComponent<SinglePointCloudView>();
+            var leadingCamera = pointCloudGameObjcts[leadingCameraIndex].GetComponent<SinglePointCloudView>();
             if (leadingCamera == null)
             {
                 Debug.LogError($"Leading camera at index {leadingCameraIndex} is null");
@@ -291,38 +296,38 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
         try
         {
-            if (useMultiCameraProcessing && multiPointCloudView != null)
+            if (processingType == ProcessingType.ONESHADER && multiPointCloudView != null)
             {
                 // Use multi-camera GPU processing for all scenarios (single or multiple cameras)
-                SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} using multi-camera GPU processing ({dataManagerObjects.Count} camera(s))...");
+                SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} using multi-camera GPU processing ({pointCloudGameObjcts.Count} camera(s))...");
                 multiPointCloudView.ProcessFrame(targetTimestamp);
-                SetupStatusUI.ShowStatus($"Multi-camera GPU processing complete for {dataManagerObjects.Count} camera(s)");
+                SetupStatusUI.ShowStatus($"Multi-camera GPU processing complete for {pointCloudGameObjcts.Count} camera(s)");
             }
             else
             {
                 // Fall back to individual camera processing only if multi-camera processor is not available
-                SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} across {dataManagerObjects.Count} cameras (fallback mode)...");
+                SetupStatusUI.ShowStatus($"Processing frame at timestamp {targetTimestamp} across {pointCloudGameObjcts.Count} cameras (fallback mode)...");
 
                 int successCount = 0;
-                foreach (var dataManagerObj in dataManagerObjects)
+                foreach (var pointCloudObj in pointCloudGameObjcts)
                 {
-                    var dataManager = dataManagerObj.GetComponent<SinglePointCloudView>();
-                    if (dataManager != null)
+                    var view = pointCloudObj.GetComponent<SinglePointCloudView>();
+                    if (view != null)
                     {
                         try
                         {
-                            int index = dataManagerObjects.IndexOf(dataManagerObj);
-                            dataManager.ProcessFrame(targetTimestamp, pointCloudProcessors[index]);
+                            int index = pointCloudGameObjcts.IndexOf(pointCloudObj);
+                            view.ProcessFrame(targetTimestamp);
                             successCount++;
                         }
                         catch (System.Exception ex)
                         {
-                            Debug.LogError($"Failed to process camera {dataManagerObj.name}: {ex.Message}");
+                            Debug.LogError($"Failed to process camera {pointCloudObj.name}: {ex.Message}");
                         }
                     }
                 }
 
-                SetupStatusUI.ShowStatus($"Frame processing complete: {successCount}/{dataManagerObjects.Count} cameras processed successfully");
+                SetupStatusUI.ShowStatus($"Frame processing complete: {successCount}/{pointCloudGameObjcts.Count} cameras processed successfully");
             }
 
             // Update leading camera index after processing for next navigation
@@ -343,9 +348,9 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     private ulong GetTargetTimestamp(int frameIndex)
     {
         // Use first data manager as reference for timestamp calculation
-        if (dataManagerObjects.Count > 0)
+        if (pointCloudGameObjcts.Count > 0)
         {
-            var dataManager = dataManagerObjects[0].GetComponent<SinglePointCloudView>();
+            var dataManager = pointCloudGameObjcts[0].GetComponent<SinglePointCloudView>();
             if (dataManager != null)
             {
                 return dataManager.GetTimestampForFrame(frameIndex);
@@ -368,12 +373,12 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     
     public void ResetToFirstFrame()
     {
-        foreach (var dataManagerObj in dataManagerObjects)
+        foreach (var dataManagerObj in pointCloudGameObjcts)
         {
-            var dataManager = dataManagerObj.GetComponent<SinglePointCloudView>();
-            if (dataManager != null)
+            var pointCloudView = dataManagerObj.GetComponent<SinglePointCloudView>();
+            if (pointCloudView != null)
             {
-                dataManager.ResetToFirstFrame(pointCloudProcessors[dataManagerObjects.IndexOf(dataManagerObj)]);
+                pointCloudView.ResetToFirstFrame();
             }
         }
     }
@@ -381,9 +386,9 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     public int GetTotalFrameCount()
     {
         // Return frame count from first data manager (assuming all have same length)
-        if (dataManagerObjects.Count > 0)
+        if (pointCloudGameObjcts.Count > 0)
         {
-            var dataManager = dataManagerObjects[0].GetComponent<SinglePointCloudView>();
+            var dataManager = pointCloudGameObjcts[0].GetComponent<SinglePointCloudView>();
             return dataManager?.GetTotalFrameCount() ?? -1;
         }
         return -1;
@@ -392,9 +397,9 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     public int GetFpsFromHeader()
     {
         // Return FPS from first data manager
-        if (dataManagerObjects.Count > 0)
+        if (pointCloudGameObjcts.Count > 0)
         {
-            var dataManager = dataManagerObjects[0].GetComponent<SinglePointCloudView>();
+            var dataManager = pointCloudGameObjcts[0].GetComponent<SinglePointCloudView>();
             if (dataManager != null)
             {
                 int fps = dataManager.GetFps();
@@ -422,5 +427,12 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         {
             DestroyImmediate(multiPointCloudView.gameObject);
         }
+
+        // Cleanup frame controllers (data layer)
+        foreach (var controller in frameControllers)
+        {
+            controller?.Dispose();
+        }
+        frameControllers.Clear();
     }
 }

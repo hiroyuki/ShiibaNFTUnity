@@ -10,8 +10,9 @@ public class MultiPointCloudView : MonoBehaviour
 {
     private const float DEFAULT_POINT_SIZE = 3.0f;
 
-    // References to individual camera views
+    // References to individual camera views and their frame controllers
     private List<SinglePointCloudView> cameraViews = new List<SinglePointCloudView>();
+    private List<CameraFrameController> frameControllers = new List<CameraFrameController>();
 
     // Unified mesh for all cameras
     private GameObject unifiedViewer;
@@ -57,6 +58,14 @@ public class MultiPointCloudView : MonoBehaviour
         if (!cameraViews.Contains(cameraView))
         {
             cameraViews.Add(cameraView);
+
+            // Also register the frame controller
+            var frameController = cameraView.GetFrameController();
+            if (frameController != null && !frameControllers.Contains(frameController))
+            {
+                frameControllers.Add(frameController);
+            }
+
             Debug.Log($"Registered camera view: {cameraView.name}, Total: {cameraViews.Count}");
         }
     }
