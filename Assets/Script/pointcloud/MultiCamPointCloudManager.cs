@@ -357,7 +357,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         }
 
         isExportingAllFrames = true;
-        exportFrameIndex = 0;
+        exportFrameIndex = currentFrameIndex;
         exportTotalFrames = totalFrames;
 
         // Directory name: root directory name
@@ -366,7 +366,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         System.IO.Directory.CreateDirectory(exportDir);
 
         Debug.Log($"Starting batch PLY export: {exportTotalFrames} frames to {exportDir}");
-        SetupStatusUI.ShowStatus($"Exporting all frames to PLY... 0/{exportTotalFrames}");
+        SetupStatusUI.ShowStatus($"Exporting all frames to PLY... {exportFrameIndex}/{exportTotalFrames}");
     }
 
     private void ProcessExportAllFrames()
@@ -384,7 +384,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         ulong targetTimestamp = GetTargetTimestamp(exportFrameIndex);
 
         // Process frame
-        ProcessFrame(targetTimestamp);
+        ProcessFrame(currentFrameIndex, targetTimestamp);
 
         // Export after processing
         if (multiPointCloudView != null)
@@ -438,7 +438,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         }
 
         // Navigate all cameras to this synchronized timestamp using unified method
-        ProcessFrame(nextTimestamp);
+        ProcessFrame(currentFrameIndex, nextTimestamp);
         currentFrameIndex++;
     }
     
@@ -557,11 +557,11 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         // Convert frame index to target timestamp for synchronized seeking
         ulong targetTimestamp = GetTargetTimestamp(frameIndex);
 
-        ProcessFrame(targetTimestamp);
+        ProcessFrame(frameIndex, targetTimestamp);
     }
     
     // Simple synchronous frame processing for all cameras
-    public void ProcessFrame(ulong targetTimestamp)
+    public void ProcessFrame(int currentFrameIndex, ulong targetTimestamp)
     {
         if (isProcessing)
         {
@@ -598,9 +598,9 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                         Debug.LogError($"Failed to process camera: {ex.Message}");
                     }
                 }
-
                 SetupStatusUI.ShowStatus($"Frame processing complete: {successCount}/{singlePointCloudViews.Count} cameras processed successfully");
             }
+            this.currentFrameIndex = currentFrameIndex;
 
             // Update leading camera index after processing for next navigation
             UpdateLeadingCameraIndex();
