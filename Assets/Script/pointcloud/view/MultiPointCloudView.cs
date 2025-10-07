@@ -138,16 +138,11 @@ public class MultiPointCloudView : MonoBehaviour
         }
     }
 
-    // Future: PLY export functionality
+    /// <summary>
+    /// Export unified point cloud to PLY format (binary little-endian)
+    /// </summary>
     public void ExportToPLY(string filePath)
     {
-        if (unifiedMesh == null)
-        {
-            Debug.LogWarning("No unified mesh to export");
-            return;
-        }
-
-        // TODO: Implement PLY export
-        Debug.Log($"Exporting unified point cloud to: {filePath}");
+        PlyExporter.ExportToPLY(unifiedMesh, filePath);
     }
 }

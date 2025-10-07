@@ -17,6 +17,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
     // Frame navigation tracking
     private int leadingCameraIndex = 0; // Index of camera that currently has the head timestamp
+    private int currentFrameIndex = 0; // Current frame index being displayed
 
     private volatile bool isProcessing = false;
 
@@ -31,7 +32,6 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
     void Start()
     {
-        Debug.Log("Start method called on thread: " + Thread.CurrentThread.ManagedThreadId);
         SetupStatusUI.ShowStatus("Starting Multi-Camera Point Cloud Manager...");
         
         // Disable timeline auto-play
@@ -39,11 +39,13 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         if (playableDirector != null && playableDirector.playOnAwake)
         {
             playableDirector.Stop();
-            Debug.Log("Timeline auto-play disabled");
         }
         
         SetupStatusUI.ShowStatus("Timeline auto-play disabled");
-        
+
+        // Load dataset.yaml to get display name
+        LoadDatasetInfo();
+
         SetupStatusUI.ShowStatus("Looking for dataset directory...");
         string datasetPath = Path.Combine(rootDirectory, "dataset");
         if (!Directory.Exists(datasetPath))
@@ -270,6 +272,139 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         }
 
         HandleSynchronizedFrameNavigation();
+        HandlePLYExport();
+    }
+
+    private bool isExportingAllFrames = false;
+    private int exportFrameIndex = 0;
+    private int exportTotalFrames = 0;
+    private string displayName = "";
+
+    private void HandlePLYExport()
+    {
+        if (Keyboard.current == null) return;
+
+        // Press 'O' key to export current frame to PLY
+        if (Keyboard.current.oKey.wasPressedThisFrame)
+        {
+            ExportCurrentFrameToPLY();
+        }
+
+        // Press 'Shift+E' to export all frames
+        if ((Keyboard.current.leftShiftKey.isPressed || Keyboard.current.rightShiftKey.isPressed) &&
+            Keyboard.current.eKey.wasPressedThisFrame)
+        {
+            StartExportAllFrames();
+        }
+
+        // Process frame-by-frame export
+        if (isExportingAllFrames)
+        {
+            ProcessExportAllFrames();
+        }
+    }
+
+    private void ExportCurrentFrameToPLY()
+    {
+        if (processingType == ProcessingType.ONESHADER)
+        {
+            if (multiPointCloudView != null && frameControllers.Count > 0)
+            {
+                // Export directory: rootDirectory/Export
+                string exportDir = System.IO.Path.Combine(rootDirectory, "Export");
+
+                // Create export directory if it doesn't exist
+                System.IO.Directory.CreateDirectory(exportDir);
+
+                // File name: display name + frame number (6 digits)
+                string fileBaseName = string.IsNullOrEmpty(displayName) ? "pointcloud" : displayName;
+                fileBaseName = fileBaseName.Replace(" ", "_");
+                string filename = $"{fileBaseName}{currentFrameIndex:D6}.ply";
+                string filepath = System.IO.Path.Combine(exportDir, filename);
+
+                multiPointCloudView.ExportToPLY(filepath);
+                Debug.Log($"PLY export saved to: {filepath}");
+            }
+        }
+        else
+        {
+            Debug.LogWarning("PLY export is currently only supported in ONESHADER mode");
+        }
+    }
+
+    private void StartExportAllFrames()
+    {
+        if (processingType != ProcessingType.ONESHADER)
+        {
+            Debug.LogWarning("Batch PLY export is only supported in ONESHADER mode");
+            return;
+        }
+
+        if (frameControllers.Count == 0)
+        {
+            Debug.LogError("No frame controllers available for batch export");
+            return;
+        }
+
+        // Calculate total frame count
+        var device = frameControllers[0].Device;
+        int totalFrames = CalculateTotalFrameCount(device);
+
+        if (totalFrames <= 0)
+        {
+            Debug.LogError("Cannot determine total frame count for batch export");
+            return;
+        }
+
+        isExportingAllFrames = true;
+        exportFrameIndex = 0;
+        exportTotalFrames = totalFrames;
+
+        // Directory name: root directory name
+        string rootDirName = System.IO.Path.GetFileName(rootDirectory.TrimEnd(System.IO.Path.DirectorySeparatorChar));
+        string exportDir = System.IO.Path.Combine(Application.dataPath, "..", "Exports", rootDirName);
+        System.IO.Directory.CreateDirectory(exportDir);
+
+        Debug.Log($"Starting batch PLY export: {exportTotalFrames} frames to {exportDir}");
+        SetupStatusUI.ShowStatus($"Exporting all frames to PLY... 0/{exportTotalFrames}");
+    }
+
+    private void ProcessExportAllFrames()
+    {
+        if (exportFrameIndex >= exportTotalFrames)
+        {
+            // Export complete
+            isExportingAllFrames = false;
+            Debug.Log($"Batch PLY export complete: {exportTotalFrames} frames exported");
+            SetupStatusUI.ShowStatus($"Export complete: {exportTotalFrames} frames");
+            return;
+        }
+
+        // Get target timestamp for this frame
+        ulong targetTimestamp = GetTargetTimestamp(exportFrameIndex);
+
+        // Process frame
+        ProcessFrame(targetTimestamp);
+
+        // Export after processing
+        if (multiPointCloudView != null)
+        {
+            // Export directory: rootDirectory/Export
+            string exportDir = System.IO.Path.Combine(rootDirectory, "Export");
+            System.IO.Directory.CreateDirectory(exportDir);
+
+            // File name: display name + frame number (6 digits)
+            string fileBaseName = string.IsNullOrEmpty(displayName) ? "pointcloud" : displayName;
+            fileBaseName = fileBaseName.Replace(" ", "_");
+            string filename = $"{fileBaseName}{exportFrameIndex:D6}.ply";
+            string filepath = System.IO.Path.Combine(exportDir, filename);
+
+            multiPointCloudView.ExportToPLY(filepath);
+
+            exportFrameIndex++;
+            currentFrameIndex = exportFrameIndex;
+            SetupStatusUI.ShowStatus($"Exporting frames... {exportFrameIndex}/{exportTotalFrames}");
+        }
     }
 
     private void HandleSynchronizedFrameNavigation()
@@ -304,6 +439,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
         // Navigate all cameras to this synchronized timestamp using unified method
         ProcessFrame(nextTimestamp);
+        currentFrameIndex++;
     }
     
     private void NavigateToPreviousSynchronizedFrame()
@@ -585,7 +721,31 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         Debug.LogError("No cameras available to get FPS from header");
         return -1;
     }
-    
+
+    private void LoadDatasetInfo()
+    {
+        string datasetYamlPath = Path.Combine(rootDirectory, "dataset.yaml");
+        if (File.Exists(datasetYamlPath))
+        {
+            try
+            {
+                DatasetInfo datasetInfo = YamlLoader.Load<DatasetInfo>(datasetYamlPath);
+                displayName = datasetInfo.displayName ?? "";
+                Debug.Log($"Loaded dataset display name: {displayName}");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"Failed to load dataset.yaml: {ex.Message}. Using root directory name as fallback.");
+                displayName = Path.GetFileName(rootDirectory.TrimEnd(Path.DirectorySeparatorChar));
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"dataset.yaml not found at {datasetYamlPath}. Using root directory name as fallback.");
+            displayName = Path.GetFileName(rootDirectory.TrimEnd(Path.DirectorySeparatorChar));
+        }
+    }
+
     void OnDestroy()
     {
         if (processingType == ProcessingType.ONESHADER)

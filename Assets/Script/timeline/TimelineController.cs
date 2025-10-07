@@ -149,7 +149,8 @@ public class TimelineController : MonoBehaviour
 
         // Calculate duration in seconds
         double durationInSeconds = (double)totalFrameCount / fps;
-
+        
+        Debug.Log($"TimelineController: Setting duration to {durationInSeconds} seconds ({totalFrameCount} frames at {fps} FPS)");
         // Cast to TimelineAsset
         TimelineAsset timelineAsset = timeline.playableAsset as TimelineAsset;
         if (timelineAsset == null)
