@@ -322,6 +322,13 @@ public class MultiCameraPointCloudManager : MonoBehaviour
                 string filename = $"{fileBaseName}{currentFrameIndex:D6}.ply";
                 string filepath = System.IO.Path.Combine(exportDir, filename);
 
+                // Skip if file already exists
+                if (File.Exists(filepath))
+                {
+                    Debug.Log($"PLY file already exists, skipping: {filepath}");
+                    return;
+                }
+
                 multiPointCloudView.ExportToPLY(filepath);
                 Debug.Log($"PLY export saved to: {filepath}");
             }
@@ -380,6 +387,26 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             return;
         }
 
+        // Export directory: rootDirectory/Export
+        string exportDir = System.IO.Path.Combine(rootDirectory, "Export");
+        System.IO.Directory.CreateDirectory(exportDir);
+
+        // File name: display name + frame number (6 digits)
+        string fileBaseName = string.IsNullOrEmpty(displayName) ? "pointcloud" : displayName;
+        fileBaseName = fileBaseName.Replace(" ", "_");
+        string filename = $"{fileBaseName}{exportFrameIndex:D6}.ply";
+        string filepath = System.IO.Path.Combine(exportDir, filename);
+
+        // Skip if file already exists
+        if (File.Exists(filepath))
+        {
+            Debug.Log($"PLY file already exists, skipping frame {exportFrameIndex}: {filepath}");
+            exportFrameIndex++;
+            currentFrameIndex = exportFrameIndex;
+            SetupStatusUI.ShowStatus($"Exporting frames (skipping existing)... {exportFrameIndex}/{exportTotalFrames}");
+            return;
+        }
+
         // Get target timestamp for this frame
         ulong targetTimestamp = GetTargetTimestamp(exportFrameIndex);
 
@@ -389,16 +416,6 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         // Export after processing
         if (multiPointCloudView != null)
         {
-            // Export directory: rootDirectory/Export
-            string exportDir = System.IO.Path.Combine(rootDirectory, "Export");
-            System.IO.Directory.CreateDirectory(exportDir);
-
-            // File name: display name + frame number (6 digits)
-            string fileBaseName = string.IsNullOrEmpty(displayName) ? "pointcloud" : displayName;
-            fileBaseName = fileBaseName.Replace(" ", "_");
-            string filename = $"{fileBaseName}{exportFrameIndex:D6}.ply";
-            string filepath = System.IO.Path.Combine(exportDir, filename);
-
             multiPointCloudView.ExportToPLY(filepath);
 
             exportFrameIndex++;
