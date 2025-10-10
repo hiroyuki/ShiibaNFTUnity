@@ -414,7 +414,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 954508064}
-  - component: {fileID: 954508063}
+  - component: {fileID: 954508065}
   m_Layer: 0
   m_Name: MultiCameraPointCloud
   m_TagString: Untagged
@@ -422,19 +422,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &954508063
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 954508062}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9039e76ce998ee8438ea22f790141f0e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  rootDirectory: /Volumes/horristicSSD2T/Dropbox/projects/shiiba/datas/2025-04-12_20-17-26_video
 --- !u!4 &954508064
 Transform:
   m_ObjectHideFlags: 0
@@ -450,6 +437,21 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &954508065
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 954508062}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9039e76ce998ee8438ea22f790141f0e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  rootDirectory: /Users/horihiroyuki/Dropbox/projects/shiiba/datas/2025-04-12_20-17-26_video
+  usePly: 1
+  enablePlyExport: 0
 --- !u!1 &1157004290
 GameObject:
   m_ObjectHideFlags: 0
@@ -616,7 +618,7 @@ PlayableDirector:
   m_ExposedReferences:
     m_References:
     - a1d3c2236811946dea77021e594329d8: {fileID: 0}
-    - 49a38e5d5b7134e7e9841df78ea482ac: {fileID: 954508063}
+    - 49a38e5d5b7134e7e9841df78ea482ac: {fileID: 954508065}
     - d320a8b98bc854ffbbe0d786db9c3e6b: {fileID: 0}
 --- !u!4 &1243795609
 Transform:

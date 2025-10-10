@@ -23,7 +23,7 @@ public class MultiPointCloudView : MonoBehaviour
 
     private bool isInitialized = false;
 
-    private void SetupUnifiedViewer()
+    public void SetupUnifiedViewer()
     {
         // Create unified point cloud viewer GameObject
         unifiedViewer = new GameObject("UnifiedPointCloudViewer");
@@ -94,7 +94,7 @@ public class MultiPointCloudView : MonoBehaviour
         for (int i = 0; i < frameControllers.Count; i++)
         {
             var controller = frameControllers[i];
-            if (controller.AutoLoadFirstFrame && !controller.IsFirstFrameProcessed())
+            if (controller.AutoLoadFirstFrame && !controller.IsFirstFrameProcessed)
             {
                 ulong targetTimestamp = controller.GetTimestampForFrame(0);
                 ProcessFrame(targetTimestamp);
@@ -144,5 +144,21 @@ public class MultiPointCloudView : MonoBehaviour
     public void ExportToPLY(string filePath)
     {
         PlyExporter.ExportToPLY(unifiedMesh, filePath);
+    }
+
+    /// <summary>
+    /// Load point cloud from PLY file and update the unified mesh
+    /// </summary>
+    public void LoadFromPLY(string filePath)
+    {
+        Mesh loadedMesh = PlyImporter.ImportFromPLY(filePath);
+        if (loadedMesh != null)
+        {
+            UpdateUnifiedMesh(loadedMesh);
+        }
+        else
+        {
+            Debug.LogError($"Failed to load PLY file: {filePath}");
+        }
     }
 }

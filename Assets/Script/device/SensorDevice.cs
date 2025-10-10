@@ -21,7 +21,8 @@ public enum ProcessingType
     None,
     CPU,
     GPU,
-    ONESHADER
+    ONESHADER,
+    PLY
 }
 
 [Serializable]

@@ -3,19 +3,27 @@ using UnityEngine.Playables;
 using UnityEngine.Timeline;
 
 [System.Serializable]
-public class PointCloudPlayableAsset : PlayableAsset
+public class PointCloudPlayableAsset : PlayableAsset, ITimelineClipAsset
 {
-    [SerializeField] public float frameRate = 30f;
-    [SerializeField] public ExposedReference<MultiCameraPointCloudManager> pointCloudManager;
-    
+    public float frameRate = 30f;
+
+    public ClipCaps clipCaps => ClipCaps.None;
+
     public override Playable CreatePlayable(PlayableGraph graph, GameObject go)
     {
         var playable = ScriptPlayable<PointCloudPlayableBehaviour>.Create(graph);
         var behaviour = playable.GetBehaviour();
-        
+
         behaviour.frameRate = frameRate;
-        behaviour.pointCloudManager = pointCloudManager.Resolve(graph.GetResolver());
-        
+
+        // Find the manager in the scene
+        behaviour.pointCloudManager = Object.FindFirstObjectByType<MultiCameraPointCloudManager>();
+
+        if (behaviour.pointCloudManager == null)
+        {
+            Debug.LogWarning("MultiCameraPointCloudManager not found in scene!");
+        }
+
         return playable;
     }
 }

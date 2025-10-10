@@ -80,7 +80,7 @@ public class SinglePointCloudView : MonoBehaviour
 
     public void ProcessFirstFrameIfNeeded()
     {
-        if (frameController.AutoLoadFirstFrame && !frameController.IsFirstFrameProcessed())
+        if (frameController.AutoLoadFirstFrame && !frameController.IsFirstFrameProcessed)
         {
             ulong targetTimestamp = frameController.GetTimestampForFrame(0);
             ProcessFrame(targetTimestamp);

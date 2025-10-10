@@ -7,18 +7,23 @@ using UnityEngine;
 /// This is a pure data management class without Unity MonoBehaviour dependencies.
 /// Managed by MultiCamPointCloudManager and used by both SinglePointCloudView and MultiPointCloudView.
 /// </summary>
-public class CameraFrameController
+public class CameraFrameController : IFrameController
 {
     private SensorDevice device;
     private ulong currentTimestamp = 0;
     private bool firstFrameProcessed = false;
     private int totalFrameCount = -1;
-
-    public string DeviceName => device?.deviceName ?? "Unknown";
-    public ulong CurrentTimestamp => currentTimestamp;
-    public SensorDevice Device => device;
     private bool autoLoadFirstFrame = true;
+
+    // IFrameController interface properties
+    public string Name => device?.deviceName ?? "Unknown";
+    public ulong CurrentTimestamp => currentTimestamp;
+    public bool IsFirstFrameProcessed => firstFrameProcessed;
     public bool AutoLoadFirstFrame => autoLoadFirstFrame;
+
+    // Camera-specific properties
+    public string DeviceName => device?.deviceName ?? "Unknown";
+    public SensorDevice Device => device;
 
     public CameraFrameController(string rootDir, string hostname, string deviceName)
     {
@@ -156,14 +161,6 @@ public class CameraFrameController
     public int GetTotalFrameCount()
     {
         return totalFrameCount;
-    }
-
-    /// <summary>
-    /// Check if first frame has been processed.
-    /// </summary>
-    public bool IsFirstFrameProcessed()
-    {
-        return firstFrameProcessed;
     }
 
     /// <summary>
