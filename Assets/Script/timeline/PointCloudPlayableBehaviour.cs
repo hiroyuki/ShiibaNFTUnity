@@ -6,7 +6,6 @@ public class PointCloudPlayableBehaviour : PlayableBehaviour
     public float frameRate = 30f;
     public MultiCameraPointCloudManager pointCloudManager;
     
-    private double lastFrameTime = -1;
     private int currentFrame = -1;
     
     public override void OnGraphStart(Playable playable)

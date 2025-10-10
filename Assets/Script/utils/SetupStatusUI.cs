@@ -28,7 +28,6 @@ public class SetupStatusUI : MonoBehaviour
     private static SetupStatusUI instance;
     private List<string> statusMessages = new List<string>();
     private List<SensorDevice> deviceStatusList = new List<SensorDevice>();
-    private bool firstFrameProcessed = false;
     private float hideTimer = 0f;
     private bool shouldAutoHide = false;
     
@@ -270,9 +269,7 @@ public class SetupStatusUI : MonoBehaviour
     }
     
     public static void OnFirstFrameProcessed()
-    {
-        Instance.firstFrameProcessed = true;
-        
+    {   
         if (Instance.hideOnFirstFrame)
         {
             Instance.shouldAutoHide = true;
