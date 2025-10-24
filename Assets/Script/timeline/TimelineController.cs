@@ -159,13 +159,13 @@ public class TimelineController : MonoBehaviour
             return;
         }
 
-        // Find PointCloudPlayableAsset clips and set their duration
+        // Find PointCloudPlayableAsset and BvhPlayableAsset clips and set their duration
         bool foundClip = false;
         foreach (var track in timelineAsset.GetOutputTracks())
         {
             foreach (var clip in track.GetClips())
             {
-                if (clip.asset is PointCloudPlayableAsset)
+                if (clip.asset is PointCloudPlayableAsset || clip.asset is BvhPlayableAsset)
                 {
                     clip.duration = durationInSeconds;
                     foundClip = true;
@@ -180,7 +180,7 @@ public class TimelineController : MonoBehaviour
 
         if (!foundClip && showDebugLogs)
         {
-            Debug.LogWarning("TimelineController: No PointCloudPlayableAsset clips found in timeline");
+            Debug.LogWarning("TimelineController: No PointCloudPlayableAsset or BvhPlayableAsset clips found in timeline");
         }
 
         // Also set timeline asset duration
