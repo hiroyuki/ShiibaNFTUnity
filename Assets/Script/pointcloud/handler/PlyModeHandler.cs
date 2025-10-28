@@ -16,7 +16,20 @@ public class PlyModeHandler : BaseProcessingModeHandler
         SetupStatusUI.ShowStatus("Initializing PLY mode...");
 
         // Create PLY frame controller
-        plyFrameController = new PlyFrameController(rootDirectory, displayName);
+        // Check if PLY folder exists (new Assets-based datasets)
+        string plyFolder = System.IO.Path.Combine(rootDirectory, "PLY");
+        if (System.IO.Directory.Exists(plyFolder))
+        {
+            // Use PLY folder as root for the frame controller
+            plyFrameController = new PlyFrameController(plyFolder, displayName);
+            Debug.Log($"Using PLY folder: {plyFolder}");
+        }
+        else
+        {
+            // Fall back to legacy Export folder
+            plyFrameController = new PlyFrameController(rootDirectory, displayName);
+            Debug.Log($"Using Export folder: {System.IO.Path.Combine(rootDirectory, "Export")}");
+        }
 
         // Check if PLY files exist
         if (!plyFrameController.ShouldEnablePlyMode())

@@ -4,10 +4,12 @@ using UnityEngine;
 /// <summary>
 /// Main manager for multi-camera point cloud visualization
 /// Delegates processing to specialized mode handlers (PLY, Binary)
-/// Simplified coordinator that manages handler lifecycle
+/// Can be configured via DatasetConfig ScriptableObject or legacy inspector settings
 /// </summary>
 public class MultiCameraPointCloudManager : MonoBehaviour
 {
+    [Header("Configuration")]
+    [SerializeField] private DatasetConfig datasetConfig;
     [SerializeField] private string rootDirectory;
     [SerializeField] private bool usePly = true;
     [SerializeField] private bool enablePlyExport = false;
@@ -15,6 +17,32 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
     private IProcessingModeHandler currentHandler;
     private string displayName = "";
+    private DatasetConfig currentDatasetConfig;
+
+    /// <summary>
+    /// Set and store DatasetConfig at runtime (called from PointCloudPlayableAsset)
+    /// </summary>
+    public void SetDatasetConfig(DatasetConfig config)
+    {
+        currentDatasetConfig = config;
+        if (config != null)
+        {
+            Debug.Log($"DatasetConfig set to: {config.DatasetName}");
+            // Update rootDirectory to use the point cloud directory from config
+            rootDirectory = config.GetPointCloudRootDirectory();
+            usePly = config.UsePly;
+            enablePlyExport = config.EnablePlyExport;
+            binaryProcessingType = config.BinaryProcessingType;
+        }
+    }
+
+    /// <summary>
+    /// Get the current DatasetConfig
+    /// </summary>
+    public DatasetConfig GetDatasetConfig()
+    {
+        return currentDatasetConfig;
+    }
 
     void Start()
     {

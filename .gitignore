@@ -94,4 +94,11 @@ crashlytics-build.properties
 /Assets/OpenCVForUnity
 .DS_Store
 **/.DS_Store
+
+# Large data files - BVH and PLY files should not be version controlled
+*.bvh
+*.bvh.meta
 *.ply
+*.ply.meta
+/Assets/Data/Datasets/*/BVH/
+/Assets/Data/Datasets/*/PLY/

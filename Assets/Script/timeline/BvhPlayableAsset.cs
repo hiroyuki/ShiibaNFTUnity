@@ -8,39 +8,78 @@ using UnityEngine.Timeline;
 [System.Serializable]
 public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
 {
-    [Header("BVH File")]
-    [Tooltip("Path to the BVH file (relative to project or absolute)")]
-    public string bvhFilePath;
-
-    [Tooltip("Load BVH file automatically when timeline starts")]
-    public bool autoLoadBvh = true;
+    [Header("Dataset Configuration")]
+    [Tooltip("Reference to dataset configuration (contains BVH file path and settings)")]
+    public DatasetConfig datasetConfig;
 
     [Header("Target")]
     [Tooltip("Name of the GameObject to find in scene (leave empty to search for 'BVH_Character')")]
     public string targetGameObjectName = "BVH_Character";
 
-    [Header("Transform Adjustments")]
-    [Tooltip("Position offset applied to root motion")]
-    public Vector3 positionOffset = Vector3.zero;
+    [Header("Override Transform Adjustments")]
+    [Tooltip("Leave empty to use settings from DatasetConfig. Only fill if you want to override.")]
+    [SerializeField] private bool overrideTransformSettings = false;
 
-    [Tooltip("Rotation offset applied to root (in degrees)")]
-    public Vector3 rotationOffset = Vector3.zero;
-
-    [Tooltip("Scale multiplier for all positions")]
-    public Vector3 scale = Vector3.one;
-
-    [Tooltip("Apply BVH root position changes (if false, only rotation is applied)")]
-    public bool applyRootMotion = true;
-
-    [Header("Playback")]
-    [Tooltip("Frame rate for BVH playback (0 = use BVH file's frame rate)")]
-    public float overrideFrameRate = 0f;
-
-    [Tooltip("Frame offset to sync with point cloud (positive = delay BVH, negative = advance BVH)")]
-    public int frameOffset = 0;
+    [SerializeField] private Vector3 positionOffset = Vector3.zero;
+    [SerializeField] private Vector3 rotationOffset = Vector3.zero;
+    [SerializeField] private Vector3 scale = Vector3.one;
+    [SerializeField] private bool applyRootMotion = true;
+    [SerializeField] private float overrideFrameRate = 0f;
+    [SerializeField] private int frameOffset = 0;
 
     // Cached BVH data
     private BvhData cachedBvhData;
+
+    /// <summary>
+    /// Get the actual BVH file path from DatasetConfig
+    /// If not assigned, try to get it from MultiCameraPointCloudManager
+    /// </summary>
+    private string GetBvhFilePath()
+    {
+        if (datasetConfig != null)
+        {
+            return datasetConfig.GetBvhFilePath();
+        }
+
+        // Try to get DatasetConfig from MultiCameraPointCloudManager
+        var pointCloudManager = GameObject.FindFirstObjectByType<MultiCameraPointCloudManager>();
+        if (pointCloudManager != null)
+        {
+            DatasetConfig config = pointCloudManager.GetDatasetConfig();
+            if (config != null)
+            {
+                return config.GetBvhFilePath();
+            }
+        }
+
+        Debug.LogWarning("BvhPlayableAsset: No DatasetConfig assigned and none found in scene!");
+        return "";
+    }
+
+    /// <summary>
+    /// Get transform settings, preferring DatasetConfig if available
+    /// </summary>
+    private void GetTransformSettings(out Vector3 position, out Vector3 rotation, out Vector3 scaleVal, out bool applyRoot, out float frameRate, out int frameOff)
+    {
+        if (datasetConfig != null && !overrideTransformSettings)
+        {
+            position = datasetConfig.BvhPositionOffset;
+            rotation = datasetConfig.BvhRotationOffset;
+            scaleVal = datasetConfig.BvhScale;
+            applyRoot = datasetConfig.BvhApplyRootMotion;
+            frameRate = datasetConfig.BvhOverrideFrameRate;
+            frameOff = datasetConfig.BvhFrameOffset;
+        }
+        else
+        {
+            position = positionOffset;
+            rotation = rotationOffset;
+            scaleVal = scale;
+            applyRoot = applyRootMotion;
+            frameRate = overrideFrameRate;
+            frameOff = frameOffset;
+        }
+    }
 
     public ClipCaps clipCaps => ClipCaps.Looping | ClipCaps.Extrapolation | ClipCaps.ClipIn;
 
@@ -64,31 +103,36 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
         }
 
         // Load BVH data
-        if (autoLoadBvh && !string.IsNullOrEmpty(bvhFilePath))
+        string bvhFilePath = GetBvhFilePath();
+        if (!string.IsNullOrEmpty(bvhFilePath))
         {
-            behaviour.bvhData = LoadBvhData();
+            behaviour.bvhData = LoadBvhData(bvhFilePath);
         }
         else
         {
             behaviour.bvhData = cachedBvhData;
         }
 
+        // Get transform settings from DatasetConfig or overrides
+        GetTransformSettings(out Vector3 position, out Vector3 rotation, out Vector3 scaleVal,
+                           out bool applyRoot, out float frameRate, out int frameOff);
+
         // Set frame rate
         if (behaviour.bvhData != null)
         {
-            behaviour.frameRate = overrideFrameRate > 0 ? overrideFrameRate : behaviour.bvhData.FrameRate;
+            behaviour.frameRate = frameRate > 0 ? frameRate : behaviour.bvhData.FrameRate;
         }
         else
         {
-            behaviour.frameRate = overrideFrameRate > 0 ? overrideFrameRate : 30f;
+            behaviour.frameRate = frameRate > 0 ? frameRate : 30f;
         }
 
         // Apply transform adjustments
-        behaviour.positionOffset = positionOffset;
-        behaviour.rotationOffset = rotationOffset;
-        behaviour.scale = scale;
-        behaviour.applyRootMotion = applyRootMotion;
-        behaviour.frameOffset = frameOffset;
+        behaviour.positionOffset = position;
+        behaviour.rotationOffset = rotation;
+        behaviour.scale = scaleVal;
+        behaviour.applyRootMotion = applyRoot;
+        behaviour.frameOffset = frameOff;
 
         if (behaviour.bvhData == null)
         {
@@ -101,20 +145,20 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     /// <summary>
     /// Load or get cached BVH data
     /// </summary>
-    private BvhData LoadBvhData()
+    private BvhData LoadBvhData(string filePath)
     {
         if (cachedBvhData != null)
         {
             return cachedBvhData;
         }
 
-        if (string.IsNullOrEmpty(bvhFilePath))
+        if (string.IsNullOrEmpty(filePath))
         {
             Debug.LogWarning("BvhPlayableAsset: No BVH file path specified");
             return null;
         }
 
-        cachedBvhData = BvhImporter.ImportFromBVH(bvhFilePath);
+        cachedBvhData = BvhImporter.ImportFromBVH(filePath);
 
         if (cachedBvhData != null)
         {
@@ -130,7 +174,11 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     public void ReloadBvhData()
     {
         cachedBvhData = null;
-        cachedBvhData = LoadBvhData();
+        string filePath = GetBvhFilePath();
+        if (!string.IsNullOrEmpty(filePath))
+        {
+            cachedBvhData = LoadBvhData(filePath);
+        }
     }
 
     /// <summary>
@@ -138,9 +186,13 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     /// </summary>
     public BvhData GetBvhData()
     {
-        if (cachedBvhData == null && !string.IsNullOrEmpty(bvhFilePath))
+        if (cachedBvhData == null)
         {
-            cachedBvhData = LoadBvhData();
+            string filePath = GetBvhFilePath();
+            if (!string.IsNullOrEmpty(filePath))
+            {
+                cachedBvhData = LoadBvhData(filePath);
+            }
         }
         return cachedBvhData;
     }

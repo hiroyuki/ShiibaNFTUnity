@@ -29,7 +29,27 @@ public class PlyFrameController : IFrameController
     {
         this.rootDirectory = rootDirectory;
         this.displayName = string.IsNullOrEmpty(displayName) ? "pointcloud" : displayName;
-        this.plyExportDir = Path.Combine(rootDirectory, "Export");
+
+        // Try to find PLY files in this directory first (for Assets-based datasets where PLY is the root)
+        // If not found, look in an "Export" subdirectory (for legacy datasets)
+        if (Directory.Exists(rootDirectory))
+        {
+            string[] plyFiles = Directory.GetFiles(rootDirectory, "*.ply");
+            if (plyFiles.Length > 0)
+            {
+                // PLY files are directly in this directory
+                this.plyExportDir = rootDirectory;
+            }
+            else
+            {
+                // Fall back to looking in Export subdirectory
+                this.plyExportDir = Path.Combine(rootDirectory, "Export");
+            }
+        }
+        else
+        {
+            this.plyExportDir = Path.Combine(rootDirectory, "Export");
+        }
 
         DiscoverPlyFiles();
     }
