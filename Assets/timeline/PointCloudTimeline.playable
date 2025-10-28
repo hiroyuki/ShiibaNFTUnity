@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9ed194637353845b498156f09e93783c, type: 3}
   m_Name: BvhPlayableAsset
   m_EditorClassIdentifier: 
-  bvhFilePath: /Users/horihiroyuki/Dropbox/projects/shiiba/MotionData/Totori1.BVH
+  bvhFilePath: /Volumes/horristicSSD2T/Dropbox/projects/shiiba/MotionData/Totori1.BVH
   autoLoadBvh: 1
   targetGameObjectName: BVH_Character
   positionOffset: {x: 0, y: 0, z: 0}

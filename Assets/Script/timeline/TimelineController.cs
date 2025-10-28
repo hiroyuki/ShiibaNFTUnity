@@ -131,7 +131,8 @@ public class TimelineController : MonoBehaviour
     public double Duration => timeline != null && timeline.playableAsset != null ? timeline.playableAsset.duration : 0;
 
     /// <summary>
-    /// Set timeline duration based on total frame count and FPS
+    /// Set timeline duration based on total frame count and FPS (for PointCloud)
+    /// BVH clips use their own duration based on BVH file data
     /// </summary>
     public void SetDuration(int totalFrameCount, int fps)
     {
@@ -147,10 +148,11 @@ public class TimelineController : MonoBehaviour
             return;
         }
 
-        // Calculate duration in seconds
-        double durationInSeconds = (double)totalFrameCount / fps;
-        
-        Debug.Log($"TimelineController: Setting duration to {durationInSeconds} seconds ({totalFrameCount} frames at {fps} FPS)");
+        // Calculate duration in seconds for PointCloud
+        double pointCloudDurationInSeconds = (double)totalFrameCount / fps;
+
+        Debug.Log($"TimelineController: Setting PointCloud duration to {pointCloudDurationInSeconds} seconds ({totalFrameCount} frames at {fps} FPS)");
+
         // Cast to TimelineAsset
         TimelineAsset timelineAsset = timeline.playableAsset as TimelineAsset;
         if (timelineAsset == null)
@@ -159,32 +161,66 @@ public class TimelineController : MonoBehaviour
             return;
         }
 
-        // Find PointCloudPlayableAsset and BvhPlayableAsset clips and set their duration
-        bool foundClip = false;
+        // Track the maximum duration across all clips
+        double maxDuration = pointCloudDurationInSeconds;
+
+        // Find clips and set their duration appropriately
+        bool foundPointCloudClip = false;
+        bool foundBvhClip = false;
+
         foreach (var track in timelineAsset.GetOutputTracks())
         {
             foreach (var clip in track.GetClips())
             {
-                if (clip.asset is PointCloudPlayableAsset || clip.asset is BvhPlayableAsset)
+                // PointCloud clips use the provided duration
+                if (clip.asset is PointCloudPlayableAsset)
                 {
-                    clip.duration = durationInSeconds;
-                    foundClip = true;
+                    clip.duration = pointCloudDurationInSeconds;
+                    foundPointCloudClip = true;
+                    Debug.Log($"TimelineController: Set PointCloud clip duration to {pointCloudDurationInSeconds}s");
+                }
+                // BVH clips use their own calculated duration from BVH file data
+                else if (clip.asset is BvhPlayableAsset bvhAsset)
+                {
+                    double bvhDuration = bvhAsset.GetBvhDuration();
+                    if (bvhDuration > 0)
+                    {
+                        clip.duration = bvhDuration;
+                        foundBvhClip = true;
+                        Debug.Log($"TimelineController: Set BVH clip duration to {bvhDuration}s (from BVH data)");
+
+                        // Track maximum duration
+                        if (bvhDuration > maxDuration)
+                        {
+                            maxDuration = bvhDuration;
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogWarning("TimelineController: BVH data not available, skipping BVH clip duration update");
+                    }
+                }
 
 #if UNITY_EDITOR
-                    // Mark timeline dirty in editor
-                    UnityEditor.EditorUtility.SetDirty(timelineAsset);
+                // Mark timeline dirty in editor
+                UnityEditor.EditorUtility.SetDirty(timelineAsset);
 #endif
-                }
             }
         }
 
-        if (!foundClip && showDebugLogs)
+        if (!foundPointCloudClip && showDebugLogs)
         {
-            Debug.LogWarning("TimelineController: No PointCloudPlayableAsset or BvhPlayableAsset clips found in timeline");
+            Debug.LogWarning("TimelineController: No PointCloudPlayableAsset clips found in timeline");
         }
 
-        // Also set timeline asset duration
+        if (!foundBvhClip && showDebugLogs)
+        {
+            Debug.LogWarning("TimelineController: No BvhPlayableAsset clips found in timeline");
+        }
+
+        // Set timeline asset duration to the maximum clip duration
         timelineAsset.durationMode = TimelineAsset.DurationMode.FixedLength;
-        timelineAsset.fixedDuration = durationInSeconds;
+        timelineAsset.fixedDuration = maxDuration;
+        Debug.Log($"TimelineController: Set Timeline total duration to {maxDuration}s");
     }
 }
