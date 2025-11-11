@@ -19,7 +19,7 @@ MonoBehaviour:
   bvhApplyRootMotion: 1
   bvhOverrideFrameRate: 0
   bvhFrameOffset: 10
-  usePly: 1
+  processingType: 4
   enablePlyExport: 0
-  binaryProcessingType: 3
-  binaryDataRootPath: 
+  binaryDataRootPath: /Volumes/horristicSSD2T/Dropbox/projects/shiiba/datas/2025-04-12_20-17-26_video
+  bvhDriftCorrectionData: {fileID: 0}

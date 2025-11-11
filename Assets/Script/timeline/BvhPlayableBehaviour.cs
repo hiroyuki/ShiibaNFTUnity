@@ -17,6 +17,9 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     public bool applyRootMotion = true;
     public int frameOffset = 0;
 
+    // BVH Drift Correction
+    public BvhDriftCorrectionData driftCorrectionData;
+
     private int currentFrame = -1;
     private Transform[] jointTransforms;
     private BvhJoint[] joints;
@@ -63,6 +66,36 @@ public class BvhPlayableBehaviour : PlayableBehaviour
             ApplyFrame(targetFrame);
             currentFrame = targetFrame;
         }
+
+        // Apply drift correction if enabled
+        ApplyDriftCorrection((float)currentTime);
+    }
+
+    /// <summary>
+    /// Apply BVH drift correction based on keyframe interpolation
+    /// </summary>
+    private void ApplyDriftCorrection(float timelineTime)
+    {
+        if (driftCorrectionData == null || !driftCorrectionData.IsEnabled)
+            return;
+
+        if (bvhData == null || targetTransform == null)
+            return;
+
+        // Get target anchor position from keyframe interpolation
+        Vector3 targetAnchorPositionRelative = driftCorrectionData.GetAnchorPositionAtTime(timelineTime);
+
+        // Find root joint transform
+        Transform rootJointTransform = targetTransform.Find(bvhData.RootJoint.Name);
+        if (rootJointTransform == null)
+            return;
+
+        // Calculate the correction delta (difference between target and current relative position)
+        Vector3 currentRelativePosition = rootJointTransform.localPosition;
+        Vector3 correctionDelta = targetAnchorPositionRelative - currentRelativePosition;
+
+        // Apply correction to the parent transform
+        targetTransform.localPosition += correctionDelta;
     }
 
     /// <summary>

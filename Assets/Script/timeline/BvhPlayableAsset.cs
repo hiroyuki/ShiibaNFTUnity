@@ -134,6 +134,12 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
         behaviour.applyRootMotion = applyRoot;
         behaviour.frameOffset = frameOff;
 
+        // Set drift correction data from DatasetConfig
+        if (datasetConfig != null && datasetConfig.BvhDriftCorrectionData != null)
+        {
+            behaviour.driftCorrectionData = datasetConfig.BvhDriftCorrectionData;
+        }
+
         if (behaviour.bvhData == null)
         {
             Debug.LogWarning($"BvhPlayableAsset: BVH data not loaded. Path: {bvhFilePath}");

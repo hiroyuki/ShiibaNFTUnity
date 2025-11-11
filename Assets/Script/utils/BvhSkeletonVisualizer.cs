@@ -29,19 +29,37 @@ public class BvhSkeletonVisualizer : MonoBehaviour
 
     void Start()
     {
-        // Wait a bit for skeleton to be created
-        Invoke(nameof(CreateVisuals), 0.2f);
+        Debug.Log($"[BvhSkeletonVisualizer.Start] Initializing on '{gameObject.name}'");
+        Debug.Log($"[BvhSkeletonVisualizer.Start] Transform has {transform.childCount} children at start");
+
+        // List all children at start
+        foreach (Transform child in transform)
+        {
+            Debug.Log($"[BvhSkeletonVisualizer.Start]   Child: '{child.name}' with {child.childCount} children");
+            foreach (Transform grandchild in child)
+            {
+                Debug.Log($"[BvhSkeletonVisualizer.Start]     → {grandchild.name}");
+            }
+        }
+
+        // Wait longer for skeleton to be fully created
+        // Timeline playback creates joints during OnGraphStart
+        Invoke(nameof(CreateVisuals), 1.0f);
     }
 
     void CreateVisuals()
     {
-        Debug.Log($"BvhSkeletonVisualizer.CreateVisuals() called on '{gameObject.name}'");
-        Debug.Log($"  Transform has {transform.childCount} children");
+        Debug.Log($"[BvhSkeletonVisualizer.CreateVisuals] Called on '{gameObject.name}'");
+        Debug.Log($"[BvhSkeletonVisualizer.CreateVisuals] Transform has {transform.childCount} children");
 
         // List all children
         foreach (Transform child in transform)
         {
-            Debug.Log($"  Child: '{child.name}' at position {child.position}");
+            Debug.Log($"[BvhSkeletonVisualizer.CreateVisuals]   Child: '{child.name}' with {child.childCount} children");
+            foreach (Transform grandchild in child)
+            {
+                Debug.Log($"[BvhSkeletonVisualizer.CreateVisuals]     → {grandchild.name}");
+            }
         }
 
         // Clean up any existing visuals first
