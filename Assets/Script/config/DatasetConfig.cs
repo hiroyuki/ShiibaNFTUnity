@@ -24,13 +24,18 @@ public class DatasetConfig : ScriptableObject
     [SerializeField] private int bvhFrameOffset = 0;
 
     [Header("Processing Mode")]
-    [SerializeField] private bool usePly = true;
+    [SerializeField] private ProcessingType processingType = ProcessingType.PLY;
+    [Tooltip("PLY: Use pre-exported PLY files, CPU/GPU/ONESHADER: Use raw sensor data with specified processor")]
     [SerializeField] private bool enablePlyExport = false;
-    [SerializeField] private ProcessingType binaryProcessingType = ProcessingType.ONESHADER;
+    [Tooltip("When using binary mode, export frames as PLY files")]
 
     [Header("Binary Data Configuration")]
     [SerializeField] private string binaryDataRootPath = "";
     [Tooltip("Path to binary dataset root (can be external path, not in Assets)")]
+
+    [Header("BVH Drift Correction")]
+    [SerializeField] private BvhDriftCorrectionData bvhDriftCorrectionData;
+    [Tooltip("Reference to BVH drift correction data (contains keyframes for manual drift correction)")]
 
     // Properties
     /// <summary>
@@ -60,10 +65,10 @@ public class DatasetConfig : ScriptableObject
     public bool BvhApplyRootMotion => bvhApplyRootMotion;
     public float BvhOverrideFrameRate => bvhOverrideFrameRate;
     public int BvhFrameOffset => bvhFrameOffset;
-    public bool UsePly => usePly;
+    public ProcessingType ProcessingType => processingType;
     public bool EnablePlyExport => enablePlyExport;
-    public ProcessingType BinaryProcessingType => binaryProcessingType;
     public string BinaryDataRootPath => binaryDataRootPath;
+    public BvhDriftCorrectionData BvhDriftCorrectionData => bvhDriftCorrectionData;
 
     /// <summary>
     /// Get the BVH folder path (relative to project)

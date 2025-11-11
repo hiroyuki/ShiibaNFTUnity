@@ -50,23 +50,35 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         DisableTimelineAutoPlay();
         LoadDatasetInfo();
 
-        // Try to initialize PLY mode first if enabled
-        if (GetDatasetConfig().UsePly && TryInitializeHandler(new PlyModeHandler()))
+        // Initialize based on configured processing type
+        ProcessingType processingType = GetDatasetConfig().ProcessingType;
+
+        if (processingType == ProcessingType.PLY)
         {
-            Debug.Log("PLY mode initialized successfully");
-            SetupTimelineDuration();
-            return;
+            if (TryInitializeHandler(new PlyModeHandler()))
+            {
+                Debug.Log("PLY mode initialized successfully");
+                SetupTimelineDuration();
+                return;
+            }
+            else
+            {
+                Debug.LogWarning("PLY mode initialization failed. No fallback available for PLY mode.");
+                SetupStatusUI.ShowStatus("ERROR: PLY mode initialization failed");
+                return;
+            }
+        }
+        else if (processingType == ProcessingType.CPU || processingType == ProcessingType.GPU || processingType == ProcessingType.ONESHADER)
+        {
+            if (TryInitializeHandler(new BinaryModeHandler(processingType, GetDatasetConfig().EnablePlyExport)))
+            {
+                Debug.Log($"Binary mode ({processingType}) initialized successfully");
+                SetupTimelineDuration();
+                return;
+            }
         }
 
-        // Fall back to Binary mode
-        if (TryInitializeHandler(new BinaryModeHandler(GetDatasetConfig().BinaryProcessingType, GetDatasetConfig().EnablePlyExport)))
-        {
-            Debug.Log($"Binary mode ({GetDatasetConfig().BinaryProcessingType}) initialized successfully");
-            SetupTimelineDuration();
-            return;
-        }
-
-        Debug.LogError("Failed to initialize any processing mode!");
+        Debug.LogError($"Failed to initialize processing mode: {processingType}");
         SetupStatusUI.ShowStatus("ERROR: Failed to initialize");
     }
 
