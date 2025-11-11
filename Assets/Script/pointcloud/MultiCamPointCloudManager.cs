@@ -4,16 +4,12 @@ using UnityEngine;
 /// <summary>
 /// Main manager for multi-camera point cloud visualization
 /// Delegates processing to specialized mode handlers (PLY, Binary)
-/// Can be configured via DatasetConfig ScriptableObject or legacy inspector settings
+/// Must be configured via DatasetConfig ScriptableObject set by PointCloudPlayableAsset
 /// </summary>
 public class MultiCameraPointCloudManager : MonoBehaviour
 {
     [Header("Configuration")]
     [SerializeField] private DatasetConfig datasetConfig;
-    [SerializeField] private string rootDirectory;
-    [SerializeField] private bool usePly = true;
-    [SerializeField] private bool enablePlyExport = false;
-    [SerializeField] private ProcessingType binaryProcessingType = ProcessingType.ONESHADER;
 
     private IProcessingModeHandler currentHandler;
     private string displayName = "";
@@ -28,11 +24,6 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         if (config != null)
         {
             Debug.Log($"DatasetConfig set to: {config.DatasetName}");
-            // Update rootDirectory to use the point cloud directory from config
-            rootDirectory = config.GetPointCloudRootDirectory();
-            usePly = config.UsePly;
-            enablePlyExport = config.EnablePlyExport;
-            binaryProcessingType = config.BinaryProcessingType;
         }
     }
 
@@ -48,11 +39,19 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     {
         SetupStatusUI.ShowStatus("Starting Multi-Camera Point Cloud Manager...");
 
+        // Ensure DatasetConfig is set
+        if (GetDatasetConfig() == null)
+        {
+            Debug.LogError("DatasetConfig not set! Cannot initialize.");
+            SetupStatusUI.ShowStatus("ERROR: DatasetConfig not configured");
+            return;
+        }
+
         DisableTimelineAutoPlay();
         LoadDatasetInfo();
 
         // Try to initialize PLY mode first if enabled
-        if (usePly && TryInitializeHandler(new PlyModeHandler()))
+        if (GetDatasetConfig().UsePly && TryInitializeHandler(new PlyModeHandler()))
         {
             Debug.Log("PLY mode initialized successfully");
             SetupTimelineDuration();
@@ -60,9 +59,9 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         }
 
         // Fall back to Binary mode
-        if (TryInitializeHandler(new BinaryModeHandler(binaryProcessingType, enablePlyExport)))
+        if (TryInitializeHandler(new BinaryModeHandler(GetDatasetConfig().BinaryProcessingType, GetDatasetConfig().EnablePlyExport)))
         {
-            Debug.Log($"Binary mode ({binaryProcessingType}) initialized successfully");
+            Debug.Log($"Binary mode ({GetDatasetConfig().BinaryProcessingType}) initialized successfully");
             SetupTimelineDuration();
             return;
         }
@@ -73,6 +72,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
     private bool TryInitializeHandler(IProcessingModeHandler handler)
     {
+        string rootDirectory = GetDatasetConfig().GetPointCloudRootDirectory();
         if (handler.Initialize(rootDirectory, displayName, transform))
         {
             currentHandler = handler;
@@ -98,6 +98,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
     private void LoadDatasetInfo()
     {
+        string rootDirectory = GetDatasetConfig().GetPointCloudRootDirectory();
         string datasetYamlPath = Path.Combine(rootDirectory, "dataset.yaml");
         if (File.Exists(datasetYamlPath))
         {
@@ -115,7 +116,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         }
         else
         {
-            Debug.LogWarning($"dataset.yaml not found");
+            Debug.LogWarning($"dataset.yaml not found, using folder name as display name");
             displayName = Path.GetFileName(rootDirectory.TrimEnd(Path.DirectorySeparatorChar));
         }
     }

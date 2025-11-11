@@ -6,6 +6,8 @@ using UnityEngine.Timeline;
 public class PointCloudPlayableAsset : PlayableAsset, ITimelineClipAsset
 {
     [SerializeField] private float frameRate = 30f;
+    [SerializeField] private DatasetConfig datasetConfig;
+    [Tooltip("DatasetConfig to use for this point cloud timeline. If set, overrides automatic loading.")]
 
     public ClipCaps clipCaps => ClipCaps.None;
 
@@ -22,28 +24,31 @@ public class PointCloudPlayableAsset : PlayableAsset, ITimelineClipAsset
 
         if (behaviour.pointCloudManager == null)
         {
-            Debug.LogWarning("MultiCameraPointCloudManager not found in scene!");
+            Debug.LogError("PointCloudPlayableAsset: MultiCameraPointCloudManager not found in scene!");
             return playable;
         }
 
-        // Load DatasetConfig from Assets/Data/DatasetConfig.asset
-        DatasetConfig datasetConfig = Resources.Load<DatasetConfig>("Data/DatasetConfig");
-        if (datasetConfig == null)
+        // Use DatasetConfig from inspector field, or try to find one in the scene
+        DatasetConfig configToUse = datasetConfig;
+
+        if (configToUse == null)
         {
-            // Try direct path if Resources.Load doesn't work
-            #if UNITY_EDITOR
-            datasetConfig = UnityEditor.AssetDatabase.LoadAssetAtPath<DatasetConfig>("Assets/Data/DatasetConfig.asset");
-            #endif
+            // Try finding a DatasetConfig in the scene as fallback
+            configToUse = Object.FindFirstObjectByType<DatasetConfig>();
+            if (configToUse != null)
+            {
+                Debug.Log("PointCloudPlayableAsset: Using DatasetConfig found in scene");
+            }
         }
 
-        if (datasetConfig != null)
+        if (configToUse != null)
         {
-            behaviour.pointCloudManager.SetDatasetConfig(datasetConfig);
-            Debug.Log($"PointCloudPlayableAsset: Loaded DatasetConfig: {datasetConfig.DatasetName}");
+            behaviour.pointCloudManager.SetDatasetConfig(configToUse);
+            Debug.Log($"PointCloudPlayableAsset: Set DatasetConfig: {configToUse.DatasetName}");
         }
         else
         {
-            Debug.LogWarning("PointCloudPlayableAsset: Could not load DatasetConfig from Assets/Data/DatasetConfig.asset");
+            Debug.LogError("PointCloudPlayableAsset: DatasetConfig not assigned in inspector and none found in scene!");
         }
 
         return playable;
