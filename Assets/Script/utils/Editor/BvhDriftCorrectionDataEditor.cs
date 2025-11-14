@@ -17,17 +17,36 @@ public class BvhDriftCorrectionDataEditor : Editor
     private SerializedProperty interpolationTypeProperty;
     private SerializedProperty isEnabledProperty;
 
+    // Track previous position values to detect changes
+    private Dictionary<int, Vector3> previousKeyframePositions = new Dictionary<int, Vector3>();
+
     private void OnEnable()
     {
         driftCorrectionData = (BvhDriftCorrectionData)target;
         keyframesProperty = serializedObject.FindProperty("keyframes");
         interpolationTypeProperty = serializedObject.FindProperty("interpolationType");
         isEnabledProperty = serializedObject.FindProperty("isEnabled");
+
+        // Initialize position tracking
+        RefreshKeyframePositionCache();
+    }
+
+    private void RefreshKeyframePositionCache()
+    {
+        previousKeyframePositions.Clear();
+        var keyframes = driftCorrectionData.GetAllKeyframes();
+        for (int i = 0; i < keyframes.Count; i++)
+        {
+            previousKeyframePositions[i] = keyframes[i].anchorPositionRelative;
+        }
     }
 
     public override void OnInspectorGUI()
     {
         serializedObject.Update();
+
+        // Check for position changes before rendering
+        DetectKeyframePositionChanges();
 
         // ヘッダー
         EditorGUILayout.LabelField("Drift Correction Data", EditorStyles.boldLabel);
@@ -104,6 +123,90 @@ public class BvhDriftCorrectionDataEditor : Editor
         EditorGUILayout.PropertyField(keyframesProperty, true);
 
         serializedObject.ApplyModifiedProperties();
+    }
+
+    /// <summary>
+    /// Detects when keyframe positions have been modified in the Inspector
+    /// Updates BVH_Character position to reflect the keyframe changes in real-time
+    /// </summary>
+    private void DetectKeyframePositionChanges()
+    {
+        var keyframes = driftCorrectionData.GetAllKeyframes();
+
+        // Check each keyframe for position changes
+        for (int i = 0; i < keyframes.Count; i++)
+        {
+            Vector3 currentPosition = keyframes[i].anchorPositionRelative;
+
+            if (previousKeyframePositions.TryGetValue(i, out Vector3 previousPosition))
+            {
+                // Compare positions with small epsilon for floating-point precision
+                if (!Mathf.Approximately(currentPosition.x, previousPosition.x) ||
+                    !Mathf.Approximately(currentPosition.y, previousPosition.y) ||
+                    !Mathf.Approximately(currentPosition.z, previousPosition.z))
+                {
+                    // Position has changed - update BVH character position
+                    UpdateBvhCharacterPosition(currentPosition, previousPosition, keyframes[i]);
+
+                    // Update the cached position
+                    previousKeyframePositions[i] = currentPosition;
+                }
+            }
+            else
+            {
+                // New keyframe added
+                previousKeyframePositions[i] = currentPosition;
+            }
+        }
+
+        // Check for removed keyframes
+        var keysToRemove = new List<int>();
+        foreach (var key in previousKeyframePositions.Keys)
+        {
+            if (key >= keyframes.Count)
+            {
+                keysToRemove.Add(key);
+            }
+        }
+
+        foreach (var key in keysToRemove)
+        {
+            previousKeyframePositions.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// Updates the BVH_Character position based on keyframe position change
+    /// Applies the delta (difference) to the current BVH position
+    /// </summary>
+    private void UpdateBvhCharacterPosition(Vector3 newPosition, Vector3 oldPosition, BvhKeyframe keyframe)
+    {
+        // Find BVH_Character in the scene
+        GameObject bvhCharacter = GameObject.Find("BVH_Character");
+        if (bvhCharacter == null)
+        {
+            Debug.LogWarning("[BvhDriftCorrectionDataEditor] BVH_Character not found in scene");
+            return;
+        }
+
+        // Calculate the delta (how much the position changed)
+        Vector3 positionDelta = newPosition - oldPosition;
+
+        // Apply the delta to the BVH_Character's current position
+        Transform bvhTransform = bvhCharacter.transform;
+        Vector3 updatedPosition = bvhTransform.localPosition + positionDelta;
+
+        // Update the BVH_Character position
+        bvhTransform.localPosition = updatedPosition;
+
+        Debug.Log($"[BVH Position Updated] Keyframe {keyframe.timelineTime}s:\n" +
+                  $"  Old Correction: {oldPosition}\n" +
+                  $"  New Correction: {newPosition}\n" +
+                  $"  Delta Applied: {positionDelta}\n" +
+                  $"  BVH_Character New Position: {updatedPosition}");
+
+        // Mark the transform as dirty to ensure changes are saved
+        EditorUtility.SetDirty(bvhTransform);
     }
 
     /// <summary>

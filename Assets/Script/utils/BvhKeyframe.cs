@@ -40,4 +40,15 @@ public class BvhKeyframe
     {
         return timelineTime >= 0 && bvhFrameNumber >= 0;
     }
+
+#if UNITY_EDITOR
+    /// <summary>
+    /// Detects when keyframe position is modified in the Inspector
+    /// Logs the new position value for debugging and monitoring
+    /// </summary>
+    private void OnValidate()
+    {
+        Debug.Log($"[BvhKeyframe Position Changed] Time: {timelineTime}s, Frame: {bvhFrameNumber}, Position: {anchorPositionRelative}");
+    }
+#endif
 }
