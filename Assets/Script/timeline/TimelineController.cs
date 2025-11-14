@@ -13,6 +13,7 @@ public class TimelineController : MonoBehaviour
     [SerializeField] private Key playPauseKey = Key.Space;
     [SerializeField] private Key stopKey = Key.Escape;
     [SerializeField] private Key addKeyframeKey = Key.A;        // Shift+A
+    [SerializeField] private Key resetTimelineKey = Key.Digit0; // 0 key
 
     [Header("BVH Drift Correction")]
     private BvhPlayableAsset bvhPlayableAsset;
@@ -115,6 +116,12 @@ public class TimelineController : MonoBehaviour
         {
             AddDriftCorrectionKeyframe();
         }
+
+        // 0 key: Reset timeline to frame 0
+        if (Keyboard.current[resetTimelineKey].wasPressedThisFrame)
+        {
+            ResetTimeline();
+        }
     }
     
     [ContextMenu("Toggle Play/Pause")]
@@ -165,6 +172,19 @@ public class TimelineController : MonoBehaviour
         if (showDebugLogs)
         {
             Debug.Log("Timeline: STOP");
+        }
+    }
+
+    [ContextMenu("Reset Timeline to Frame 0")]
+    public void ResetTimeline()
+    {
+        if (timeline == null) return;
+
+        timeline.time = 0;
+        timeline.Evaluate();
+        if (showDebugLogs)
+        {
+            Debug.Log("Timeline: RESET to frame 0");
         }
     }
 

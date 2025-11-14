@@ -35,7 +35,7 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         {
             // Save the initial position of BVH_Character as baseline for drift correction
             // This allows us to restore or reference the original position during correction
-            positionOffset = targetTransform.localPosition;
+            targetTransform.localPosition = positionOffset;
             Debug.Log($"[BvhPlayableBehaviour] OnGraphStart: Saved BVH_Character initial position as positionOffset: {positionOffset}");
 
             // Cache joint hierarchy
@@ -104,6 +104,9 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         // Calculate the correction delta (difference between target and current relative position)
         Vector3 currentRelativePosition = rootJointTransform.localPosition;
 
+        // Apply correction: baseline position (positionOffset) + anchor correction
+        // This preserves the initial BVH_Character position while applying drift correction
+        targetTransform.localPosition = positionOffset + targetAnchorPositionRelative;
         // DEBUG LOG
         Debug.Log($"[DriftCorrection] Time: {timelineTime:F2}s, " +
                   $"Target: {targetAnchorPositionRelative}, " +
@@ -111,11 +114,8 @@ public class BvhPlayableBehaviour : PlayableBehaviour
                   $"BaselinePos (positionOffset): {positionOffset}, " +
                   $"ParentPos Before: {targetTransform.localPosition}");
 
-        // Apply correction: baseline position (positionOffset) + anchor correction
-        // This preserves the initial BVH_Character position while applying drift correction
-        targetTransform.localPosition = positionOffset + targetAnchorPositionRelative;
 
-        Debug.Log($"[DriftCorrection] ParentPos After: {targetTransform.localPosition}");
+        Debug.Log($"[DriftCorrection] ParentPos :{targetTransform.localPosition} (after correction) timelineTime: {timelineTime:F2}s");
     }
 
     /// <summary>
