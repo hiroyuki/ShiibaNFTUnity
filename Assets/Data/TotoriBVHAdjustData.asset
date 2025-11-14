@@ -25,5 +25,13 @@ MonoBehaviour:
     bvhFrameNumber: 411
     anchorPositionRelative: {x: 0.11, y: 0, z: 0}
     note: 
+  - timelineTime: 31.166666
+    bvhFrameNumber: 935
+    anchorPositionRelative: {x: 0.38, y: 0, z: -0.32}
+    note: 
+  - timelineTime: 64.26667
+    bvhFrameNumber: 1928
+    anchorPositionRelative: {x: 0.87, y: 0, z: -2.07}
+    note: 
   interpolationType: 0
   isEnabled: 1
