@@ -22,4 +22,4 @@ MonoBehaviour:
   processingType: 4
   enablePlyExport: 0
   binaryDataRootPath: /Volumes/horristicSSD2T/Dropbox/projects/shiiba/datas/2025-04-12_20-17-26_video
-  bvhDriftCorrectionData: {fileID: 0}
+  bvhDriftCorrectionData: {fileID: 11400000, guid: 169e14796eda44c03b6daab8f8bedbd7, type: 2}

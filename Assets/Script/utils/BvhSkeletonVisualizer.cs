@@ -49,18 +49,15 @@ public class BvhSkeletonVisualizer : MonoBehaviour
 
     void CreateVisuals()
     {
-        Debug.Log($"[BvhSkeletonVisualizer.CreateVisuals] Called on '{gameObject.name}'");
-        Debug.Log($"[BvhSkeletonVisualizer.CreateVisuals] Transform has {transform.childCount} children");
-
-        // List all children
-        foreach (Transform child in transform)
-        {
-            Debug.Log($"[BvhSkeletonVisualizer.CreateVisuals]   Child: '{child.name}' with {child.childCount} children");
-            foreach (Transform grandchild in child)
-            {
-                Debug.Log($"[BvhSkeletonVisualizer.CreateVisuals]     → {grandchild.name}");
-            }
-        }
+        // // List all children
+        // foreach (Transform child in transform)
+        // {
+        //     Debug.Log($"[BvhSkeletonVisualizer.CreateVisuals]   Child: '{child.name}' with {child.childCount} children");
+        //     foreach (Transform grandchild in child)
+        //     {
+        //         Debug.Log($"[BvhSkeletonVisualizer.CreateVisuals]     → {grandchild.name}");
+        //     }
+        // }
 
         // Clean up any existing visuals first
         if (renderRoot != null)
@@ -99,7 +96,7 @@ public class BvhSkeletonVisualizer : MonoBehaviour
 
     void CreateVisualsRecursive(Transform joint)
     {
-        Debug.Log($"    Creating sphere for joint '{joint.name}' at {joint.position}");
+        // Debug.Log($"    Creating sphere for joint '{joint.name}' at {joint.position}");
 
         // Create sphere for this joint
         GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -108,7 +105,7 @@ public class BvhSkeletonVisualizer : MonoBehaviour
         sphere.transform.position = joint.position;
         sphere.transform.localScale = Vector3.one * jointRadius * 2f;
 
-        Debug.Log($"      Sphere created at {sphere.transform.position} with scale {sphere.transform.localScale}");
+        // Debug.Log($"      Sphere created at {sphere.transform.position} with scale {sphere.transform.localScale}");
 
         // Remove collider
         if (sphere.TryGetComponent<Collider>(out var collider))

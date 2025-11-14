@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9ed194637353845b498156f09e93783c, type: 3}
   m_Name: BvhPlayableAsset
   m_EditorClassIdentifier: 
-  datasetConfig: {fileID: 11400000, guid: 83a03452276874c30915465c3753372f, type: 2}
+  datasetConfig: {fileID: 0}
   targetGameObjectName: BVH_Character
   overrideTransformSettings: 0
   positionOffset: {x: 0, y: 0, z: 0}
@@ -20,7 +20,7 @@ MonoBehaviour:
   scale: {x: 1, y: 1, z: 1}
   applyRootMotion: 1
   overrideFrameRate: 0
-  frameOffset: 10
+  frameOffset: 0
 --- !u!114 &-130837511230937270
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -148,7 +148,6 @@ MonoBehaviour:
   m_Name: PointCloudPlayableAsset
   m_EditorClassIdentifier: 
   frameRate: 30
-  datasetConfig: {fileID: 11400000, guid: 83a03452276874c30915465c3753372f, type: 2}
 --- !u!114 &5524513601862142093
 MonoBehaviour:
   m_ObjectHideFlags: 1

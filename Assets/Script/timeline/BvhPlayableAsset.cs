@@ -8,9 +8,6 @@ using UnityEngine.Timeline;
 [System.Serializable]
 public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
 {
-    [Header("Dataset Configuration")]
-    [Tooltip("Reference to dataset configuration (contains BVH file path and settings)")]
-    public DatasetConfig datasetConfig;
 
     [Header("Target")]
     [Tooltip("Name of the GameObject to find in scene (leave empty to search for 'BVH_Character')")]
@@ -31,17 +28,10 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     private BvhData cachedBvhData;
 
     /// <summary>
-    /// Get the actual BVH file path from DatasetConfig
-    /// If not assigned, try to get it from MultiCameraPointCloudManager
+    /// Get the actual BVH file path from MultiCameraPointCloudManager
     /// </summary>
     private string GetBvhFilePath()
     {
-        if (datasetConfig != null)
-        {
-            return datasetConfig.GetBvhFilePath();
-        }
-
-        // Try to get DatasetConfig from MultiCameraPointCloudManager
         var pointCloudManager = GameObject.FindFirstObjectByType<MultiCameraPointCloudManager>();
         if (pointCloudManager != null)
         {
@@ -52,23 +42,30 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
             }
         }
 
-        Debug.LogWarning("BvhPlayableAsset: No DatasetConfig assigned and none found in scene!");
+        Debug.LogWarning("BvhPlayableAsset: No DatasetConfig found in MultiCameraPointCloudManager!");
         return "";
     }
 
     /// <summary>
-    /// Get transform settings, preferring DatasetConfig if available
+    /// Get transform settings from DatasetConfig (via MultiCameraPointCloudManager) or override values
     /// </summary>
     private void GetTransformSettings(out Vector3 position, out Vector3 rotation, out Vector3 scaleVal, out bool applyRoot, out float frameRate, out int frameOff)
     {
-        if (datasetConfig != null && !overrideTransformSettings)
+        DatasetConfig config = null;
+        var pointCloudManager = GameObject.FindFirstObjectByType<MultiCameraPointCloudManager>();
+        if (pointCloudManager != null)
         {
-            position = datasetConfig.BvhPositionOffset;
-            rotation = datasetConfig.BvhRotationOffset;
-            scaleVal = datasetConfig.BvhScale;
-            applyRoot = datasetConfig.BvhApplyRootMotion;
-            frameRate = datasetConfig.BvhOverrideFrameRate;
-            frameOff = datasetConfig.BvhFrameOffset;
+            config = pointCloudManager.GetDatasetConfig();
+        }
+
+        if (config != null && !overrideTransformSettings)
+        {
+            position = config.BvhPositionOffset;
+            rotation = config.BvhRotationOffset;
+            scaleVal = config.BvhScale;
+            applyRoot = config.BvhApplyRootMotion;
+            frameRate = config.BvhOverrideFrameRate;
+            frameOff = config.BvhFrameOffset;
         }
         else
         {
@@ -134,10 +131,15 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
         behaviour.applyRootMotion = applyRoot;
         behaviour.frameOffset = frameOff;
 
-        // Set drift correction data from DatasetConfig
-        if (datasetConfig != null && datasetConfig.BvhDriftCorrectionData != null)
+        // Set drift correction data from DatasetConfig (via MultiCameraPointCloudManager)
+        var pointCloudMgr = GameObject.FindFirstObjectByType<MultiCameraPointCloudManager>();
+        if (pointCloudMgr != null)
         {
-            behaviour.driftCorrectionData = datasetConfig.BvhDriftCorrectionData;
+            var config = pointCloudMgr.GetDatasetConfig();
+            if (config != null && config.BvhDriftCorrectionData != null)
+            {
+                behaviour.driftCorrectionData = config.BvhDriftCorrectionData;
+            }
         }
 
         if (behaviour.bvhData == null)

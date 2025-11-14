@@ -28,6 +28,11 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     {
         if (bvhData != null && targetTransform != null)
         {
+            // Save the initial position of BVH_Character as baseline for drift correction
+            // This allows us to restore or reference the original position during correction
+            positionOffset = targetTransform.localPosition;
+            Debug.Log($"[BvhPlayableBehaviour] OnGraphStart: Saved BVH_Character initial position as positionOffset: {positionOffset}");
+
             // Cache joint hierarchy
             var jointList = bvhData.GetAllJoints();
             joints = jointList.ToArray();
@@ -73,6 +78,7 @@ public class BvhPlayableBehaviour : PlayableBehaviour
 
     /// <summary>
     /// Apply BVH drift correction based on keyframe interpolation
+    /// Uses positionOffset (saved initial BVH_Character position) as the baseline reference
     /// </summary>
     private void ApplyDriftCorrection(float timelineTime)
     {
@@ -92,10 +98,19 @@ public class BvhPlayableBehaviour : PlayableBehaviour
 
         // Calculate the correction delta (difference between target and current relative position)
         Vector3 currentRelativePosition = rootJointTransform.localPosition;
-        Vector3 correctionDelta = targetAnchorPositionRelative - currentRelativePosition;
 
-        // Apply correction to the parent transform
-        targetTransform.localPosition += correctionDelta;
+        // DEBUG LOG
+        Debug.Log($"[DriftCorrection] Time: {timelineTime:F2}s, " +
+                  $"Target: {targetAnchorPositionRelative}, " +
+                  $"Current: {currentRelativePosition}, " +
+                  $"BaselinePos (positionOffset): {positionOffset}, " +
+                  $"ParentPos Before: {targetTransform.localPosition}");
+
+        // Apply correction: baseline position (positionOffset) + anchor correction
+        // This preserves the initial BVH_Character position while applying drift correction
+        targetTransform.localPosition = positionOffset + targetAnchorPositionRelative;
+
+        Debug.Log($"[DriftCorrection] ParentPos After: {targetTransform.localPosition}");
     }
 
     /// <summary>
@@ -171,13 +186,13 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         {
             if (applyRootMotion && hasPosition)
             {
-                // Apply position with offset and scale
-                position = Vector3.Scale(position + positionOffset, scale);
+                // Apply position with scale
+                position = Vector3.Scale(position, scale);
             }
             else if (!hasPosition)
             {
                 // Use offset position only
-                position = joint.Offset + positionOffset;
+                position = joint.Offset;
             }
 
             // Apply rotation offset

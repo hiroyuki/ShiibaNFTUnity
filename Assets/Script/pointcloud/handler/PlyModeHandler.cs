@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Playables;
 
 /// <summary>
 /// Handler for PLY mode - loads pre-exported PLY files
@@ -63,7 +64,7 @@ public class PlyModeHandler : BaseProcessingModeHandler
     public override void Update()
     {
         ProcessFirstFramesIfNeeded();
-        HandlePlyModeNavigation();
+        HandleArrowKeyNavigation();
     }
 
     public override void ProcessFirstFramesIfNeeded()
@@ -74,7 +75,11 @@ public class PlyModeHandler : BaseProcessingModeHandler
         }
     }
 
-    private void HandlePlyModeNavigation()
+    /// <summary>
+    /// Handle arrow key navigation for frame seeking
+    /// Updates both PLY point cloud and BVH skeleton via timeline synchronization
+    /// </summary>
+    private void HandleArrowKeyNavigation()
     {
         if (Keyboard.current == null) return;
 
@@ -89,9 +94,12 @@ public class PlyModeHandler : BaseProcessingModeHandler
         }
     }
 
+    /// <summary>
+    /// Seek to next frame via arrow key
+    /// </summary>
     private void LoadNextPlyFrame()
     {
-        int currentFrame = (int)(plyFrameController.CurrentTimestamp / (1_000_000_000UL / (ulong)plyFrameController.GetFps()));
+        int currentFrame = GetCurrentFrameIndex();
         int nextFrame = currentFrame + 1;
 
         if (nextFrame >= plyFrameController.GetTotalFrameCount())
@@ -100,12 +108,15 @@ public class PlyModeHandler : BaseProcessingModeHandler
             return;
         }
 
-        LoadPlyFrame(nextFrame);
+        SeekToFrameWithTimelineSync(nextFrame);
     }
 
+    /// <summary>
+    /// Seek to previous frame via arrow key
+    /// </summary>
     private void LoadPreviousPlyFrame()
     {
-        int currentFrame = (int)(plyFrameController.CurrentTimestamp / (1_000_000_000UL / (ulong)plyFrameController.GetFps()));
+        int currentFrame = GetCurrentFrameIndex();
         int previousFrame = currentFrame - 1;
 
         if (previousFrame < 0)
@@ -114,25 +125,64 @@ public class PlyModeHandler : BaseProcessingModeHandler
             return;
         }
 
-        LoadPlyFrame(previousFrame);
+        SeekToFrameWithTimelineSync(previousFrame);
     }
 
-    private void LoadPlyFrame(int frameIndex)
+    /// <summary>
+    /// Get current frame index from controller timestamp
+    /// </summary>
+    private int GetCurrentFrameIndex()
     {
-        if (plyFrameController.TryGetPlyFilePath(frameIndex, out string filePath))
+        return (int)(plyFrameController.CurrentTimestamp / (1_000_000_000UL / (ulong)plyFrameController.GetFps()));
+    }
+
+    /// <summary>
+    /// Seek to frame and synchronize timeline for BVH updates
+    /// </summary>
+    private void SeekToFrameWithTimelineSync(int frameIndex)
+    {
+        if (!plyFrameController.TryGetPlyFilePath(frameIndex, out string filePath))
         {
-            if (multiPointCloudView != null)
-            {
-                multiPointCloudView.LoadFromPLY(filePath);
-            }
-            plyFrameController.UpdateCurrentTimestamp(plyFrameController.GetTimestampForFrame(frameIndex));
-            plyFrameController.NotifyFirstFrameProcessed();
-            Debug.Log($"Loaded PLY frame {frameIndex}: {filePath}");
+            Debug.LogWarning($"PLY file not found for frame {frameIndex}");
+            return;
+        }
+
+        // Update state tracking
+        plyFrameController.UpdateCurrentTimestamp(plyFrameController.GetTimestampForFrame(frameIndex));
+        plyFrameController.NotifyFirstFrameProcessed();
+
+        // Always load PLY file directly first (this ensures the point cloud is displayed)
+        if (multiPointCloudView != null)
+        {
+            multiPointCloudView.LoadFromPLY(filePath);
+            Debug.Log($"[PLY Load] Loaded PLY frame {frameIndex}: {filePath}");
+        }
+
+        // Try to find timeline (lazy lookup - only when needed)
+        PlayableDirector timelinePlayableDirector = Object.FindFirstObjectByType<PlayableDirector>();
+
+        // If timeline is available, sync it so BVH updates properly
+        if (timelinePlayableDirector != null)
+        {
+            int fps = plyFrameController.GetFps();
+            double timelineTimeInSeconds = (double)frameIndex / fps;
+            timelinePlayableDirector.time = timelineTimeInSeconds;
+            timelinePlayableDirector.Evaluate();
+            Debug.Log($"[Timeline Sync] Updated timeline to frame {frameIndex} (time: {timelineTimeInSeconds:F3}s)");
         }
         else
         {
-            Debug.LogWarning($"PLY file not found for frame {frameIndex}");
+            Debug.Log($"[No Timeline] Timeline not available yet, PLY loaded directly without timeline sync");
         }
+    }
+
+    /// <summary>
+    /// Load PLY frame during initialization
+    /// Delegates to SeekToFrameWithTimelineSync for actual frame loading
+    /// </summary>
+    private void LoadPlyFrame(int frameIndex)
+    {
+        SeekToFrameWithTimelineSync(frameIndex);
     }
 
     public override void SeekToFrame(int frameIndex)

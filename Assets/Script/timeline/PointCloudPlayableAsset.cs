@@ -6,8 +6,6 @@ using UnityEngine.Timeline;
 public class PointCloudPlayableAsset : PlayableAsset, ITimelineClipAsset
 {
     [SerializeField] private float frameRate = 30f;
-    [SerializeField] private DatasetConfig datasetConfig;
-    [Tooltip("DatasetConfig to use for this point cloud timeline. If set, overrides automatic loading.")]
 
     public ClipCaps clipCaps => ClipCaps.None;
 
@@ -28,27 +26,19 @@ public class PointCloudPlayableAsset : PlayableAsset, ITimelineClipAsset
             return playable;
         }
 
-        // Use DatasetConfig from inspector field, or try to find one in the scene
-        DatasetConfig configToUse = datasetConfig;
+        // Get DatasetConfig from MultiCameraPointCloudManager
+        // Note: At this point, the manager's Start() may not have run yet, so currentDatasetConfig could be null
+        DatasetConfig configToUse = behaviour.pointCloudManager.GetDatasetConfig();
 
+        // If not found in manager's runtime config, the manager should load it from its serialized field in Start()
+        // The manager will handle finding the DatasetConfig via its own fallback logic
         if (configToUse == null)
         {
-            // Try finding a DatasetConfig in the scene as fallback
-            configToUse = Object.FindFirstObjectByType<DatasetConfig>();
-            if (configToUse != null)
-            {
-                Debug.Log("PointCloudPlayableAsset: Using DatasetConfig found in scene");
-            }
-        }
-
-        if (configToUse != null)
-        {
-            behaviour.pointCloudManager.SetDatasetConfig(configToUse);
-            Debug.Log($"PointCloudPlayableAsset: Set DatasetConfig: {configToUse.DatasetName}");
+            Debug.Log("PointCloudPlayableAsset: DatasetConfig not yet initialized. Manager will load it in Start().");
         }
         else
         {
-            Debug.LogError("PointCloudPlayableAsset: DatasetConfig not assigned in inspector and none found in scene!");
+            Debug.Log($"PointCloudPlayableAsset: Using DatasetConfig from MultiCameraPointCloudManager: {configToUse.DatasetName}");
         }
 
         return playable;

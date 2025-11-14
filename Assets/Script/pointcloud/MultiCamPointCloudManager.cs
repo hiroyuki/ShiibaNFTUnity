@@ -40,6 +40,13 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         SetupStatusUI.ShowStatus("Starting Multi-Camera Point Cloud Manager...");
 
         // Ensure DatasetConfig is set
+        // First try runtime config, then fall back to serialized field
+        if (GetDatasetConfig() == null && datasetConfig != null)
+        {
+            SetDatasetConfig(datasetConfig);
+            Debug.Log("DatasetConfig: Using serialized field from Inspector");
+        }
+
         if (GetDatasetConfig() == null)
         {
             Debug.LogError("DatasetConfig not set! Cannot initialize.");
