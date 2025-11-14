@@ -12,7 +12,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9ed194637353845b498156f09e93783c, type: 3}
   m_Name: BvhPlayableAsset
   m_EditorClassIdentifier: 
-  datasetConfig: {fileID: 0}
   targetGameObjectName: BVH_Character
   overrideTransformSettings: 0
   positionOffset: {x: 0, y: 0, z: 0}
@@ -252,7 +251,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9ed194637353845b498156f09e93783c, type: 3}
   m_Name: BvhPlayableAsset
   m_EditorClassIdentifier: 
-  datasetConfig: {fileID: 0}
   targetGameObjectName: BVH_Character
   overrideTransformSettings: 0
   positionOffset: {x: 0, y: 0, z: 0}

@@ -16,9 +16,6 @@ public class BvhKeyframe
     [Tooltip("このキーフレームでのBVHルートの相対位置（親GameObjectからの相対座標）")]
     public Vector3 anchorPositionRelative;
 
-    [Tooltip("キーフレーム識別用ID（自動生成、編集不可）")]
-    [SerializeField] private int keyframeId;
-
     [Tooltip("メモ（オプション）")]
     public string note = "";
 
@@ -27,7 +24,6 @@ public class BvhKeyframe
         timelineTime = 0f;
         bvhFrameNumber = 0;
         anchorPositionRelative = Vector3.zero;
-        keyframeId = System.Guid.NewGuid().GetHashCode();
     }
 
     public BvhKeyframe(float time, int frame, Vector3 positionRelative)
@@ -35,10 +31,7 @@ public class BvhKeyframe
         timelineTime = time;
         bvhFrameNumber = frame;
         anchorPositionRelative = positionRelative;
-        keyframeId = System.Guid.NewGuid().GetHashCode();
     }
-
-    public int GetKeyframeId() => keyframeId;
 
     /// <summary>
     /// キーフレームの妥当性をチェック

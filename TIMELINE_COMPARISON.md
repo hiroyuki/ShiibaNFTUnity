@@ -303,6 +303,68 @@ targetFrame = Mathf.Clamp(targetFrame, 0, bvhData.FrameCount - 1);
 
 ---
 
+## Keyframe Recording Pipeline (Shift+A / Shift+U)
+
+### Shift+A: Add Keyframe Path
+```
+Keyboard Input (Shift+A)
+    |
+    +-- TimelineController.HandleInput()
+        |
+        +-- AddDriftCorrectionKeyframe()
+            |
+            +-- Get current timeline time: playable.GetTime()
+            +-- Get current BVH frame: BvhPlayableBehaviour.GetCurrentFrame()
+            +-- Get BVH position: BvhPlayableAsset.GetBvhCharacterPosition()
+            |
+            +-- BvhDriftCorrectionData.AddKeyframe(time, frame, position)
+                |
+                +-- Create new BvhKeyframe
+                +-- Add to keyframes list
+                +-- EditorUtility.SetDirty() - Mark asset dirty for save
+                |
+            +-- Debug log confirmation
+```
+
+### Shift+U: Update Keyframe Path
+```
+Keyboard Input (Shift+U)
+    |
+    +-- TimelineController.HandleInput()
+        |
+        +-- UpdateCurrentDriftCorrectionKeyframe()
+            |
+            +-- Get last edited keyframe: BvhDriftCorrectionData.GetLastEditedKeyframe()
+            +-- Get current BVH position: BvhPlayableAsset.GetBvhCharacterPosition()
+            +-- Get current BVH frame: BvhPlayableBehaviour.GetCurrentFrame()
+            |
+            +-- BvhDriftCorrectionData.UpdateKeyframe(id, time, frame, position)
+                |
+                +-- Find keyframe by ID
+                +-- Update position/frame values
+                +-- EditorUtility.SetDirty() - Mark asset dirty for save
+                |
+            +-- Debug log confirmation
+```
+
+### Real-time Position Reflection
+```
+After Shift+A or Shift+U:
+    |
+    +-- BvhPlayableBehaviour.PrepareFrame() (called every frame)
+        |
+        +-- ApplyDriftCorrection(timeline.time)
+            |
+            +-- BvhDriftCorrectionData.GetAnchorPositionAtTime()
+                |
+                +-- Interpolate between nearby keyframes
+                +-- Apply corrected position to BVH_Character
+                |
+            +-- Result: Real-time visual update in Viewport
+```
+
+---
+
 ## Call Chain Summary
 
 ### Timeline Seeking Path
@@ -339,5 +401,25 @@ Keyboard Input (Left/Right Arrow)
                 +-- Point cloud mesh updated
 
 [Timeline and BVH NOT affected]
+```
+
+### Keyframe Addition/Update Path (Shift+A / Shift+U)
+```
+Keyboard Input (Shift+A or Shift+U)
+    |
+    +-- TimelineController.HandleInput()
+        |
+        +-- AddDriftCorrectionKeyframe() or UpdateCurrentDriftCorrectionKeyframe()
+            |
+            +-- BvhPlayableAsset helpers (GetCurrentFrame, GetBvhCharacterPosition)
+            |
+            +-- BvhDriftCorrectionData.AddKeyframe() or UpdateKeyframe()
+                |
+                +-- Update internal keyframe list
+                +-- EditorUtility.SetDirty()
+                |
+            +-- Next PrepareFrame(): ApplyDriftCorrection() applies new keyframe
+                |
+                +-- Real-time visual feedback in Viewport
 ```
 

@@ -18,6 +18,9 @@ public class BvhDriftCorrectionData : ScriptableObject
     [Header("Active")]
     [SerializeField] private bool isEnabled = true;
 
+    // 最後に追加・更新されたキーフレームを追跡（キーフレーム更新機能用）
+    private BvhKeyframe lastEditedKeyframe = null;
+
     // --------- Public API ---------
 
     /// <summary>
@@ -75,6 +78,7 @@ public class BvhDriftCorrectionData : ScriptableObject
     {
         var newKeyframe = new BvhKeyframe(time, frameNumber, positionRelative);
         keyframes.Add(newKeyframe);
+        lastEditedKeyframe = newKeyframe;  // 最後編集フレームを記録
         SortKeyframes();
 
         #if UNITY_EDITOR
@@ -85,34 +89,46 @@ public class BvhDriftCorrectionData : ScriptableObject
     }
 
     /// <summary>
-    /// キーフレーム削除（IDベース）
+    /// キーフレーム削除
     /// </summary>
-    public bool RemoveKeyframeById(int keyframeId)
+    public bool RemoveKeyframe(BvhKeyframe keyframe)
     {
-        var kf = keyframes.FirstOrDefault(k => k.GetKeyframeId() == keyframeId);
+        // 時刻とフレーム番号でキーフレームを特定（参照ではなく値で検索）
+        var kf = keyframes.FirstOrDefault(k =>
+            Mathf.Approximately(k.timelineTime, keyframe.timelineTime) &&
+            k.bvhFrameNumber == keyframe.bvhFrameNumber);
+
         if (kf != null)
         {
             keyframes.Remove(kf);
             #if UNITY_EDITOR
             UnityEditor.EditorUtility.SetDirty(this);
             #endif
-            Debug.Log($"Keyframe removed: id={keyframeId}");
+            Debug.Log($"Keyframe removed: time={keyframe.timelineTime}s");
             return true;
         }
         return false;
     }
 
     /// <summary>
-    /// キーフレーム更新（IDで検索して更新）
+    /// キーフレーム更新
     /// </summary>
-    public bool UpdateKeyframe(int keyframeId, float time, int frameNumber, Vector3 positionRelative)
+    public bool UpdateKeyframe(BvhKeyframe keyframe, float time, int frameNumber, Vector3 positionRelative)
     {
-        var kf = keyframes.FirstOrDefault(k => k.GetKeyframeId() == keyframeId);
+        if (keyframe == null)
+            return false;
+
+        // 時刻とフレーム番号でキーフレームを特定（参照ではなく値で検索）
+        var kf = keyframes.FirstOrDefault(k =>
+            Mathf.Approximately(k.timelineTime, keyframe.timelineTime) &&
+            k.bvhFrameNumber == keyframe.bvhFrameNumber);
+
         if (kf != null)
         {
             kf.timelineTime = time;
             kf.bvhFrameNumber = frameNumber;
             kf.anchorPositionRelative = positionRelative;
+            lastEditedKeyframe = kf;  // 最後編集フレームを記録
             SortKeyframes();
 
             #if UNITY_EDITOR
@@ -135,6 +151,12 @@ public class BvhDriftCorrectionData : ScriptableObject
     /// キーフレーム数
     /// </summary>
     public int GetKeyframeCount() => keyframes.Count;
+
+    /// <summary>
+    /// 最後に編集されたキーフレームを取得
+    /// Shift+Uでの更新用
+    /// </summary>
+    public BvhKeyframe GetLastEditedKeyframe() => lastEditedKeyframe;
 
     /// <summary>
     /// ドリフト補正の有効状態

@@ -12,6 +12,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0f20ff7ae9b854801be37a9e6ea26d77, type: 3}
   m_Name: TotoriBVHAdjustData
   m_EditorClassIdentifier: 
-  keyframes: []
+  keyframes:
+  - timelineTime: 5.633333
+    bvhFrameNumber: 169
+    anchorPositionRelative: {x: 0, y: 0, z: 0}
+    note: 
+  - timelineTime: 13.4
+    bvhFrameNumber: 402
+    anchorPositionRelative: {x: 0, y: 0, z: 0}
+    note: 
   interpolationType: 0
   isEnabled: 1

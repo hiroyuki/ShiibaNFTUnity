@@ -24,6 +24,11 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     private Transform[] jointTransforms;
     private BvhJoint[] joints;
 
+    /// <summary>
+    /// 現在のBVHフレーム番号を取得（キーフレーム記録用）
+    /// </summary>
+    public int GetCurrentFrame() => currentFrame;
+
     public override void OnGraphStart(Playable playable)
     {
         if (bvhData != null && targetTransform != null)

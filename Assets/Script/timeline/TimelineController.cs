@@ -12,7 +12,11 @@ public class TimelineController : MonoBehaviour
     [Header("Input Settings")]
     [SerializeField] private Key playPauseKey = Key.Space;
     [SerializeField] private Key stopKey = Key.Escape;
-    
+    [SerializeField] private Key addKeyframeKey = Key.A;        // Shift+A
+
+    [Header("BVH Drift Correction")]
+    private BvhPlayableAsset bvhPlayableAsset;
+
     [Header("Debug")]
     [SerializeField] private bool showDebugLogs = true;
     
@@ -29,13 +33,58 @@ public class TimelineController : MonoBehaviour
                 Debug.Log($"TimelineController: Auto-found Timeline: {timeline.gameObject.name}");
             }
         }
-        
+
         if (timeline == null)
         {
             Debug.LogWarning("TimelineController: No PlayableDirector found!");
         }
+
+        // Auto-find BvhPlayableAsset from Timeline clips
+        if (bvhPlayableAsset == null && timeline != null)
+        {
+            bvhPlayableAsset = FindBvhPlayableAssetInTimeline();
+            if (bvhPlayableAsset != null && showDebugLogs)
+            {
+                Debug.Log($"TimelineController: Auto-found BvhPlayableAsset in Timeline");
+            }
+            else if (showDebugLogs)
+            {
+                Debug.LogWarning("TimelineController: No BvhPlayableAsset found in Timeline clips. Keyframe functions will not work.");
+            }
+        }
     }
-    
+
+    /// <summary>
+    /// Search for BvhPlayableAsset in Timeline clips
+    /// </summary>
+    private BvhPlayableAsset FindBvhPlayableAssetInTimeline()
+    {
+        if (timeline == null || timeline.playableAsset == null)
+        {
+            return null;
+        }
+
+        TimelineAsset timelineAsset = timeline.playableAsset as TimelineAsset;
+        if (timelineAsset == null)
+        {
+            return null;
+        }
+
+        // Search through all tracks and clips
+        foreach (var track in timelineAsset.GetOutputTracks())
+        {
+            foreach (var clip in track.GetClips())
+            {
+                if (clip.asset is BvhPlayableAsset bvhAsset)
+                {
+                    return bvhAsset;
+                }
+            }
+        }
+
+        return null;
+    }
+
     void Update()
     {
         if (timeline == null) return;
@@ -47,17 +96,24 @@ public class TimelineController : MonoBehaviour
     void HandleInput()
     {
         if (Keyboard.current == null) return;
-        
+
         // Space key: Play/Pause toggle
         if (Keyboard.current[playPauseKey].wasPressedThisFrame)
         {
             TogglePlayPause();
         }
-        
+
         // Escape key: Stop
         if (Keyboard.current[stopKey].wasPressedThisFrame)
         {
             StopTimeline();
+        }
+
+        // Shift+A: Add drift correction keyframe
+        if (Keyboard.current[addKeyframeKey].wasPressedThisFrame &&
+            (Keyboard.current.leftShiftKey.isPressed || Keyboard.current.rightShiftKey.isPressed))
+        {
+            AddDriftCorrectionKeyframe();
         }
     }
     
@@ -104,14 +160,65 @@ public class TimelineController : MonoBehaviour
     public void StopTimeline()
     {
         if (timeline == null) return;
-        
+
         timeline.Stop();
         if (showDebugLogs)
         {
             Debug.Log("Timeline: STOP");
         }
     }
-    
+
+    /// <summary>
+    /// Shift+Aで現在時刻にドリフト補正キーフレームを追加
+    /// </summary>
+    private void AddDriftCorrectionKeyframe()
+    {
+        if (timeline == null || bvhPlayableAsset == null)
+        {
+            Debug.LogWarning("TimelineController: Cannot add keyframe - timeline or BVH asset not assigned");
+            return;
+        }
+
+        // ドリフト補正データを取得
+        BvhDriftCorrectionData driftCorrectionData = bvhPlayableAsset.GetDriftCorrectionData();
+        if (driftCorrectionData == null)
+        {
+            Debug.LogWarning("TimelineController: No drift correction data assigned to BVH asset");
+            return;
+        }
+
+        // BvhPlayableBehaviourを取得
+        BvhPlayableBehaviour bvhBehaviour = bvhPlayableAsset.GetBvhPlayableBehaviour();
+        if (bvhBehaviour == null)
+        {
+            Debug.LogWarning("TimelineController: Cannot find BvhPlayableBehaviour");
+            return;
+        }
+
+        // 現在の情報を取得
+        float currentTime = (float)timeline.time;
+        int currentFrame = bvhBehaviour.GetCurrentFrame();
+
+        // currentFrameが未初期化（-1）の場合は、時刻から計算
+        if (currentFrame == -1)
+        {
+            BvhData bvhData = bvhPlayableAsset.GetBvhData();
+            float bvhFrameRate = bvhData != null ? bvhData.FrameRate : 30f;
+            currentFrame = Mathf.FloorToInt((float)(currentTime * bvhFrameRate));
+        }
+
+        // 現在の補正値を取得（補間されたキーフレーム値）
+        Vector3 currentCorrectionAtTime = driftCorrectionData.GetAnchorPositionAtTime(currentTime);
+
+        // キーフレームを追加（補正値を保存）
+        driftCorrectionData.AddKeyframe(currentTime, currentFrame, currentCorrectionAtTime);
+
+        if (showDebugLogs)
+        {
+            Debug.Log($"TimelineController: Keyframe added at time={currentTime}s, frame={currentFrame}, pos={currentCorrectionAtTime}");
+        }
+    }
+
     void UpdatePlaybackStatus()
     {
         bool isPlayingNow = (timeline.state == PlayState.Playing);

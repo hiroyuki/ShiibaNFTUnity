@@ -2,6 +2,24 @@
 
 This documentation provides a complete analysis of how timeline navigation and frame seeking work in ShiibaNFTUnity, covering arrow key input handling, PlayableDirector time updates, and how PointCloudPlayableBehaviour and BvhPlayableBehaviour respond to timeline seeking.
 
+## Quick Answer: How to Use Shift+A and Shift+U for Keyframe Recording
+
+**Requirements:**
+1. Timeline must be playing (at least once) for BvhPlayableAsset to be instantiated
+2. BVH_Character must be present in the scene
+3. BvhDriftCorrectionData must be assigned in DatasetConfig
+
+**Workflow:**
+1. **Play** the timeline (Space bar) - This instantiates the BvhPlayableAsset from Timeline clips
+2. **Pause** or **Scrub** to desired position (Escape to stop, drag timeline)
+3. **Press Shift+A** to add a keyframe at current timeline position with current BVH position
+4. **Optional:** Press Shift+U to update the last added keyframe with current BVH position
+5. **Changes apply immediately** - See real-time updates in Viewport
+
+**Technical Note:** BvhPlayableAsset auto-detection searches Timeline clips (not scene objects) in `FindBvhPlayableAssetInTimeline()` method. Timeline must be instantiated before keyframe recording can work.
+
+---
+
 ## Quick Answer: Where is Left Arrow Key Handled?
 
 **Location:** NOT in TimelineController.cs
@@ -10,13 +28,13 @@ This documentation provides a complete analysis of how timeline navigation and f
 - `Assets/Script/pointcloud/handler/PlyModeHandler.cs` (Lines 77-90)
   - Fully implements left arrow support
   - `leftArrowKey.wasPressedThisFrame` -> `LoadPreviousPlyFrame()`
-  
+
 - `Assets/Script/pointcloud/handler/BinaryModeHandler.cs` (Lines 256-269)
   - Does NOT implement left arrow
   - Logs warning: "Backward navigation not supported. Use timeline controls."
 
-**TimelineController.cs (Lines 78-107):**
-- Handles: Space (Play/Pause), Escape (Stop), 0 (Reset), Shift+A (Add Keyframe)
+**TimelineController.cs (Lines 98-125):**
+- Handles: Space (Play/Pause), Escape (Stop), Shift+A (Add Keyframe), Shift+U (Update Keyframe)
 - Does NOT handle arrow keys
 - Arrow keys are handled at the processing mode handler level
 
@@ -111,8 +129,8 @@ This documentation provides a complete analysis of how timeline navigation and f
 | **Right Arrow** | BinaryModeHandler | Navigate next synchronized frame |
 | **Space** | TimelineController | Play/Pause |
 | **Escape** | TimelineController | Stop |
-| **0 (Digit0)** | TimelineController | Reset to beginning |
-| **Shift+A** | TimelineController | Add drift correction keyframe |
+| **Shift+A** | TimelineController | Add drift correction keyframe at current time |
+| **Shift+U** | TimelineController | Update last keyframe with current BVH position |
 
 ---
 
@@ -155,12 +173,19 @@ BvhPlayableBehaviour.PrepareFrame()
 
 | Component | File | Key Lines | Purpose |
 |-----------|------|-----------|---------|
-| Timeline Controls | TimelineController.cs | 78-107 | Space/Escape/0/Shift+A handling |
-| Time Setting | TimelineController.cs | 160-171 | ResetTimeline() with Evaluate() |
+| Timeline Controls | TimelineController.cs | 98-125 | Space/Escape/Shift+A/Shift+U handling |
+| BvhPlayableAsset Lookup | TimelineController.cs | 58-87 | FindBvhPlayableAssetInTimeline() - searches Timeline clips |
+| Add Keyframe | TimelineController.cs | 148-187 | AddDriftCorrectionKeyframe() implementation |
+| Update Keyframe | TimelineController.cs | 192-244 | UpdateCurrentDriftCorrectionKeyframe() implementation |
 | Point Cloud Sync | PointCloudPlayableBehaviour.cs | 35-47 | PrepareFrame() method |
 | BVH Sync | BvhPlayableBehaviour.cs | 51-77 | PrepareFrame() method |
-| BVH Init | BvhPlayableBehaviour.cs | 27-43 | OnGraphStart() skeleton creation |
+| BVH Frame Getter | BvhPlayableBehaviour.cs | 27-30 | GetCurrentFrame() for keyframe recording |
+| BVH Init | BvhPlayableBehaviour.cs | 32-49 | OnGraphStart() skeleton creation |
 | Drift Correction | BvhPlayableBehaviour.cs | 83-114 | ApplyDriftCorrection() method |
+| BVH Asset Helpers | BvhPlayableAsset.cs | 226-274 | GetDriftCorrectionData(), GetBvhPlayableBehaviour(), GetBvhCharacterPosition() |
+| Keyframe Storage | BvhDriftCorrectionData.cs | 77-89 | AddKeyframe() with lastEditedKeyframe tracking |
+| Keyframe Update | BvhDriftCorrectionData.cs | 112-129 | UpdateKeyframe() with lastEditedKeyframe tracking |
+| Keyframe Getter | BvhDriftCorrectionData.cs | 144-148 | GetLastEditedKeyframe() for Shift+U |
 | PLY Arrow Keys | PlyModeHandler.cs | 77-90 | Both left and right arrows |
 | Binary Arrow Keys | BinaryModeHandler.cs | 256-269 | Right arrow only |
 
@@ -286,6 +311,71 @@ All settings can be configured in the Inspector on the Playable clips:
 
 ---
 
+## Keyframe Recording Workflow (Shift+A / Shift+U)
+
+### Step 1: Add a Keyframe (Shift+A)
+
+Press **Shift+A** at the desired timeline position to capture the current BVH position:
+
+```
+Timeline Position: 2.5 seconds
+    |
+    +--(Shift+A pressed)
+    |
+    +--> Keyframe created:
+         - time: 2.5s
+         - bvhFrameNumber: (current frame)
+         - anchorPositionRelative: (current BVH_Character.localPosition)
+```
+
+**Result:** New keyframe is added to BvhDriftCorrectionData and visible in Inspector
+
+### Step 2: Fine-tune Position in Inspector
+
+After adding a keyframe, edit its `anchorPositionRelative` value in the Inspector:
+
+1. Select the BvhDriftCorrectionData asset
+2. Expand the keyframes list
+3. Modify the `anchorPositionRelative` (X, Y, Z) values
+4. Changes are **automatically applied** the next frame via PrepareFrame()
+
+### Step 3: Update Keyframe (Shift+U)
+
+After editing a keyframe's position in Inspector, press **Shift+U** to update it with the current BVH position:
+
+```
+Current Keyframe: 2.5s (modified position)
+BVH_Character.localPosition: (0, 1, 0.5)
+    |
+    +--(Shift+U pressed)
+    |
+    +--> Keyframe updated:
+         - anchorPositionRelative: (0, 1, 0.5)
+         - All other fields: preserved
+```
+
+**Result:** Last edited keyframe is updated. Real-time visual feedback in Viewport.
+
+### Complete Workflow Example
+
+```
+1. Play timeline to desired position (e.g., 2.5s)
+2. Press Shift+A to capture keyframe
+3. Open BvhDriftCorrectionData in Inspector
+4. Modify keyframe[0].anchorPositionRelative
+5. See changes in real-time in Viewport
+6. Press Shift+U to confirm/update if needed
+7. Save scene/asset to persist changes
+```
+
+**Key Points:**
+- Inspector edits apply **immediately** (no manual "apply" needed)
+- Shift+U is optional - mainly for updating from current BVH position
+- Multiple keyframes are interpolated smoothly via GetAnchorPositionAtTime()
+- Changes are persisted via EditorUtility.SetDirty()
+
+---
+
 ## Understanding Drift Correction
 
 Drift correction is applied **every frame** in BvhPlayableBehaviour.PrepareFrame():
@@ -352,9 +442,11 @@ private void ApplyDriftCorrection(float timelineTime)
 ## Related Documentation
 
 - **CLAUDE.md** - Project overview and architecture
-- **TIMELINE_SEEKING_ANALYSIS.md** - Complete detailed analysis
-- **TIMELINE_COMPARISON.md** - Side-by-side code comparisons
-- **BvhDriftCorrectionData.cs** - Drift correction keyframe system
+- **TIMELINE_SEEKING_ANALYSIS.md** - Complete detailed analysis (includes Shift+A/U)
+- **TIMELINE_COMPARISON.md** - Side-by-side code comparisons (includes keyframe pipeline)
+- **BvhDriftCorrectionData.cs** - Drift correction keyframe system (AddKeyframe, UpdateKeyframe)
+- **BvhKeyframe.cs** - Individual keyframe data structure
+- **TimelineController.cs** - Input handling and keyframe recording (Shift+A/U implementation)
 - **README.md** - General project documentation
 
 ---
@@ -385,6 +477,17 @@ private void ApplyDriftCorrection(float timelineTime)
 ### What are the differences between frame-by-frame and continuous playback?
 - **Frame-by-frame (arrows):** Direct frame loading, no timeline sync, point cloud only
 - **Continuous (timeline):** Time-based playback, both systems synced, smoother playback
+
+### How do I record BVH drift correction keyframes?
+- **Shift+A:** Add a new keyframe at the current timeline position with current BVH position
+- **Shift+U:** Update the last edited keyframe with current BVH position
+- **Inspector:** Edit keyframe's `anchorPositionRelative` values directly (changes apply immediately)
+
+### How are keyframe values applied to the animation?
+- BvhPlayableBehaviour.PrepareFrame() calls ApplyDriftCorrection() every frame
+- ApplyDriftCorrection() uses BvhDriftCorrectionData.GetAnchorPositionAtTime()
+- Keyframe values are interpolated between nearest keyframes
+- Result is applied to BVH_Character.localPosition in real-time
 
 ---
 

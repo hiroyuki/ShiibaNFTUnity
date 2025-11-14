@@ -62,29 +62,36 @@ private void HandleSynchronizedFrameNavigation()
 
 **KEY DIFFERENCE:** PlyModeHandler supports left arrow (backward), BinaryModeHandler does not.
 
+### Location 3: TimelineController (Lines 68-80)
+**File:** `Assets/Script/timeline/TimelineController.cs`
+
+```csharp
+// Shift+A: Add drift correction keyframe
+if (Keyboard.current[addKeyframeKey].wasPressedThisFrame &&
+    (Keyboard.current.leftShiftKey.isPressed || Keyboard.current.rightShiftKey.isPressed))
+{
+    AddDriftCorrectionKeyframe();
+}
+
+// Shift+U: Update current keyframe
+if (Keyboard.current[updateKeyframeKey].wasPressedThisFrame &&
+    (Keyboard.current.leftShiftKey.isPressed || Keyboard.current.rightShiftKey.isPressed))
+{
+    UpdateCurrentDriftCorrectionKeyframe();
+}
+```
+
+**Behavior:**
+- **Shift+A:** Add a new drift correction keyframe at the current timeline time
+- **Shift+U:** Update the last edited keyframe with current BVH position
+
 ---
 
 ## 2. PlayableDirector.time Property Updates
 
-### TimelineController (Lines 160-171)
+### TimelineController (Lines 52-81)
 **File:** `Assets/Script/timeline/TimelineController.cs`
 
-```csharp
-[ContextMenu("Reset Timeline")]
-public void ResetTimeline()
-{
-    if (timeline == null) return;
-
-    timeline.time = 0;          // <-- DIRECT TIME SET
-    timeline.Evaluate();         // <-- FORCE FRAME UPDATE
-    if (showDebugLogs)
-    {
-        Debug.Log("Timeline: RESET to beginning");
-    }
-}
-```
-
-**Input Handling (Lines 78-107):**
 ```csharp
 void HandleInput()
 {
@@ -102,18 +109,18 @@ void HandleInput()
         StopTimeline();
     }
 
-    // 0 key: Reset to beginning
-    if (Keyboard.current[resetKey].wasPressedThisFrame)
-    {
-        ResetTimeline();
-    }
-
-    // SHIFT+A: Add keyframe for drift correction
+    // Shift+A: Add drift correction keyframe
     if (Keyboard.current[addKeyframeKey].wasPressedThisFrame &&
-        (Keyboard.current.leftShiftKey.isPressed || Keyboard.current.rightShiftKey.isPressed) &&
-        enableKeyframeRecording)
+        (Keyboard.current.leftShiftKey.isPressed || Keyboard.current.rightShiftKey.isPressed))
     {
         AddDriftCorrectionKeyframe();
+    }
+
+    // Shift+U: Update current keyframe
+    if (Keyboard.current[updateKeyframeKey].wasPressedThisFrame &&
+        (Keyboard.current.leftShiftKey.isPressed || Keyboard.current.rightShiftKey.isPressed))
+    {
+        UpdateCurrentDriftCorrectionKeyframe();
     }
 }
 ```
@@ -121,8 +128,8 @@ void HandleInput()
 **Supported Controls:**
 - **Space:** Play/Pause
 - **Escape:** Stop
-- **0 (Digit0):** Reset to beginning
-- **Shift+A:** Add drift correction keyframe
+- **Shift+A:** Add drift correction keyframe at current timeline position
+- **Shift+U:** Update the last edited keyframe with current BVH position
 - **NO LEFT/RIGHT ARROW KEYS** in TimelineController
 
 **NOTE:** Arrow keys are NOT handled in TimelineController. Timeline seeking is done through:
@@ -406,9 +413,12 @@ Debug.LogWarning("Backward navigation not supported. Use timeline controls.");
 
 | File | Purpose |
 |------|---------|
-| `Assets/Script/timeline/TimelineController.cs` | Timeline playback control (Space, Escape, 0, Shift+A) |
+| `Assets/Script/timeline/TimelineController.cs` | Timeline playback control (Space, Escape, Shift+A, Shift+U) |
 | `Assets/Script/timeline/PointCloudPlayableBehaviour.cs` | Sync point cloud to timeline time |
 | `Assets/Script/timeline/BvhPlayableBehaviour.cs` | Sync BVH to timeline time + apply drift correction |
+| `Assets/Script/timeline/BvhPlayableAsset.cs` | BVH asset with keyframe recording helpers |
 | `Assets/Script/pointcloud/handler/PlyModeHandler.cs` | Handle left/right arrow keys for PLY mode |
 | `Assets/Script/pointcloud/handler/BinaryModeHandler.cs` | Handle right arrow only, warn on left arrow |
 | `Assets/Script/pointcloud/MultiCamPointCloudManager.cs` | Delegate seeking to active handler |
+| `Assets/Script/utils/BvhDriftCorrectionData.cs` | Keyframe storage and management |
+| `Assets/Script/utils/BvhKeyframe.cs` | Individual keyframe data structure |

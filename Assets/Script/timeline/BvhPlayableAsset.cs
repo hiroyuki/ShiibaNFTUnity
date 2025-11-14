@@ -27,6 +27,9 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     // Cached BVH data
     private BvhData cachedBvhData;
 
+    // キャッシュ：最後に作成した Playable の Behaviour（キーフレーム記録用）
+    private BvhPlayableBehaviour cachedBehaviour;
+
     /// <summary>
     /// Get the actual BVH file path from MultiCameraPointCloudManager
     /// </summary>
@@ -84,6 +87,9 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     {
         var playable = ScriptPlayable<BvhPlayableBehaviour>.Create(graph);
         var behaviour = playable.GetBehaviour();
+
+        // キャッシュに保存（TimelineController からアクセス用）
+        cachedBehaviour = behaviour;
 
         // Auto-find target transform by name in scene
         string searchName = string.IsNullOrEmpty(targetGameObjectName) ? "BVH_Character" : targetGameObjectName;
@@ -212,6 +218,59 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     {
         var data = GetBvhData();
         return data != null ? data.Duration : 0;
+    }
+
+    /// <summary>
+    /// ドリフト補正データを取得（TimelineController用）
+    /// </summary>
+    public BvhDriftCorrectionData GetDriftCorrectionData()
+    {
+        if (cachedBehaviour != null)
+        {
+            return cachedBehaviour.driftCorrectionData;
+        }
+
+        // キャッシュがない場合、DatasetConfig から取得
+        var pointCloudMgr = GameObject.FindFirstObjectByType<MultiCameraPointCloudManager>();
+        if (pointCloudMgr != null)
+        {
+            var config = pointCloudMgr.GetDatasetConfig();
+            if (config != null)
+            {
+                return config.BvhDriftCorrectionData;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// BvhPlayableBehaviour を取得（TimelineController用）
+    /// </summary>
+    public BvhPlayableBehaviour GetBvhPlayableBehaviour()
+    {
+        return cachedBehaviour;
+    }
+
+    /// <summary>
+    /// BVH_Character の現在の localPosition を取得（キーフレーム記録用）
+    /// </summary>
+    public Vector3 GetBvhCharacterPosition()
+    {
+        if (cachedBehaviour != null && cachedBehaviour.targetTransform != null)
+        {
+            return cachedBehaviour.targetTransform.localPosition;
+        }
+
+        // キャッシュがない場合、シーンから探す
+        string searchName = string.IsNullOrEmpty(targetGameObjectName) ? "BVH_Character" : targetGameObjectName;
+        GameObject targetGO = GameObject.Find(searchName);
+        if (targetGO != null)
+        {
+            return targetGO.transform.localPosition;
+        }
+
+        return Vector3.zero;
     }
 
 #if UNITY_EDITOR
