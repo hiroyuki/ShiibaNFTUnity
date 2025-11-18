@@ -60,9 +60,9 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         // Get current time from timeline
         double currentTime = playable.GetTime();
 
-        // Calculate frame based on BVH's frame rate
+        // Calculate frame using keyframe-based mapping if available, otherwise use linear mapping
         float bvhFrameRate = bvhData.FrameRate;
-        int targetFrame = Mathf.FloorToInt((float)(currentTime * bvhFrameRate));
+        int targetFrame = CalculateTargetFrame((float)currentTime, bvhFrameRate);
 
         // Apply frame offset for synchronization with point cloud
         targetFrame += frameOffset;
@@ -116,6 +116,92 @@ public class BvhPlayableBehaviour : PlayableBehaviour
 
 
         Debug.Log($"[DriftCorrection] ParentPos :{targetTransform.localPosition} (after correction) timelineTime: {timelineTime:F2}s");
+    }
+
+    /// <summary>
+    /// Calculate target frame using keyframe-based mapping if available, otherwise use linear mapping
+    ///
+    /// When drift correction keyframes are available, uses them to define Timeline-to-BVH-frame mapping:
+    /// - Finds keyframes before and after current Timeline time
+    /// - Interpolates bvhFrameNumber between keyframes
+    /// - This allows speed adjustment by modifying bvhFrameNumber values in keyframes
+    ///
+    /// Falls back to linear mapping if no keyframes are available.
+    /// </summary>
+    private int CalculateTargetFrame(float currentTime, float bvhFrameRate)
+    {
+        // If drift correction data is available and has keyframes, use keyframe-based mapping
+        if (driftCorrectionData != null && driftCorrectionData.GetKeyframeCount() > 0)
+        {
+            var keyframes = driftCorrectionData.GetAllKeyframes();
+
+            // Find surrounding keyframes
+            BvhKeyframe prevKeyframe = null;
+            BvhKeyframe nextKeyframe = null;
+
+            foreach (var kf in keyframes)
+            {
+                if (kf.timelineTime <= currentTime)
+                    prevKeyframe = kf;
+                else if (nextKeyframe == null)
+                    nextKeyframe = kf;
+            }
+
+            int targetFrame;
+
+            // Case 1: Between two keyframes - interpolate frame number
+            if (prevKeyframe != null && nextKeyframe != null)
+            {
+                float timeDelta = nextKeyframe.timelineTime - prevKeyframe.timelineTime;
+                if (timeDelta > 0)
+                {
+                    float frameDelta = nextKeyframe.bvhFrameNumber - prevKeyframe.bvhFrameNumber;
+                    float t = (currentTime - prevKeyframe.timelineTime) / timeDelta;
+                    t = Mathf.Clamp01(t);
+
+                    targetFrame = Mathf.FloorToInt(prevKeyframe.bvhFrameNumber + (frameDelta * t));
+                }
+                else
+                {
+                    targetFrame = prevKeyframe.bvhFrameNumber;
+                }
+            }
+            // Case 2: Before first keyframe - interpolate from (0s, frame 0) to first keyframe
+            else if (prevKeyframe == null && nextKeyframe != null)
+            {
+                float timeDelta = nextKeyframe.timelineTime - 0f;
+                if (timeDelta > 0)
+                {
+                    float frameDelta = nextKeyframe.bvhFrameNumber - 0;
+                    float t = (currentTime - 0f) / timeDelta;
+                    t = Mathf.Clamp01(t);
+
+                    targetFrame = Mathf.FloorToInt(0 + (frameDelta * t));
+                }
+                else
+                {
+                    targetFrame = 0;
+                }
+            }
+            // Case 3: After last keyframe - extrapolate using BVH file's native frame rate
+            else if (prevKeyframe != null && nextKeyframe == null)
+            {
+                float timeSincePrevKeyframe = currentTime - prevKeyframe.timelineTime;
+                float additionalFrames = timeSincePrevKeyframe * bvhFrameRate;
+
+                targetFrame = prevKeyframe.bvhFrameNumber + Mathf.FloorToInt(additionalFrames);
+            }
+            // Case 4: No surrounding keyframes (shouldn't happen if keyframes exist)
+            else
+            {
+                targetFrame = Mathf.FloorToInt((float)(currentTime * bvhFrameRate));
+            }
+
+            return targetFrame;
+        }
+
+        // Fall back to linear mapping when no keyframes available
+        return Mathf.FloorToInt((float)(currentTime * bvhFrameRate));
     }
 
     /// <summary>

@@ -12,8 +12,8 @@ using UnityEngine;
 public class SinglePointCloudView : MonoBehaviour
 {
     // Configuration constants
-    private const float DEFAULT_POINT_SIZE = 3.0f;
-    private const float GIZMO_SIZE = 0.1f;
+    private const float DEFAULT_POINT_SIZE = 0.1f;
+    private const float GIZMO_SIZE = 1.0f;
 
     // View components (owned by this view)
     private GameObject depthViewer;
