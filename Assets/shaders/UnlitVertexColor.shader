@@ -1,13 +1,16 @@
 Shader "Unlit/VertexColor"
 {
-    Properties 
-    { 
+    Properties
+    {
         _PointSize ("Point Size", Float) = 3.0
+        _Opacity ("Opacity", Range(0.0, 1.0)) = 0.5
     }
     SubShader
     {
-        Tags { "RenderType"="Opaque" }
+        Tags { "RenderType"="Transparent" "Queue"="Transparent" }
         LOD 100
+        Blend SrcAlpha OneMinusSrcAlpha
+        ZWrite Off
 
         Pass
         {
@@ -18,6 +21,7 @@ Shader "Unlit/VertexColor"
             #include "UnityCG.cginc"
 
             float _PointSize;
+            float _Opacity;
 
             struct appdata
             {
@@ -43,7 +47,9 @@ Shader "Unlit/VertexColor"
 
             fixed4 frag(v2f i) : SV_Target
             {
-                return i.color;
+                fixed4 col = i.color;
+                col.a = col.a * _Opacity;
+                return col;
             }
             ENDCG
         }

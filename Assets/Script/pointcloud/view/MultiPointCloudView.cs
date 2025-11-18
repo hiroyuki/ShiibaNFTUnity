@@ -8,7 +8,6 @@ using UnityEngine;
 /// </summary>
 public class MultiPointCloudView : MonoBehaviour
 {
-    private const float DEFAULT_POINT_SIZE = 3.0f;
 
     // Frame controllers (passed from MultiCamPointCloudManager)
     private List<CameraFrameController> frameControllers = new List<CameraFrameController>();
@@ -41,7 +40,8 @@ public class MultiPointCloudView : MonoBehaviour
 
         // Setup material for point cloud rendering (use same shader as SinglePointCloudView)
         Material pointCloudMaterial = new Material(Shader.Find("Unlit/VertexColor"));
-        pointCloudMaterial.SetFloat("_PointSize", DEFAULT_POINT_SIZE);
+        pointCloudMaterial.SetFloat("_PointSize", PointCloudSettings.pointSize);
+        pointCloudMaterial.SetFloat("_Opacity", PointCloudSettings.pointCloudOpacity);
         meshRenderer.material = pointCloudMaterial;
 
         Debug.Log("Unified point cloud viewer created");

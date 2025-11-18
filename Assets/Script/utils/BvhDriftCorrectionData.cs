@@ -30,12 +30,38 @@ public class BvhDriftCorrectionData : ScriptableObject
     /// <returns>親GameObject からの相対座標</returns>
     public Vector3 GetAnchorPositionAtTime(float time)
     {
+        return InterpolateKeyframeValue(
+            time,
+            kf => kf.anchorPositionRelative
+        );
+    }
+
+    /// <summary>
+    /// 指定時刻でのアンカー相対回転を取得（キーフレーム間で補完）
+    /// </summary>
+    /// <param name="time">Timeline 上の時刻（秒）</param>
+    /// <returns>親GameObject からの相対回転（オイラー角）</returns>
+    public Vector3 GetAnchorRotationAtTime(float time)
+    {
+        return InterpolateKeyframeValue(
+            time,
+            kf => kf.anchorRotationRelative
+        );
+    }
+
+    /// <summary>
+    /// キーフレーム値の補完（位置・回転共通処理）
+    /// </summary>
+    private Vector3 InterpolateKeyframeValue(
+        float time,
+        System.Func<BvhKeyframe, Vector3> getValue)
+    {
         if (!isEnabled || keyframes.Count == 0)
             return Vector3.zero;
 
         // キーフレームが1つだけの場合
         if (keyframes.Count == 1)
-            return keyframes[0].anchorPositionRelative;
+            return getValue(keyframes[0]);
 
         // timeより前の最後のキーフレームと後のキーフレームを見つける
         BvhKeyframe prevKeyframe = null;
@@ -53,22 +79,22 @@ public class BvhDriftCorrectionData : ScriptableObject
 
         // 補完不可ケースの処理
         if (prevKeyframe == null && nextKeyframe != null)
-            return nextKeyframe.anchorPositionRelative;
+            return getValue(nextKeyframe);
         if (prevKeyframe != null && nextKeyframe == null)
-            return prevKeyframe.anchorPositionRelative;
+            return getValue(prevKeyframe);
         if (prevKeyframe == null && nextKeyframe == null)
             return Vector3.zero;
 
         // キーフレーム間での補完
         float timeDelta = nextKeyframe.timelineTime - prevKeyframe.timelineTime;
         if (timeDelta <= 0)
-            return prevKeyframe.anchorPositionRelative;
+            return getValue(prevKeyframe);
 
         float t = (time - prevKeyframe.timelineTime) / timeDelta;
         t = Mathf.Clamp01(t);
 
-        return InterpolatePosition(prevKeyframe.anchorPositionRelative,
-                                   nextKeyframe.anchorPositionRelative, t);
+        return InterpolatePosition(getValue(prevKeyframe),
+                                   getValue(nextKeyframe), t);
     }
 
     /// <summary>
@@ -169,6 +195,35 @@ public class BvhDriftCorrectionData : ScriptableObject
     public void SetEnabled(bool enabled)
     {
         isEnabled = enabled;
+    }
+
+    /// <summary>
+    /// BVH ファイルのデフォルトフレームレートを取得
+    /// Editor スクリプトで参考値計算用
+    /// </summary>
+    public float GetBvhFrameRate()
+    {
+        // BvhPlayableAsset 経由で BVH データを取得
+        var pointCloudMgr = GameObject.FindFirstObjectByType<MultiCameraPointCloudManager>();
+        if (pointCloudMgr != null)
+        {
+            var config = pointCloudMgr.GetDatasetConfig();
+            if (config != null)
+            {
+                var bvhPlayableAsset = Resources.FindObjectsOfTypeAll<BvhPlayableAsset>().FirstOrDefault();
+                if (bvhPlayableAsset != null)
+                {
+                    var bvhData = bvhPlayableAsset.GetBvhData();
+                    if (bvhData != null)
+                    {
+                        return bvhData.FrameRate;
+                    }
+                }
+            }
+        }
+
+        // フォールバック: デフォルト 30fps
+        return 30f;
     }
 
     // --------- Private Methods ---------

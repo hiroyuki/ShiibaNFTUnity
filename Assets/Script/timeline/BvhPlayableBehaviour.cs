@@ -84,6 +84,7 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     /// <summary>
     /// Apply BVH drift correction based on keyframe interpolation
     /// Uses positionOffset (saved initial BVH_Character position) as the baseline reference
+    /// Applies both position and rotation corrections from keyframe data
     /// </summary>
     private void ApplyDriftCorrection(float timelineTime)
     {
@@ -93,8 +94,9 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         if (bvhData == null || targetTransform == null)
             return;
 
-        // Get target anchor position from keyframe interpolation
+        // Get target anchor position and rotation from keyframe interpolation
         Vector3 targetAnchorPositionRelative = driftCorrectionData.GetAnchorPositionAtTime(timelineTime);
+        Vector3 targetAnchorRotationRelative = driftCorrectionData.GetAnchorRotationAtTime(timelineTime);
 
         // Find root joint transform
         Transform rootJointTransform = targetTransform.Find(bvhData.RootJoint.Name);
@@ -104,18 +106,22 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         // Calculate the correction delta (difference between target and current relative position)
         Vector3 currentRelativePosition = rootJointTransform.localPosition;
 
-        // Apply correction: baseline position (positionOffset) + anchor correction
+        // Apply position correction: baseline position (positionOffset) + anchor correction
         // This preserves the initial BVH_Character position while applying drift correction
         targetTransform.localPosition = positionOffset + targetAnchorPositionRelative;
+
+        // Apply rotation correction: baseline rotation + anchor rotation correction
+        // Convert both euler angles to quaternions and combine them
+        Quaternion baseRotation = Quaternion.Euler(rotationOffset);
+        Quaternion rotationCorrection = Quaternion.Euler(targetAnchorRotationRelative);
+        targetTransform.localRotation = baseRotation * rotationCorrection;
+
         // DEBUG LOG
         Debug.Log($"[DriftCorrection] Time: {timelineTime:F2}s, " +
-                  $"Target: {targetAnchorPositionRelative}, " +
-                  $"Current: {currentRelativePosition}, " +
-                  $"BaselinePos (positionOffset): {positionOffset}, " +
-                  $"ParentPos Before: {targetTransform.localPosition}");
-
-
-        Debug.Log($"[DriftCorrection] ParentPos :{targetTransform.localPosition} (after correction) timelineTime: {timelineTime:F2}s");
+                  $"Position Target: {targetAnchorPositionRelative}, " +
+                  $"Rotation Target: {targetAnchorRotationRelative}, " +
+                  $"Current Pos: {currentRelativePosition}, " +
+                  $"BaselinePos (positionOffset): {positionOffset}");
     }
 
     /// <summary>

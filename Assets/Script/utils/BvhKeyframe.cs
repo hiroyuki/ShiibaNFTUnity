@@ -16,6 +16,9 @@ public class BvhKeyframe
     [Tooltip("このキーフレームでのBVHルートの相対位置（親GameObjectからの相対座標）")]
     public Vector3 anchorPositionRelative;
 
+    [Tooltip("このキーフレームでのBVHルートの相対回転（親GameObjectからの相対回転・オイラー角）")]
+    public Vector3 anchorRotationRelative;
+
     [Tooltip("メモ（オプション）")]
     public string note = "";
 
@@ -24,13 +27,15 @@ public class BvhKeyframe
         timelineTime = 0f;
         bvhFrameNumber = 0;
         anchorPositionRelative = Vector3.zero;
+        anchorRotationRelative = Vector3.zero;
     }
 
-    public BvhKeyframe(float time, int frame, Vector3 positionRelative)
+    public BvhKeyframe(float time, int frame, Vector3 positionRelative, Vector3 rotationRelative = default)
     {
         timelineTime = time;
         bvhFrameNumber = frame;
         anchorPositionRelative = positionRelative;
+        anchorRotationRelative = rotationRelative;
     }
 
     /// <summary>

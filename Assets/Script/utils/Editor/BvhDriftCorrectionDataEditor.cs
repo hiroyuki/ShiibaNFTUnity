@@ -17,8 +17,12 @@ public class BvhDriftCorrectionDataEditor : Editor
     private SerializedProperty interpolationTypeProperty;
     private SerializedProperty isEnabledProperty;
 
-    // Track previous position values to detect changes
+    // Track previous position and rotation values to detect changes
     private Dictionary<int, Vector3> previousKeyframePositions = new Dictionary<int, Vector3>();
+    private Dictionary<int, Vector3> previousKeyframeRotations = new Dictionary<int, Vector3>();
+
+    // Track foldout state for each keyframe
+    private Dictionary<int, bool> keyframeFoldoutStates = new Dictionary<int, bool>();
 
     private void OnEnable()
     {
@@ -27,8 +31,9 @@ public class BvhDriftCorrectionDataEditor : Editor
         interpolationTypeProperty = serializedObject.FindProperty("interpolationType");
         isEnabledProperty = serializedObject.FindProperty("isEnabled");
 
-        // Initialize position tracking
+        // Initialize position and rotation tracking
         RefreshKeyframePositionCache();
+        RefreshKeyframeRotationCache();
     }
 
     private void RefreshKeyframePositionCache()
@@ -41,12 +46,23 @@ public class BvhDriftCorrectionDataEditor : Editor
         }
     }
 
+    private void RefreshKeyframeRotationCache()
+    {
+        previousKeyframeRotations.Clear();
+        var keyframes = driftCorrectionData.GetAllKeyframes();
+        for (int i = 0; i < keyframes.Count; i++)
+        {
+            previousKeyframeRotations[i] = keyframes[i].anchorRotationRelative;
+        }
+    }
+
     public override void OnInspectorGUI()
     {
         serializedObject.Update();
 
-        // Check for position changes before rendering
+        // Check for position and rotation changes before rendering
         DetectKeyframePositionChanges();
+        DetectKeyframeRotationChanges();
 
         // ヘッダー
         EditorGUILayout.LabelField("Drift Correction Data", EditorStyles.boldLabel);
@@ -85,7 +101,7 @@ public class BvhDriftCorrectionDataEditor : Editor
                 EditorGUILayout.BeginHorizontal();
 
                 // ボタン: クリックでタイムラインジャンプ
-                string buttonLabel = $"Frame {i + 1}: {keyframe.timelineTime:F2}s (#{keyframe.bvhFrameNumber})";
+                string buttonLabel = $"Frame {i}: {keyframe.timelineTime:F2}s (#{keyframe.bvhFrameNumber})";
 
                 if (GUILayout.Button(buttonLabel, GUILayout.Height(30)))
                 {
@@ -102,16 +118,38 @@ public class BvhDriftCorrectionDataEditor : Editor
 
                 EditorGUILayout.EndHorizontal();
 
-                // キーフレーム詳細情報
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                EditorGUILayout.LabelField("Position", EditorStyles.miniLabel);
-                EditorGUILayout.Vector3Field("Anchor Position", keyframe.anchorPositionRelative);
-                if (!string.IsNullOrEmpty(keyframe.note))
+                // Foldout state management
+                if (!keyframeFoldoutStates.ContainsKey(i))
                 {
-                    EditorGUILayout.LabelField("Note", EditorStyles.miniLabel);
-                    EditorGUILayout.LabelField(keyframe.note, EditorStyles.wordWrappedLabel);
+                    keyframeFoldoutStates[i] = false;
                 }
-                EditorGUILayout.EndVertical();
+
+                // キーフレーム詳細情報（折りたたみ可能）
+                keyframeFoldoutStates[i] = EditorGUILayout.Foldout(keyframeFoldoutStates[i], "Details", true);
+
+                if (keyframeFoldoutStates[i])
+                {
+                    EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+                    EditorGUILayout.LabelField("Position & Rotation", EditorStyles.miniLabel);
+                    EditorGUILayout.Vector3Field("Anchor Position", keyframe.anchorPositionRelative);
+                    EditorGUILayout.Vector3Field("Anchor Rotation", keyframe.anchorRotationRelative);
+
+                    // デフォルトフレームレートでの参考値を表示
+                    float bvhFrameRate = driftCorrectionData.GetBvhFrameRate();
+                    int defaultFrameNumber = Mathf.FloorToInt(keyframe.timelineTime * bvhFrameRate);
+                    EditorGUILayout.LabelField("Frame Number Reference", EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField($"Default (at {bvhFrameRate:F1}fps): {defaultFrameNumber}", EditorStyles.wordWrappedLabel);
+                    EditorGUILayout.LabelField($"Current: {keyframe.bvhFrameNumber}", EditorStyles.wordWrappedLabel);
+
+                    if (!string.IsNullOrEmpty(keyframe.note))
+                    {
+                        EditorGUILayout.LabelField("Note", EditorStyles.miniLabel);
+                        EditorGUILayout.LabelField(keyframe.note, EditorStyles.wordWrappedLabel);
+                    }
+
+                    EditorGUILayout.EndVertical();
+                }
 
                 EditorGUILayout.Space();
             }
@@ -176,6 +214,56 @@ public class BvhDriftCorrectionDataEditor : Editor
     }
 
     /// <summary>
+    /// Detects when keyframe rotations have been modified in the Inspector
+    /// Updates BVH_Character rotation to reflect the keyframe changes in real-time
+    /// </summary>
+    private void DetectKeyframeRotationChanges()
+    {
+        var keyframes = driftCorrectionData.GetAllKeyframes();
+
+        // Check each keyframe for rotation changes
+        for (int i = 0; i < keyframes.Count; i++)
+        {
+            Vector3 currentRotation = keyframes[i].anchorRotationRelative;
+
+            if (previousKeyframeRotations.TryGetValue(i, out Vector3 previousRotation))
+            {
+                // Compare rotations with small epsilon for floating-point precision
+                if (!Mathf.Approximately(currentRotation.x, previousRotation.x) ||
+                    !Mathf.Approximately(currentRotation.y, previousRotation.y) ||
+                    !Mathf.Approximately(currentRotation.z, previousRotation.z))
+                {
+                    // Rotation has changed - update BVH character rotation
+                    UpdateBvhCharacterRotation(currentRotation, previousRotation, keyframes[i]);
+
+                    // Update the cached rotation
+                    previousKeyframeRotations[i] = currentRotation;
+                }
+            }
+            else
+            {
+                // New keyframe added
+                previousKeyframeRotations[i] = currentRotation;
+            }
+        }
+
+        // Check for removed keyframes
+        var keysToRemove = new List<int>();
+        foreach (var key in previousKeyframeRotations.Keys)
+        {
+            if (key >= keyframes.Count)
+            {
+                keysToRemove.Add(key);
+            }
+        }
+
+        foreach (var key in keysToRemove)
+        {
+            previousKeyframeRotations.Remove(key);
+        }
+    }
+
+    /// <summary>
     /// Updates the BVH_Character position based on keyframe position change
     /// Applies the delta (difference) to the current BVH position
     /// </summary>
@@ -204,6 +292,41 @@ public class BvhDriftCorrectionDataEditor : Editor
                   $"  New Correction: {newPosition}\n" +
                   $"  Delta Applied: {positionDelta}\n" +
                   $"  BVH_Character New Position: {updatedPosition}");
+
+        // Mark the transform as dirty to ensure changes are saved
+        EditorUtility.SetDirty(bvhTransform);
+    }
+
+    /// <summary>
+    /// Updates the BVH_Character rotation based on keyframe rotation change
+    /// Applies the delta (difference) to the current BVH rotation
+    /// </summary>
+    private void UpdateBvhCharacterRotation(Vector3 newRotation, Vector3 oldRotation, BvhKeyframe keyframe)
+    {
+        // Find BVH_Character in the scene
+        GameObject bvhCharacter = GameObject.Find("BVH_Character");
+        if (bvhCharacter == null)
+        {
+            Debug.LogWarning("[BvhDriftCorrectionDataEditor] BVH_Character not found in scene");
+            return;
+        }
+
+        // Calculate the delta (how much the rotation changed) in euler angles
+        Vector3 rotationDelta = newRotation - oldRotation;
+
+        // Apply the delta to the BVH_Character's current rotation
+        Transform bvhTransform = bvhCharacter.transform;
+        Vector3 currentEuler = bvhTransform.localEulerAngles;
+        Vector3 updatedEuler = currentEuler + rotationDelta;
+
+        // Update the BVH_Character rotation
+        bvhTransform.localEulerAngles = updatedEuler;
+
+        Debug.Log($"[BVH Rotation Updated] Keyframe {keyframe.timelineTime}s:\n" +
+                  $"  Old Correction: {oldRotation}\n" +
+                  $"  New Correction: {newRotation}\n" +
+                  $"  Delta Applied: {rotationDelta}\n" +
+                  $"  BVH_Character New Rotation: {updatedEuler}");
 
         // Mark the transform as dirty to ensure changes are saved
         EditorUtility.SetDirty(bvhTransform);

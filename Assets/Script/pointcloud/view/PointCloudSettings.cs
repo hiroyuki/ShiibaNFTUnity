@@ -19,6 +19,11 @@ public static class PointCloudSettings
     public static float pointSize = 3.0f;
 
     /// <summary>
+    /// Opacity/transparency of point cloud (0.0 = fully transparent, 1.0 = fully opaque)
+    /// </summary>
+    public static float pointCloudOpacity = 0.1f;
+
+    /// <summary>
     /// Enable/disable bounding volume culling across all processors
     /// </summary>
     public static bool enableBoundingVolumeCulling = true;
@@ -52,6 +57,7 @@ public static class PointCloudSettings
     {
         showAllPoints = false;
         pointSize = 3.0f;
+        pointCloudOpacity = 0.5f;
         enableBoundingVolumeCulling = true;
         globalDepthScaleMultiplier = 1.0f;
         maxProcessingDistance = 0f;

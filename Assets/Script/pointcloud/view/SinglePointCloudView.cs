@@ -12,7 +12,6 @@ using UnityEngine;
 public class SinglePointCloudView : MonoBehaviour
 {
     // Configuration constants
-    private const float DEFAULT_POINT_SIZE = 0.1f;
     private const float GIZMO_SIZE = 1.0f;
 
     // View components (owned by this view)
@@ -68,7 +67,8 @@ public class SinglePointCloudView : MonoBehaviour
         depthMeshFilter = depthViewer.AddComponent<MeshFilter>();
         var depthRenderer = depthViewer.AddComponent<MeshRenderer>();
         Material material = new(Shader.Find("Unlit/VertexColor"));
-        material.SetFloat("_PointSize", DEFAULT_POINT_SIZE);
+        material.SetFloat("_PointSize", PointCloudSettings.pointSize);
+        material.SetFloat("_Opacity", PointCloudSettings.pointCloudOpacity);
         depthRenderer.material = material;
 
         depthMesh = new Mesh();

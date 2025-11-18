@@ -16,22 +16,42 @@ MonoBehaviour:
   - timelineTime: 5.633333
     bvhFrameNumber: 169
     anchorPositionRelative: {x: 0, y: 0, z: 0}
+    anchorRotationRelative: {x: 0, y: 0, z: 0}
+    note: 
+  - timelineTime: 10.733334
+    bvhFrameNumber: 322
+    anchorPositionRelative: {x: 0.15, y: 0, z: 0.11}
+    anchorRotationRelative: {x: 0, y: 0, z: 0}
     note: 
   - timelineTime: 12.566667
-    bvhFrameNumber: 387
+    bvhFrameNumber: 372
     anchorPositionRelative: {x: -0.07, y: 0, z: -0.1}
+    anchorRotationRelative: {x: 0, y: 0, z: 0}
     note: 
   - timelineTime: 13.4
     bvhFrameNumber: 400
     anchorPositionRelative: {x: 0.11, y: 0, z: 0}
+    anchorRotationRelative: {x: 0, y: 0, z: 0}
+    note: 
+  - timelineTime: 21.033333
+    bvhFrameNumber: 631
+    anchorPositionRelative: {x: 0.22600375, y: 0, z: -0.13748592}
+    anchorRotationRelative: {x: 0, y: 0, z: 0}
+    note: 
+  - timelineTime: 27.266666
+    bvhFrameNumber: 818
+    anchorPositionRelative: {x: 0.07, y: 0.08, z: -0.3}
+    anchorRotationRelative: {x: 0, y: 0, z: 0}
     note: 
   - timelineTime: 31.166666
     bvhFrameNumber: 930
     anchorPositionRelative: {x: 0.38, y: 0, z: -0.32}
+    anchorRotationRelative: {x: 0, y: 0, z: 0}
     note: 
   - timelineTime: 64.26667
     bvhFrameNumber: 1920
     anchorPositionRelative: {x: 0.87, y: 0, z: -2.07}
+    anchorRotationRelative: {x: 0, y: 0, z: 0}
     note: 
   interpolationType: 0
   isEnabled: 1
