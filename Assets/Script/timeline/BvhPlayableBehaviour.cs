@@ -115,13 +115,6 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         Quaternion baseRotation = Quaternion.Euler(rotationOffset);
         Quaternion rotationCorrection = Quaternion.Euler(targetAnchorRotationRelative);
         targetTransform.localRotation = baseRotation * rotationCorrection;
-
-        // DEBUG LOG
-        Debug.Log($"[DriftCorrection] Time: {timelineTime:F2}s, " +
-                  $"Position Target: {targetAnchorPositionRelative}, " +
-                  $"Rotation Target: {targetAnchorRotationRelative}, " +
-                  $"Current Pos: {currentRelativePosition}, " +
-                  $"BaselinePos (positionOffset): {positionOffset}");
     }
 
     /// <summary>

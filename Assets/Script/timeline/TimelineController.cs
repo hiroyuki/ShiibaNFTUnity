@@ -278,8 +278,6 @@ public class TimelineController : MonoBehaviour
         // Calculate duration in seconds for PointCloud
         double pointCloudDurationInSeconds = (double)totalFrameCount / fps;
 
-        Debug.Log($"TimelineController: Setting PointCloud duration to {pointCloudDurationInSeconds} seconds ({totalFrameCount} frames at {fps} FPS)");
-
         // Cast to TimelineAsset
         TimelineAsset timelineAsset = timeline.playableAsset as TimelineAsset;
         if (timelineAsset == null)
@@ -304,7 +302,6 @@ public class TimelineController : MonoBehaviour
                 {
                     clip.duration = pointCloudDurationInSeconds;
                     foundPointCloudClip = true;
-                    Debug.Log($"TimelineController: Set PointCloud clip duration to {pointCloudDurationInSeconds}s");
                 }
                 // BVH clips use their own calculated duration from BVH file data
                 else if (clip.asset is BvhPlayableAsset bvhAsset)
@@ -314,17 +311,12 @@ public class TimelineController : MonoBehaviour
                     {
                         clip.duration = bvhDuration;
                         foundBvhClip = true;
-                        Debug.Log($"TimelineController: Set BVH clip duration to {bvhDuration}s (from BVH data)");
 
                         // Track maximum duration
                         if (bvhDuration > maxDuration)
                         {
                             maxDuration = bvhDuration;
                         }
-                    }
-                    else
-                    {
-                        Debug.LogWarning("TimelineController: BVH data not available, skipping BVH clip duration update");
                     }
                 }
 

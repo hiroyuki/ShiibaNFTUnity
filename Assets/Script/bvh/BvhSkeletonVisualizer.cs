@@ -29,36 +29,13 @@ public class BvhSkeletonVisualizer : MonoBehaviour
 
     void Start()
     {
-        Debug.Log($"[BvhSkeletonVisualizer.Start] Initializing on '{gameObject.name}'");
-        Debug.Log($"[BvhSkeletonVisualizer.Start] Transform has {transform.childCount} children at start");
-
-        // List all children at start
-        foreach (Transform child in transform)
-        {
-            Debug.Log($"[BvhSkeletonVisualizer.Start]   Child: '{child.name}' with {child.childCount} children");
-            foreach (Transform grandchild in child)
-            {
-                Debug.Log($"[BvhSkeletonVisualizer.Start]     → {grandchild.name}");
-            }
-        }
-
-        // Wait longer for skeleton to be fully created
+        // Wait for skeleton to be fully created
         // Timeline playback creates joints during OnGraphStart
         Invoke(nameof(CreateVisuals), 1.0f);
     }
 
     void CreateVisuals()
     {
-        // // List all children
-        // foreach (Transform child in transform)
-        // {
-        //     Debug.Log($"[BvhSkeletonVisualizer.CreateVisuals]   Child: '{child.name}' with {child.childCount} children");
-        //     foreach (Transform grandchild in child)
-        //     {
-        //         Debug.Log($"[BvhSkeletonVisualizer.CreateVisuals]     → {grandchild.name}");
-        //     }
-        // }
-
         // Clean up any existing visuals first
         if (renderRoot != null)
         {
@@ -72,40 +49,24 @@ public class BvhSkeletonVisualizer : MonoBehaviour
         renderRoot.transform.SetParent(transform);
         renderRoot.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
 
-        Debug.Log($"Creating BVH visuals for skeleton joints...");
-
         // Create visuals for all skeleton joints (skip render root itself)
-        int rootJointCount = 0;
         foreach (Transform child in transform)
         {
             if (child.name != "BVH_Visuals")
             {
-                rootJointCount++;
-                Debug.Log($"  Processing root joint: '{child.name}'");
                 CreateVisualsRecursive(child);
             }
-        }
-
-        Debug.Log($"Created {jointSpheres.Count} joint spheres and {boneRenderers.Count} bone lines from {rootJointCount} root joints");
-
-        if (jointSpheres.Count == 0)
-        {
-            Debug.LogWarning("No joints created! The skeleton may not have been initialized yet.");
         }
     }
 
     void CreateVisualsRecursive(Transform joint)
     {
-        // Debug.Log($"    Creating sphere for joint '{joint.name}' at {joint.position}");
-
         // Create sphere for this joint
         GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         sphere.name = $"Joint_{joint.name}";
         sphere.transform.SetParent(renderRoot.transform);
         sphere.transform.position = joint.position;
         sphere.transform.localScale = Vector3.one * jointRadius * 2f;
-
-        // Debug.Log($"      Sphere created at {sphere.transform.position} with scale {sphere.transform.localScale}");
 
         // Remove collider
         if (sphere.TryGetComponent<Collider>(out var collider))

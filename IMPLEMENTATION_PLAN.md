@@ -180,16 +180,63 @@ targetFrame = Mathf.Clamp(targetFrame, 0, bvhData.FrameCount - 1);
 
 ## Phase 3: Scene Flow Calculation (🚀 IN PROGRESS)
 
+### 3.0 Linked-List History Architecture (2025-11-25)
+
+**Major Design Decision**: Refactored SceneFlowCalculator to use **linked-list history** structure instead of simple vector storage.
+
+**Motivation**:
+- User pressed button to calculate scene flow, triggering backward-time history building
+- History depth controlled by Inspector parameter `historyFrameCount` (1-1000 frames, default 100)
+- Must account for keyframe-based speed adjustments in BvhPlayableBehaviour when traversing history
+
+**Implementation**:
+```csharp
+// Each BoneSegmentPoint references the previous frame's segment
+public class BoneSegmentPoint {
+    public int boneIndex;
+    public int segmentIndex;
+    public int frameIndex;
+    public Vector3 position;
+    public BoneSegmentPoint previousPoint;  // Linked-list reference (backward in time)
+    public Vector3 motionVector;             // Current - Previous position
+}
+
+// Rolling buffer maintains history chain
+// UpdateFrameSegments():
+//   previousFrameSegments = boneSegments  // Preserve current as previous
+//   boneSegments = new List<...>          // Allocate new current frame
+//   frameHistoryDepth = Min(depth+1, historyFrameCount)
+```
+
+**Benefits**:
+- Memory efficient: only `historyFrameCount` frames stored (default 100)
+- Direct temporal chain: traverse backward by following `previousPoint` references
+- Flexible: history depth configurable via Inspector
+- Clean: no separate frameIndex-based lookup arrays needed
+
+**Implementation Status** (2025-11-25):
+- ✅ **Tasks 6-9**: On-demand backtracking fully implemented
+  - `BuildFrameHistoryBacktrack()` - Orchestrator for history building
+  - `ApplyBvhFrame()` - BVH frame data extraction and application
+  - `UpdateSegmentPositions()` - Segment point generation (100 per bone)
+  - `LinkSegmentHistory()` - LinkedList chaining + motion vector calculation
+  - `FrameHistoryEntry` - Data structure for storing frame data
+  - All methods compile without errors ✅
+
+**Next Phase**: Point cloud processing (Tasks 10-12) to map points to nearest segments and accumulate motion.
+
 ### 3.1 Concept
 Calculate per-frame scene flow (point-to-bone distance mapping) for motion capture analysis.
 
 ### 3.2 Components (Planned)
-- `SceneFlowCalculator.cs` - Core scene flow calculation
+- `SceneFlowCalculator.cs` - Core scene flow calculation with linked-list history
 - `SceneFlowVisualizer.cs` - Real-time visualization
 - Shader for GPU-accelerated calculation (optional)
 
 ### 3.3 Data Flow
 ```
+Timeline Button → CalculateSceneFlowForCurrentFrame() → UpdateFrameSegments() → LinkedList History Build → Scene Flow Analysis
+     ↓
 Point Cloud Data → Distance to Bones → Scene Flow Map → Visualization
 ```
 
@@ -267,16 +314,21 @@ Assets/Script/
 - [x] **Task 1: Create SceneFlowCalculator.cs core class structure** ✅ COMPLETED
   - File: `Assets/Script/sceneflow/SceneFlowCalculator.cs`
   - ✅ Define main `SceneFlowCalculator` class with MonoBehaviour
-  - ✅ Add configuration fields: `segmentsPerBone`, `debugMode` (bvhCharacterTransform is passed via Initialize)
+  - ✅ Add configuration fields: `segmentsPerBone` (default 100), `debugMode`, `historyFrameCount` (default 100, range 1-1000)
   - ✅ Create internal storage for bone transforms, segments, and point flows
   - ✅ Added button method `CalculateSceneFlowForCurrentFrame()` with `[ContextMenu]`
   - ✅ Added `SetFrameInfo()` for frame tracking
-  - Description: Set up the basic skeleton of the SceneFlowCalculator class with all necessary fields and properties
+  - Description: Set up the basic skeleton of the SceneFlowCalculator class with linked-list history support
 
-- [x] **Task 2: Implement BoneSegmentPoint and PointSceneFlow data structures** ✅ COMPLETED
-  - ✅ Add `BoneSegmentPoint` class with fields: `boneIndex`, `segmentIndex`, `position`, `previousPosition`, `motionVector`
+- [x] **Task 2: Implement BoneSegmentPoint and PointSceneFlow data structures** ✅ COMPLETED (REFACTORED for linked-list history)
+  - ✅ Add `BoneSegmentPoint` class with fields:
+    - `boneIndex`, `segmentIndex`, `frameIndex` (tracking)
+    - `position` (Vector3, current frame)
+    - `previousPoint` (BoneSegmentPoint?, linked-list to past frames)
+    - `motionVector` (Vector3, position - previousPoint.position)
   - ✅ Add `PointSceneFlow` class with fields: `position`, `nearestSegmentIndex`, `distanceToSegment`, `currentMotionVector`, `cumulativeMotionVector`
-  - Description: Create the data container classes that will hold segment and point flow information
+  - ✅ Linked-list chain structure for backward-temporal history
+  - Description: Data structures with linked-list history for tracking motion across frames
 
 - [x] **Task 3: Implement GatherBoneTransforms() to collect all bone Transforms** ✅ COMPLETED
   - ✅ Recursively traverse BVH hierarchy from root
@@ -291,105 +343,144 @@ Assets/Script/
   - ✅ Initialize `pointFlows` list
   - Description: Set up the calculator with BVH data and prepare internal data structures
 
-- [x] **Task 5: Implement UpdateBoneSegments() for per-frame segment point generation** ✅ COMPLETED
+- [x] **Task 5: Implement UpdateBoneSegments() for per-frame segment point generation** ✅ COMPLETED (REFACTORED for linked-list)
   - ✅ For each bone, get world positions of start (parent joint) and end (current joint)
   - ✅ Generate 100 uniformly distributed points along each bone via Lerp
-  - ✅ Calculate motion vectors as `current - previous` position
-  - Description: Compute all 100 segment points per bone in world space and their movement vectors
+  - ✅ Link current frame segments to previous frame segments via `previousPoint` reference
+  - ✅ Calculate motion vectors as `current.position - previousPoint.position`
+  - ✅ Build backward-linked chain for historical motion tracking
+  - Description: Compute segment points per bone with linked-list chain to past frames
 
-#### Main Algorithm Implementation (Tasks 6-9)
+#### On-Demand History Backtracking (Tasks 6-11 REFACTORED - 2025-11-25)
 
-- [x] **Task 6: Implement UpdateFrameSegments() to track frame transitions** ✅ COMPLETED
-  - ✅ Save current segment positions to `previousPosition` before updating
-  - ✅ Call `UpdateBoneSegments()` for each bone with new frame index
-  - ✅ Store frame index and time for reference
-  - Description: Manage frame-to-frame transitions and prepare segment data for point mapping
+**Architecture Change**: Moved from continuous frame updates to **on-demand backtracking on button press**
 
-- [ ] **Task 7: Implement FindNearestSegment() for point-to-segment mapping**
+- [x] **Task 6: Implement BuildFrameHistoryBacktrack()** ✅ COMPLETED
+  - ✅ Backtrack from current BVH frame through `historyFrameCount` frames
+  - ✅ For each frame: extract BVH data → apply to bones → generate segments → store in `FrameHistoryEntry`
+  - ✅ Build linked-list by linking segments across frames
+  - Implementation:
+    ```
+    CalculateSceneFlowForCurrentFrame() [Button Press]
+      ↓
+    BuildFrameHistoryBacktrack(currentBvhFrame)
+      ├─ ApplyBvhFrame(frame) - Extract BVH frame data, apply to bone transforms
+      ├─ UpdateSegmentPositions(boneIdx, segments) - Generate 100 Lerp points per bone
+      ├─ FrameHistoryEntry created with bvhFrameNumber, timelineTime, segments[][]
+      └─ LinkSegmentHistory() - Chain previousPoint across frames, calc motionVector
+    ```
+  - **Key Data Structures**:
+    - `frameHistory: List<FrameHistoryEntry>` - Stores all history entries (oldest to newest)
+    - `FrameHistoryEntry.segments[boneIdx][segIdx]` - 2D array of segment points per frame
+    - `BoneSegmentPoint.previousPoint → FrameHistoryEntry[i-1].segments[...]` - LinkedList chain
+  - Description: On-demand backward history construction triggered by button press
+
+- [x] **Task 7: Implement ApplyBvhFrame()** ✅ COMPLETED
+  - ✅ Extract BVH frame data using `bvhData.GetFrame(frameIndex)`
+  - ✅ Parse channels in depth-first joint order
+  - ✅ Apply position/rotation to bone Transform hierarchy
+  - Description: Restore bone transforms to specific BVH frame state
+
+- [x] **Task 8: Implement UpdateSegmentPositions()** ✅ COMPLETED
+  - ✅ Get bone endpoints (parent joint, current joint) in world space
+  - ✅ Generate 100 uniformly distributed points via Lerp along bone
+  - Description: Create segment point cloud for a single bone
+
+- [x] **Task 9: Implement LinkSegmentHistory()** ✅ COMPLETED
+  - ✅ For each adjacent frame pair in `frameHistory`
+  - ✅ Link current frame's `previousPoint` → previous frame's segment
+  - ✅ Calculate `motionVector = current.position - previous.position`
+  - Description: Build linked-list chain and compute motion vectors
+
+#### Point Cloud Processing (Tasks 10-12)
+
+- [ ] **Task 10: Implement FindNearestSegment() for point-to-segment mapping**
   - For a given point, search all bones and all segments (100 per bone)
   - Calculate distance to each segment point
   - Track minimum distance and nearest segment index
   - Update `PointSceneFlow` with nearest segment info and motion vector
   - Description: Find the closest bone segment point for each point cloud point and assign its motion vector
 
-- [ ] **Task 8: Implement CalculatePointFlows() to process point clouds**
+- [ ] **Task 11: Implement CalculatePointFlows() to process point clouds**
   - Accept `Vector3[] pointPositions` array of point cloud vertices
   - For each point, create `PointSceneFlow` instance
   - Call `FindNearestSegment()` for each point
   - Optionally accept `Vector3[] cumulativeFlows` for resuming calculations
   - Description: Main processing function that maps all point cloud points to their nearest bone segments
 
-- [ ] **Task 9: Implement AccumulateMotion() for cumulative flow calculation**
+- [ ] **Task 12: Implement AccumulateMotion() for cumulative flow calculation**
   - For each point in `pointFlows`, add current motion vector to cumulative vector
   - Called once per frame during Timeline playback
   - Description: Accumulate motion vectors over multiple frames to track total displacement
 
-#### Export & Utility Methods (Tasks 10-11)
+#### Export & Utility Methods (Tasks 13-14)
 
-- [ ] **Task 10: Implement GetCumulativeMotionVectors() export method**
+- [ ] **Task 13: Implement GetCumulativeMotionVectors() export method**
   - Extract `cumulativeMotionVector` from all `PointSceneFlow` instances
   - Return as `Vector3[]` array for export or visualization
   - Description: Export cumulative scene flow data for further processing or file output
 
-- [ ] **Task 11: Implement DrawDebugVisualization() for visualization**
+- [ ] **Task 14: Implement DrawDebugVisualization() for visualization**
   - Draw bone segment lines in green (connecting 100 points per bone)
   - Draw point-to-segment associations in blue (from point to nearest segment)
   - Draw motion vectors in red (from segment showing direction and magnitude)
   - Only active when `debugMode = true`
   - Description: Visual debugging tool to verify segment generation and point mappings
 
-#### Integration Tasks (Tasks 12-14)
+#### Integration Tasks (Tasks 15-17)
 
-- [ ] **Task 12: Add SceneFlowCalculator configuration to DatasetConfig.cs**
+- [ ] **Task 15: Add SceneFlowCalculator configuration to DatasetConfig.cs**
   - Add `[SerializeField] bool enableSceneFlowCalculation = false`
   - Add `[SerializeField] int segmentsPerBone = 100`
   - Add `[SerializeField] string sceneFlowOutputPath = "Assets/Output/SceneFlow"`
   - Description: Expose scene flow settings in the central configuration ScriptableObject
 
-- [ ] **Task 13: Integrate SceneFlowCalculator with TimelineController.cs**
+- [ ] **Task 16: Integrate SceneFlowCalculator with TimelineController.cs**
   - Create SceneFlowCalculator instance in TimelineController
   - Call `Initialize()` when BVH data is loaded
-  - Call `UpdateFrameSegments()` when BVH frame changes
-  - Call `AccumulateMotion()` on each Timeline frame advance
-  - Description: Connect scene flow calculation to the main Timeline playback system
+  - Call `SetFrameInfo()` to update current BVH frame from BvhPlayableBehaviour
+  - Provide access to `CalculateSceneFlowForCurrentFrame()` button (optional)
+  - Description: Connect scene flow calculator initialization to Timeline system
 
-- [ ] **Task 14: Integrate SceneFlowCalculator with MultiCameraPointCloudManager.cs**
+- [ ] **Task 17: Integrate SceneFlowCalculator with MultiCameraPointCloudManager.cs**
   - Get `Mesh.vertices` from current point cloud view
   - Pass to `SceneFlowCalculator.CalculatePointFlows()`
   - Cache and store results for export
   - Description: Connect point cloud data to the scene flow calculator
 
-#### Testing & Optimization Tasks (Tasks 15-19)
+#### Testing & Optimization Tasks (Tasks 18-22)
 
-- [ ] **Task 15: Create unit tests for SceneFlowCalculator core functions**
+- [ ] **Task 18: Create unit tests for SceneFlowCalculator core functions**
   - Test `Initialize()` correctly populates bone transforms
-  - Test `UpdateBoneSegments()` generates 100 points per bone
+  - Test `BuildFrameHistoryBacktrack()` generates correct frame count
+  - Test `ApplyBvhFrame()` correctly applies frame data
+  - Test `LinkSegmentHistory()` correctly chains segments
   - Test `FindNearestSegment()` finds correct nearest segment
-  - Test `AccumulateMotion()` correctly sums vectors
-  - Test `ResetCumulativeMotion()` clears data
   - Description: Unit tests to verify core algorithm correctness
 
-- [ ] **Task 16: Test with sample BVH and point cloud data**
+- [ ] **Task 19: Test with sample BVH and point cloud data**
   - Load sample BVH file with known bone structure
   - Create test point cloud with known positions
-  - Verify segment generation and point mapping visually
-  - Check motion vectors are calculated correctly
+  - Verify frame history backtracking generates correct frames
+  - Check segment generation and point mapping visually
+  - Validate motion vectors are calculated correctly
   - Description: Integration testing with real data to validate end-to-end functionality
 
-- [ ] **Task 17: Create SceneFlowVisualizer.cs (optional visualization)**
-  - Render flow vectors as colored arrows in 3D space
+- [ ] **Task 20: Create SceneFlowVisualizer.cs (optional visualization)**
+  - Render bone segment chains in different colors per frame
+  - Draw point-to-segment associations with distance indicators
+  - Render motion vectors as colored arrows in 3D space
   - Color-code by magnitude (red=high, blue=low)
-  - Option to show all points or sparse visualization
-  - Real-time update during Timeline playback
+  - Real-time toggle for different visualization modes
   - Description: Real-time visualization component for inspecting scene flow results
 
-- [ ] **Task 18: Implement export functionality for scene flow results**
-  - Export to PLY format with velocity fields as custom properties
-  - Export to CSV with point position + flow vector per frame
-  - Export to JSON for integration with external tools
-  - Description: Save scene flow calculations to various file formats for analysis
+- [ ] **Task 21: Implement export functionality for scene flow results**
+  - Export frame history to JSON with all segment positions
+  - Export motion vectors as PLY with velocity properties
+  - Export cumulative flow as CSV for analysis
+  - Description: Export scene flow data for external processing and analysis
 
-- [ ] **Task 19: Performance optimization and benchmarking**
+- [ ] **Task 22: Performance optimization and benchmarking**
   - Profile with different point cloud sizes (100K, 1M, 10M points)
   - Optimize `FindNearestSegment()` with spatial acceleration if needed (KD-tree, grid)
   - Consider GPU compute shader for large datasets

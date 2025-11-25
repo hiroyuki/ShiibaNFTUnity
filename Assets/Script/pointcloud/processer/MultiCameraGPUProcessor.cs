@@ -61,14 +61,11 @@ public class MultiCameraGPUProcessor : MonoBehaviour
             return;
         }
 
-        Debug.Log($"Initializing multi-camera GPU processing for {frameControllers.Count} cameras");
-
         // Find bounding volume in scene
         GameObject boundingVolumeObj = GameObject.Find("BoundingVolume");
         if (boundingVolumeObj != null)
         {
             boundingVolume = boundingVolumeObj.transform;
-            Debug.Log($"[ONESHADER] Bounding volume found: {boundingVolume.name}, PointCloudSettings.showAllPoints={PointCloudSettings.showAllPoints}");
         }
         else
         {
@@ -88,7 +85,6 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         CreateColorTextureArray();
 
         isInitialized = true;
-        Debug.Log("Multi-camera GPU processing initialized successfully");
     }
 
     public void SetUnifiedMeshCallback(System.Action<Mesh> callback)
@@ -113,7 +109,6 @@ public class MultiCameraGPUProcessor : MonoBehaviour
                 totalPixels += device.GetDepthWidth() * device.GetDepthHeight();
             }
         }
-        Debug.Log($"Total pixels across all cameras: {totalPixels}");
     }
 
     private void CreateGPUBuffers()
@@ -132,8 +127,6 @@ public class MultiCameraGPUProcessor : MonoBehaviour
 
         // Valid count per camera
         validCountBuffer = new ComputeBuffer(frameControllers.Count, sizeof(int));
-
-        Debug.Log("GPU buffers created successfully");
     }
 
     private void SetupCameraMetadata()
@@ -197,12 +190,10 @@ public class MultiCameraGPUProcessor : MonoBehaviour
             if (device.TryGetGlobalTransform(out Vector3 pos, out Quaternion rot))
             {
                 metadata.depthViewerTransform = Matrix4x4.TRS(pos, rot, Vector3.one);
-                Debug.Log($"[ONESHADER Camera {i} ({device.deviceName})] Global transform: pos={pos}, rot={rot.eulerAngles}");
             }
             else
             {
                 metadata.depthViewerTransform = Matrix4x4.identity;
-                Debug.LogWarning($"[ONESHADER Camera {i} ({device.deviceName})] Failed to get global transform - using identity");
             }
 
             // Bounding volume parameters (respect PointCloudSettings)
@@ -211,22 +202,12 @@ public class MultiCameraGPUProcessor : MonoBehaviour
                 metadata.hasBoundingVolume = 1;
                 metadata.showAllPoints = PointCloudSettings.showAllPoints ? 1 : 0;
                 metadata.boundingVolumeInverseTransform = boundingVolume.worldToLocalMatrix;
-
-                if (i == 0) // Log once for first camera
-                {
-                    Debug.Log($"[ONESHADER Camera {i}] Bounding volume: hasBoundingVolume=1, showAllPoints={metadata.showAllPoints}, PointCloudSettings.showAllPoints={PointCloudSettings.showAllPoints}");
-                }
             }
             else
             {
                 metadata.hasBoundingVolume = 0;
                 metadata.showAllPoints = 1; // Show all points when no bounding volume
                 metadata.boundingVolumeInverseTransform = Matrix4x4.identity;
-
-                if (i == 0) // Log once for first camera
-                {
-                    Debug.LogWarning($"[ONESHADER Camera {i}] No bounding volume - showing all points");
-                }
             }
 
             // Buffer offsets
@@ -240,17 +221,9 @@ public class MultiCameraGPUProcessor : MonoBehaviour
             currentOutputOffset += pixelCount;
 
             metadataArray[i] = metadata;
-
-            // Debug log for each camera's key parameters
-            Debug.Log($"[ONESHADER Camera {i} ({device.deviceName})] " +
-                      $"Depth: {metadata.depthWidth}x{metadata.depthHeight}, " +
-                      $"Color: {metadata.colorWidth}x{metadata.colorHeight}, " +
-                      $"Offsets: depth={metadata.depthDataOffset}, lut={metadata.lutDataOffset}, output={metadata.outputOffset}, " +
-                      $"pixelCount={pixelCount}");
         }
 
         cameraMetadataBuffer.SetData(metadataArray);
-        Debug.Log("Camera metadata setup complete");
     }
 
     private void CreateColorTextureArray()
@@ -271,8 +244,6 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         colorTextureArray = new Texture2DArray(width, height, frameControllers.Count, TextureFormat.RGB24, false);
         colorTextureArray.wrapMode = TextureWrapMode.Clamp;
         colorTextureArray.filterMode = FilterMode.Bilinear;
-
-        Debug.Log($"Created color texture array: {width}x{height}x{frameControllers.Count}");
     }
 
     public void ProcessAllCamerasFrame(ulong targetTimestamp)
@@ -386,7 +357,6 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         if (settingsChanged)
         {
             cameraMetadataBuffer.SetData(metadataArray);
-            Debug.Log($"[ONESHADER] Updated showAllPoints to {PointCloudSettings.showAllPoints}");
         }
     }
 
@@ -440,7 +410,6 @@ public class MultiCameraGPUProcessor : MonoBehaviour
         int threadGroupsX = Mathf.Min(totalThreadGroups, 65535);
         int threadGroupsY = Mathf.CeilToInt((float)totalThreadGroups / 65535f);
 
-        Debug.Log($"[ONESHADER] Dispatching {totalThreadGroups} thread groups as ({threadGroupsX}, {threadGroupsY}, 1) for {totalPixels} total pixels");
         multiCamProcessor.Dispatch(kernelIndex, threadGroupsX, threadGroupsY, 1);
 
         // Apply results to unified or individual camera meshes

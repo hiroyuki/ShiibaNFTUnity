@@ -35,11 +35,8 @@ public class PlyModeHandler : BaseProcessingModeHandler
         // Check if PLY files exist
         if (!plyFrameController.ShouldEnablePlyMode())
         {
-            Debug.Log("No PLY files found. PLY mode unavailable.");
             return false;
         }
-
-        Debug.Log($"PLY mode enabled: {plyFrameController.GetTotalFrameCount()} files found");
         SetupStatusUI.ShowStatus($"PLY mode: {plyFrameController.GetTotalFrameCount()} files loaded");
 
         // Initialize viewer
@@ -104,7 +101,6 @@ public class PlyModeHandler : BaseProcessingModeHandler
 
         if (nextFrame >= plyFrameController.GetTotalFrameCount())
         {
-            Debug.Log("Already at last PLY frame");
             return;
         }
 
@@ -121,7 +117,6 @@ public class PlyModeHandler : BaseProcessingModeHandler
 
         if (previousFrame < 0)
         {
-            Debug.Log("Already at first PLY frame");
             return;
         }
 
@@ -155,7 +150,6 @@ public class PlyModeHandler : BaseProcessingModeHandler
         if (multiPointCloudView != null)
         {
             multiPointCloudView.LoadFromPLY(filePath);
-            Debug.Log($"[PLY Load] Loaded PLY frame {frameIndex}: {filePath}");
         }
 
         // Try to find timeline (lazy lookup - only when needed)
@@ -168,11 +162,6 @@ public class PlyModeHandler : BaseProcessingModeHandler
             double timelineTimeInSeconds = (double)frameIndex / fps;
             timelinePlayableDirector.time = timelineTimeInSeconds;
             timelinePlayableDirector.Evaluate();
-            Debug.Log($"[Timeline Sync] Updated timeline to frame {frameIndex} (time: {timelineTimeInSeconds:F3}s)");
-        }
-        else
-        {
-            Debug.Log($"[No Timeline] Timeline not available yet, PLY loaded directly without timeline sync");
         }
     }
 
@@ -187,7 +176,6 @@ public class PlyModeHandler : BaseProcessingModeHandler
 
     public override void SeekToFrame(int frameIndex)
     {
-        Debug.Log($"[PLY Mode] SeekToFrame: {frameIndex}");
         LoadPlyFrame(frameIndex);
     }
 

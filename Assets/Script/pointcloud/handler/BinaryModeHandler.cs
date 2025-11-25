@@ -133,7 +133,6 @@ public class BinaryModeHandler : BaseProcessingModeHandler
         plyExportManager = new PlyExportManager(plyController);
         plyExportManager.SetMultiPointCloudView(multiPointCloudView);
 
-        Debug.Log("PLY export enabled");
         SetupStatusUI.ShowStatus("PLY export enabled");
     }
 
@@ -264,7 +263,7 @@ public class BinaryModeHandler : BaseProcessingModeHandler
 
         if (Keyboard.current.leftArrowKey.wasPressedThisFrame)
         {
-            Debug.LogWarning("Backward navigation not supported. Use timeline controls.");
+            // Backward navigation not supported. Use timeline controls.
         }
     }
 
@@ -275,7 +274,6 @@ public class BinaryModeHandler : BaseProcessingModeHandler
         ulong nextTimestamp = FindNextSynchronizedTimestamp();
         if (nextTimestamp == 0)
         {
-            Debug.Log("No more synchronized frames available");
             return;
         }
 
@@ -358,7 +356,6 @@ public class BinaryModeHandler : BaseProcessingModeHandler
 
     public override void SeekToFrame(int frameIndex)
     {
-        Debug.Log($"[Binary Mode] SeekToFrame: {frameIndex}");
         ulong targetTimestamp = GetTargetTimestamp(frameIndex);
         ProcessFrame(frameIndex, targetTimestamp);
     }

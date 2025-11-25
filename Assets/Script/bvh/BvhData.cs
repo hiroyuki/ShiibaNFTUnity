@@ -143,4 +143,91 @@ public class BvhData
                $"  Frame Time: {FrameTime:F6}s ({FrameRate:F2} fps)\n" +
                $"  Duration: {Duration:F2}s";
     }
+
+    /// <summary>
+    /// Apply BVH frame data to a Transform hierarchy
+    /// Static utility method for applying motion capture data to bones
+    /// </summary>
+    /// <param name="rootJoint">Root joint of the BVH skeleton</param>
+    /// <param name="rootTransform">Root transform to apply motion to</param>
+    /// <param name="frameData">Frame data array (channel values)</param>
+    public static void ApplyFrameToTransforms(BvhJoint rootJoint, Transform rootTransform, float[] frameData)
+    {
+        if (rootJoint == null || rootTransform == null || frameData == null)
+            return;
+
+        int channelIndex = 0;
+        ApplyJointMotionRecursive(rootJoint, rootTransform, frameData, ref channelIndex);
+    }
+
+    /// <summary>
+    /// Recursively apply motion data to joint hierarchy
+    /// </summary>
+    private static void ApplyJointMotionRecursive(BvhJoint joint, Transform targetTransform, float[] frameData, ref int channelIndex)
+    {
+        if (joint.IsEndSite)
+            return;
+
+        Vector3 position = joint.Offset;
+        Vector3 rotation = Vector3.zero;
+
+        // Read channel data for this joint
+        foreach (string channel in joint.Channels)
+        {
+            if (channelIndex >= frameData.Length)
+                break;
+
+            float value = frameData[channelIndex];
+            channelIndex++;
+
+            switch (channel.ToUpper())
+            {
+                case "XPOSITION":
+                    position.x = value;
+                    break;
+                case "YPOSITION":
+                    position.y = value;
+                    break;
+                case "ZPOSITION":
+                    position.z = value;
+                    break;
+                case "XROTATION":
+                    rotation.x = value;
+                    break;
+                case "YROTATION":
+                    rotation.y = value;
+                    break;
+                case "ZROTATION":
+                    rotation.z = value;
+                    break;
+            }
+        }
+
+        // Apply position and rotation to this transform
+        targetTransform.localPosition = position;
+        targetTransform.localRotation = Quaternion.Euler(rotation);
+
+        // Recursively apply to children
+        foreach (var childJoint in joint.Children)
+        {
+            if (childJoint.IsEndSite)
+                continue;
+
+            Transform childTransform = targetTransform.Find(childJoint.Name);
+            if (childTransform != null)
+            {
+                ApplyJointMotionRecursive(childJoint, childTransform, frameData, ref channelIndex);
+            }
+            else
+            {
+                // Create child transform if it doesn't exist
+                GameObject childObj = new GameObject(childJoint.Name);
+                childObj.transform.SetParent(targetTransform);
+                childObj.transform.localPosition = childJoint.Offset;
+                childObj.transform.localRotation = Quaternion.identity;
+
+                ApplyJointMotionRecursive(childJoint, childObj.transform, frameData, ref channelIndex);
+            }
+        }
+    }
 }
