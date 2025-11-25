@@ -294,7 +294,7 @@ public static class BvhImporter
 
     /// <summary>
     /// Apply BVH motion data to a Unity Transform hierarchy
-    /// Assumes the Transform hierarchy matches the BVH joint names
+    /// Delegates to BvhData.ApplyFrameToTransforms() for consistent behavior
     /// </summary>
     /// <param name="bvhData">BVH data</param>
     /// <param name="rootTransform">Root transform of the character</param>
@@ -307,70 +307,7 @@ public static class BvhImporter
         float[] frameData = bvhData.GetFrame(frameIndex);
         if (frameData == null) return;
 
-        int channelIndex = 0;
-        ApplyJointTransform(bvhData.RootJoint, rootTransform, frameData, ref channelIndex);
-    }
-
-    /// <summary>
-    /// Recursively apply joint transforms
-    /// </summary>
-    private static void ApplyJointTransform(BvhJoint joint, Transform transform, float[] frameData, ref int channelIndex)
-    {
-        if (joint.IsEndSite) return;
-
-        Vector3 position = transform.localPosition;
-        Vector3 rotation = Vector3.zero;
-
-        // Apply channel data
-        foreach (string channel in joint.Channels)
-        {
-            if (channelIndex >= frameData.Length) break;
-
-            float value = frameData[channelIndex];
-            channelIndex++;
-
-            switch (channel.ToUpper())
-            {
-                case "XPOSITION":
-                    position.x = value;
-                    break;
-                case "YPOSITION":
-                    position.y = value;
-                    break;
-                case "ZPOSITION":
-                    position.z = value;
-                    break;
-                case "XROTATION":
-                    rotation.x = value;
-                    break;
-                case "YROTATION":
-                    rotation.y = value;
-                    break;
-                case "ZROTATION":
-                    rotation.z = value;
-                    break;
-            }
-        }
-
-        transform.localPosition = position;
-        transform.localRotation = Quaternion.Euler(rotation);
-
-        // Apply to children
-        foreach (var childJoint in joint.Children)
-        {
-            if (childJoint.IsEndSite) continue;
-
-            Transform childTransform = transform.Find(childJoint.Name);
-            if (childTransform != null)
-            {
-                ApplyJointTransform(childJoint, childTransform, frameData, ref channelIndex);
-            }
-            else
-            {
-                // Skip channels if transform not found
-                int skipChannels = childJoint.GetTotalChannelCount();
-                channelIndex += skipChannels;
-            }
-        }
+        // Delegate to BvhData's unified implementation
+        BvhData.ApplyFrameToTransforms(bvhData.RootJoint, rootTransform, frameData);
     }
 }

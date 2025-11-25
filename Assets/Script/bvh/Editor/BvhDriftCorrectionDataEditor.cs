@@ -338,7 +338,7 @@ public class BvhDriftCorrectionDataEditor : Editor
     private void JumpToKeyframe(BvhKeyframe keyframe)
     {
         // シーン内のPlayableDirectorを取得
-        PlayableDirector timeline = FindObjectOfType<PlayableDirector>();
+        PlayableDirector timeline = FindFirstObjectByType<PlayableDirector>();
 
         if (timeline == null)
         {

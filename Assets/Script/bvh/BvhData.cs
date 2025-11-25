@@ -61,6 +61,9 @@ public class BvhData
     public float FrameTime { get; set; }
     public float[][] Frames { get; set; }
 
+    /// <summary>Root transform in the Scene hierarchy (optional, set via SetRootTransform)</summary>
+    private Transform rootTransform;
+
     /// <summary>
     /// Get frames per second
     /// </summary>
@@ -72,12 +75,38 @@ public class BvhData
     public float Duration => FrameCount * FrameTime;
 
     /// <summary>
+    /// Set the root transform in the Scene hierarchy
+    /// Required for UpdateTransforms() to work
+    /// </summary>
+    /// <param name="root">Root transform of the character in the scene</param>
+    public void SetRootTransform(Transform root)
+    {
+        this.rootTransform = root;
+    }
+
+    /// <summary>
+    /// Get the root transform (if set)
+    /// </summary>
+    public Transform GetRootTransform()
+    {
+        return rootTransform;
+    }
+
+    /// <summary>
     /// Get all joints in the hierarchy (excluding end sites)
     /// </summary>
     public List<BvhJoint> GetAllJoints()
     {
         if (RootJoint == null) return new List<BvhJoint>();
         return RootJoint.GetAllJoints();
+    }
+
+    /// <summary>
+    /// Get all bones (alias for GetAllJoints for cleaner API)
+    /// </summary>
+    public List<BvhJoint> GetBones()
+    {
+        return GetAllJoints();
     }
 
     /// <summary>
@@ -142,6 +171,32 @@ public class BvhData
                $"  Frames: {FrameCount}\n" +
                $"  Frame Time: {FrameTime:F6}s ({FrameRate:F2} fps)\n" +
                $"  Duration: {Duration:F2}s";
+    }
+
+    /// <summary>
+    /// Update the Scene transforms for a specific frame
+    /// Applies BVH frame data to the stored rootTransform
+    /// </summary>
+    /// <param name="frameNumber">Frame index to apply (0-based)</param>
+    public void UpdateTransforms(int frameNumber)
+    {
+        if (rootTransform == null)
+        {
+            Debug.LogError("[BvhData] rootTransform not set. Call SetRootTransform() first.");
+            return;
+        }
+
+        if (frameNumber < 0 || frameNumber >= FrameCount)
+        {
+            Debug.LogWarning($"[BvhData] Frame index {frameNumber} out of range [0, {FrameCount - 1}]");
+            return;
+        }
+
+        float[] frameData = GetFrame(frameNumber);
+        if (frameData == null)
+            return;
+
+        ApplyFrameToTransforms(RootJoint, rootTransform, frameData);
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Playables;
+using Assets.Script.sceneflow;
 
 /// <summary>
 /// Playable behaviour for controlling BVH motion playback in Unity Timeline
@@ -45,6 +46,22 @@ public class BvhPlayableBehaviour : PlayableBehaviour
 
             // Create or find transforms for all joints
             CreateJointHierarchy();
+
+            // Notify SceneFlowCalculator that BVH data is now available
+            NotifySceneFlowCalculator();
+        }
+    }
+
+    /// <summary>
+    /// Notify SceneFlowCalculator that BVH data has been loaded and is ready
+    /// </summary>
+    private void NotifySceneFlowCalculator()
+    {
+        SceneFlowCalculator calculator = GameObject.FindFirstObjectByType<SceneFlowCalculator>();
+        if (calculator != null && bvhData != null)
+        {
+            calculator.SetBvhData(bvhData, this);
+            Debug.Log("[BvhPlayableBehaviour] Notified SceneFlowCalculator of BVH data availability");
         }
     }
 
