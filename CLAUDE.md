@@ -58,6 +58,18 @@ Rendering/View Layer (SinglePointCloudView, MultiPointCloudView)
 
 ```
 Assets/Script/
+├── bvh/                                 # Skeletal animation (BVH format)
+│   ├── BvhData.cs                       # Core BVH data structures
+│   ├── BvhImporter.cs                   # BVH file import
+│   ├── BvhPlayer.cs                     # Playback controller
+│   ├── BvhChannelReader.cs              # BVH channel data parsing
+│   ├── BvhKeyframe.cs                   # Keyframe data structure
+│   ├── BvhFrameApplier.cs               # Applies frames to skeleton
+│   ├── BvhSkeletonVisualizer.cs         # Skeleton joint/bone rendering
+│   ├── BvhDriftCorrectionData.cs        # Animation drift correction
+│   └── Editor/
+│       └── BvhDriftCorrectionDataEditor.cs  # Custom inspector UI
+│
 ├── config/
 │   └── DatasetConfig.cs                 # Central configuration ScriptableObject
 │
@@ -69,10 +81,24 @@ Assets/Script/
 │   ├── AbstractSensorDataParser.cs      # Base class for parsers
 │   ├── ISensorDataParser.cs             # Parser interface
 │   ├── CameraMetadata.cs                # Camera intrinsics/extrinsics
-│   └── [metadata classes]
+│   ├── SensorHeader.cs                  # Sensor stream header data
+│   ├── DatasetInfo.cs                   # Dataset metadata
+│   └── HostInfo.cs                      # Host/environment information
 │
 ├── pointcloud/                          # Core point cloud processing
 │   ├── MultiCamPointCloudManager.cs     # Main orchestrator
+│   ├── controller/                      # Frame control logic
+│   │   ├── IFrameController.cs
+│   │   ├── CameraFrameController.cs
+│   │   └── PlyFrameController.cs
+│   ├── handler/                         # Processing mode selection
+│   │   ├── IProcessingModeHandler.cs
+│   │   ├── BaseProcessingModeHandler.cs
+│   │   ├── PlyModeHandler.cs            # PLY file ingestion
+│   │   └── BinaryModeHandler.cs         # Binary format ingestion
+│   ├── manager/                         # High-level management
+│   │   ├── FrameProcessingManager.cs
+│   │   └── PlyExportManager.cs
 │   ├── processer/                       # Processing implementations
 │   │   ├── IPointCloudProcessor.cs      # Processor interface
 │   │   ├── BasePointCloudProcessor.cs   # Abstract base
@@ -80,43 +106,39 @@ Assets/Script/
 │   │   ├── GPUPointCloudProcessor.cs
 │   │   ├── MultiCameraGPUProcessor.cs
 │   │   └── PointCloudProcessorFactory.cs
-│   ├── handler/                         # Processing mode selection
-│   │   ├── IProcessingModeHandler.cs
-│   │   ├── BaseProcessingModeHandler.cs
-│   │   ├── PlyModeHandler.cs            # PLY file ingestion
-│   │   └── BinaryModeHandler.cs         # Binary format ingestion
-│   ├── controller/                      # Frame control logic
-│   │   ├── IFrameController.cs
-│   │   ├── CameraFrameController.cs
-│   │   └── PlyFrameController.cs
-│   ├── manager/                         # High-level management
-│   │   ├── FrameProcessingManager.cs
-│   │   └── PlyExportManager.cs
 │   └── view/                            # Rendering & visualization
 │       ├── SinglePointCloudView.cs
 │       ├── MultiPointCloudView.cs
 │       └── PointCloudSettings.cs
+│
+├── sceneflow/                           # Scene flow calculation
+│   ├── SceneFlowCalculator.cs           # Scene flow computation
+│   └── Editor/
+│       └── SceneFlowCalculatorEditor.cs # Custom editor UI
 │
 ├── timeline/                            # Timeline integration
 │   ├── TimelineController.cs            # Main timeline orchestration
 │   ├── PointCloudPlayableAsset.cs       # Playable asset for point clouds
 │   ├── PointCloudPlayableBehaviour.cs
 │   ├── BvhPlayableAsset.cs              # Playable asset for skeleton
-│   └── BvhPlayableBehaviour.cs
+│   ├── BvhPlayableBehaviour.cs
+│   └── BVH_TIMELINE_USAGE.md            # Comprehensive BVH timeline guide
 │
 └── utils/                               # Utility functions
     ├── PlyImporter.cs                   # PLY format import
     ├── PlyExporter.cs                   # PLY format export
-    ├── BvhImporter.cs                   # BVH skeletal animation import
-    ├── BvhPlayer.cs                     # BVH playback controller
-    ├── BvhData.cs                       # BVH data structures
-    ├── BvhSkeletonVisualizer.cs         # Skeleton rendering
+    ├── BvhImporter.cs                   # BVH format import
     ├── ExtrinsicsLoader.cs              # Camera extrinsics loading
     ├── YamlLoader.cs                    # YAML config parsing
     ├── OpenCVUndistortHelper.cs         # Camera undistortion
     ├── UndistortLutGenerator.cs         # LUT generation
     ├── BoundingVolumeGizmo.cs           # Debug visualization
-    └── [other utilities]
+    ├── BoundingVolumeDebugController.cs # Bounding volume debug controller
+    ├── MouseOrbitCamera.cs              # Camera orbit control
+    ├── CameraPositionGizmo.cs           # Camera position visualization
+    ├── SetupStatusUI.cs                 # Setup status UI
+    └── Editor/
+        └── (empty)
 ```
 
 ## Development Commands
@@ -187,34 +209,89 @@ The system handles multi-camera sensor fusion through:
 
 ## Git Context
 
-- **Current Branch:** BVH-ALIGN (active development on BVH alignment features)
+- **Current Branch:** DEPTH-FLOW (active development)
 - **Main Branch:** main (use for pull requests)
-- **Recent Focus:** BVH import, timeline synchronization, and point cloud sequence loading
+- **Recent Commits:**
+  - `82ba346` - refactoring
+  - `ab77927` - key frame drift adjustment修正
+  - `81be31f` - Show Scene Flowボタン追加とbone セグメンテーション（うまくいってない）
+  - `243e12e` - Update TotoriBVHAdjustData.asset
+  - `d5c5566` - WIP
+- **Recent Focus:** BVH skeletal animation refinements, scene flow visualization, point cloud processing improvements
 
 ## Known Issues
 
 ### BVH Skeleton Visualization Not Displaying (2025-11-11)
 
-**Status:** Under Investigation
+**Status:** Under Investigation (Recent refactoring in progress)
 
 **Symptom:** BVH_Visuals GameObject is created under BVH_Character, but the skeleton visualization (joint spheres and bone lines) is not visible in the viewport.
 
 **Diagnosis:**
 - BvhPlayableBehaviour creates the joint hierarchy (via `CreateJointHierarchy()`) during Timeline `OnGraphStart()`
-- BvhSkeletonVisualizer attempts to visualize joints but finds them empty
-- Root cause: Timing issue - joint creation may be delayed, or BvhSkeletonVisualizer timing needs adjustment
-- Delay increased from 0.2s → 1.0s in `BvhSkeletonVisualizer.Start()` (2025-11-11), but issue persists
+- BvhSkeletonVisualizer attempts to visualize joints but may encounter timing issues
+- Root cause: Timing issue between joint creation and visualization attempt
+- Delay increased from 0.2s → 1.0s in `BvhSkeletonVisualizer.Start()`, but issue persists
+- Recent refactoring (commit 82ba346) may have addressed this
 
 **Files Involved:**
-- `Assets/Script/timeline/BvhPlayableBehaviour.cs` - Creates joint hierarchy in `OnGraphStart()` (Line 37)
-- `Assets/Script/utils/BvhSkeletonVisualizer.cs` - Attempts visualization via `Invoke(CreateVisuals, 1.0f)` (Line 47)
+- [Assets/Script/timeline/BvhPlayableBehaviour.cs](Assets/Script/timeline/BvhPlayableBehaviour.cs) - Creates joint hierarchy in `OnGraphStart()`
+- [Assets/Script/bvh/BvhSkeletonVisualizer.cs](Assets/Script/bvh/BvhSkeletonVisualizer.cs) - Visualization logic
+- [Assets/Script/bvh/BvhFrameApplier.cs](Assets/Script/bvh/BvhFrameApplier.cs) - Frame application (new component)
 
 **Next Steps:**
-1. Add more detailed debug logging to track joint creation timing
-2. Consider event-based callback from BvhPlayableBehaviour instead of Invoke timing
+1. Test visualization after recent refactoring
+2. If still failing, add event-based callback from BvhPlayableBehaviour instead of Invoke timing
 3. Verify joint hierarchy is properly created before visualization attempt
+
+### Bone Segmentation Issue (2025-11-11)
+
+**Status:** In Progress (うまくいってない - not working well)
+
+**Symptom:** Bone segmentation feature (referenced in scene flow button additions) is not functioning correctly.
+
+**Files Involved:**
+- [Assets/Script/sceneflow/SceneFlowCalculator.cs](Assets/Script/sceneflow/SceneFlowCalculator.cs) - Scene flow calculation
+- [Assets/Script/sceneflow/Editor/SceneFlowCalculatorEditor.cs](Assets/Script/sceneflow/Editor/SceneFlowCalculatorEditor.cs) - Editor UI
+
+**Recent Focus:** Debugging bone segmentation algorithm; see commit 81be31f for latest attempts.
+
+## Recent Additions & Updates
+
+### New BVH System (bvh/ directory)
+The BVH skeletal animation system has been significantly enhanced with new dedicated classes:
+- **BvhChannelReader.cs** - Parses BVH motion data channels
+- **BvhKeyframe.cs** - Represents individual animation keyframes
+- **BvhFrameApplier.cs** - Applies keyframe data to skeleton hierarchy
+- **BvhDriftCorrectionData.cs** - Corrects animation drift/misalignment issues
+- Custom inspector editor for drift correction parameters
+
+This modular approach improves maintainability and allows fine-grained control over BVH animation playback.
+
+### Scene Flow System (sceneflow/ directory)
+New scene flow calculation system for optical flow/motion visualization:
+- **SceneFlowCalculator.cs** - Core computation engine
+- **SceneFlowCalculatorEditor.cs** - Custom editor UI for configuration
+- Provides "Show Scene Flow" button for debugging point cloud motion
+
+**Status:** Currently under development; bone segmentation component not yet fully functional.
+
+### Enhanced Debugging Tools (utils/)
+Added new debugging and visualization components:
+- **BoundingVolumeDebugController.cs** - Runtime control of bounding volume display
+- **CameraPositionGizmo.cs** - Visual indicators for camera positions
+- **SetupStatusUI.cs** - Status display for project initialization
+
+### Timeline Documentation
+- **BVH_TIMELINE_USAGE.md** - Comprehensive guide for integrating BVH animation with Timeline system, including:
+  - Setup and configuration steps
+  - Transform adjustment procedures
+  - Timeline synchronization with point clouds
+  - Programmatic control examples
+  - Troubleshooting guidance
 
 ## Additional Resources
 
 - **README.md:** Project overview
+- **BVH_TIMELINE_USAGE.md:** [Assets/Script/timeline/BVH_TIMELINE_USAGE.md](Assets/Script/timeline/BVH_TIMELINE_USAGE.md) - Detailed BVH timeline integration guide
 - **In-Code Documentation:** All major classes include extensive XML documentation comments
