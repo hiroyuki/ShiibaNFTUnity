@@ -265,7 +265,7 @@ public class BvhDriftCorrectionDataEditor : Editor
 
     /// <summary>
     /// Updates the BVH_Character position based on keyframe position change
-    /// Applies the delta (difference) to the current BVH position
+    /// Sets position to DatasetConfig.BvhPositionOffset + keyframe correction value
     /// </summary>
     private void UpdateBvhCharacterPosition(Vector3 newPosition, Vector3 oldPosition, BvhKeyframe keyframe)
     {
@@ -277,21 +277,34 @@ public class BvhDriftCorrectionDataEditor : Editor
             return;
         }
 
-        // Calculate the delta (how much the position changed)
-        Vector3 positionDelta = newPosition - oldPosition;
+        // Get DatasetConfig via MultiCameraPointCloudManager
+        var manager = FindFirstObjectByType<MultiCameraPointCloudManager>();
+        if (manager == null)
+        {
+            Debug.LogWarning("[BvhDriftCorrectionDataEditor] MultiCameraPointCloudManager not found in scene");
+            return;
+        }
 
-        // Apply the delta to the BVH_Character's current position
+        DatasetConfig datasetConfig = manager.GetDatasetConfig();
+        if (datasetConfig == null)
+        {
+            Debug.LogWarning("[BvhDriftCorrectionDataEditor] DatasetConfig not configured in MultiCameraPointCloudManager");
+            return;
+        }
+
+        // Calculate the correct position: BaseOffset + KeyframeCorrection
         Transform bvhTransform = bvhCharacter.transform;
-        Vector3 updatedPosition = bvhTransform.localPosition + positionDelta;
+        Vector3 baseOffset = datasetConfig.BvhPositionOffset;
+        Vector3 updatedPosition = baseOffset + newPosition;
 
         // Update the BVH_Character position
         bvhTransform.localPosition = updatedPosition;
 
         Debug.Log($"[BVH Position Updated] Keyframe {keyframe.timelineTime}s:\n" +
+                  $"  Base Offset (DatasetConfig): {baseOffset}\n" +
                   $"  Old Correction: {oldPosition}\n" +
                   $"  New Correction: {newPosition}\n" +
-                  $"  Delta Applied: {positionDelta}\n" +
-                  $"  BVH_Character New Position: {updatedPosition}");
+                  $"  Final Position: {baseOffset} + {newPosition} = {updatedPosition}");
 
         // Mark the transform as dirty to ensure changes are saved
         EditorUtility.SetDirty(bvhTransform);
@@ -299,7 +312,7 @@ public class BvhDriftCorrectionDataEditor : Editor
 
     /// <summary>
     /// Updates the BVH_Character rotation based on keyframe rotation change
-    /// Applies the delta (difference) to the current BVH rotation
+    /// Sets rotation to DatasetConfig.BvhRotationOffset + keyframe correction value
     /// </summary>
     private void UpdateBvhCharacterRotation(Vector3 newRotation, Vector3 oldRotation, BvhKeyframe keyframe)
     {
@@ -311,22 +324,34 @@ public class BvhDriftCorrectionDataEditor : Editor
             return;
         }
 
-        // Calculate the delta (how much the rotation changed) in euler angles
-        Vector3 rotationDelta = newRotation - oldRotation;
+        // Get DatasetConfig via MultiCameraPointCloudManager
+        var manager = FindFirstObjectByType<MultiCameraPointCloudManager>();
+        if (manager == null)
+        {
+            Debug.LogWarning("[BvhDriftCorrectionDataEditor] MultiCameraPointCloudManager not found in scene");
+            return;
+        }
 
-        // Apply the delta to the BVH_Character's current rotation
+        DatasetConfig datasetConfig = manager.GetDatasetConfig();
+        if (datasetConfig == null)
+        {
+            Debug.LogWarning("[BvhDriftCorrectionDataEditor] DatasetConfig not configured in MultiCameraPointCloudManager");
+            return;
+        }
+
+        // Calculate the correct rotation: BaseOffset + KeyframeCorrection
         Transform bvhTransform = bvhCharacter.transform;
-        Vector3 currentEuler = bvhTransform.localEulerAngles;
-        Vector3 updatedEuler = currentEuler + rotationDelta;
+        Vector3 baseOffset = datasetConfig.BvhRotationOffset;
+        Vector3 updatedEuler = baseOffset + newRotation;
 
         // Update the BVH_Character rotation
         bvhTransform.localEulerAngles = updatedEuler;
 
         Debug.Log($"[BVH Rotation Updated] Keyframe {keyframe.timelineTime}s:\n" +
+                  $"  Base Offset (DatasetConfig): {baseOffset}\n" +
                   $"  Old Correction: {oldRotation}\n" +
                   $"  New Correction: {newRotation}\n" +
-                  $"  Delta Applied: {rotationDelta}\n" +
-                  $"  BVH_Character New Rotation: {updatedEuler}");
+                  $"  Final Rotation: {baseOffset} + {newRotation} = {updatedEuler}");
 
         // Mark the transform as dirty to ensure changes are saved
         EditorUtility.SetDirty(bvhTransform);
