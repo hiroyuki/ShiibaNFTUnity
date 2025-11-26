@@ -14,8 +14,8 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     public float frameRate = 30f;
 
     // Transform adjustment settings
-    public Vector3 positionOffset = Vector3.zero;
-    public Vector3 rotationOffset = Vector3.zero;
+    private Vector3 positionOffset = Vector3.zero;
+    private Vector3 rotationOffset = Vector3.zero;
     public Vector3 scale = Vector3.one;
     public bool applyRootMotion = true;
     public int frameOffset = 0;
@@ -29,6 +29,9 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     // Timeline-independent utilities
     private BvhFrameMapper frameMapper = new BvhFrameMapper();
     private BvhDriftCorrectionController driftController = new BvhDriftCorrectionController();
+
+    public Vector3 RotationOffset { set => rotationOffset = value; }
+    public Vector3 PositionOffset { set => positionOffset = value; }
 
     /// <summary>
     /// 現在のBVHフレーム番号を取得（キーフレーム記録用）

@@ -68,7 +68,19 @@ public class PlyModeHandler : BaseProcessingModeHandler
     {
         if (!plyFrameController.IsFirstFrameProcessed)
         {
-            LoadPlyFrame(0);
+            // LoadPlyFrame(0);
+
+        // // Try to find timeline (lazy lookup - only when needed)
+            PlayableDirector timelinePlayableDirector = Object.FindFirstObjectByType<PlayableDirector>();
+
+            // If timeline is available, sync it so BVH updates properly
+            if (timelinePlayableDirector != null)
+            {
+                int fps = plyFrameController.GetFps();
+                double timelineTimeInSeconds = (double)0 / fps;
+                timelinePlayableDirector.time = timelineTimeInSeconds;
+                timelinePlayableDirector.Evaluate();
+            }
         }
     }
 
@@ -152,17 +164,17 @@ public class PlyModeHandler : BaseProcessingModeHandler
             multiPointCloudView.LoadFromPLY(filePath);
         }
 
-        // Try to find timeline (lazy lookup - only when needed)
-        PlayableDirector timelinePlayableDirector = Object.FindFirstObjectByType<PlayableDirector>();
+        // // Try to find timeline (lazy lookup - only when needed)
+        // PlayableDirector timelinePlayableDirector = Object.FindFirstObjectByType<PlayableDirector>();
 
-        // If timeline is available, sync it so BVH updates properly
-        if (timelinePlayableDirector != null)
-        {
-            int fps = plyFrameController.GetFps();
-            double timelineTimeInSeconds = (double)frameIndex / fps;
-            timelinePlayableDirector.time = timelineTimeInSeconds;
-            timelinePlayableDirector.Evaluate();
-        }
+        // // If timeline is available, sync it so BVH updates properly
+        // if (timelinePlayableDirector != null)
+        // {
+        //     int fps = plyFrameController.GetFps();
+        //     double timelineTimeInSeconds = (double)frameIndex / fps;
+        //     timelinePlayableDirector.time = timelineTimeInSeconds;
+        //     timelinePlayableDirector.Evaluate();
+        // }
     }
 
     /// <summary>

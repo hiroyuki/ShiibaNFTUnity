@@ -131,8 +131,8 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
         }
 
         // Apply transform adjustments
-        behaviour.positionOffset = position;
-        behaviour.rotationOffset = rotation;
+        behaviour.PositionOffset = position;
+        behaviour.RotationOffset = rotation;
         behaviour.scale = scaleVal;
         behaviour.applyRootMotion = applyRoot;
         behaviour.frameOffset = frameOff;
