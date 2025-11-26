@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.Playables;
 using Assets.Script.sceneflow;
+using System.Collections.Generic;
 
 /// <summary>
 /// Playable behaviour for controlling BVH motion playback in Unity Timeline
@@ -74,18 +75,8 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     {
         if (bvhData == null || targetTransform == null) return;
 
-        // Get current time from timeline
         double currentTime = playable.GetTime();
-
-        // Calculate frame using keyframe-based mapping if available, otherwise use linear mapping
-        float bvhFrameRate = bvhData.FrameRate;
-        int targetFrame = CalculateTargetFrame((float)currentTime, bvhFrameRate);
-
-        // Apply frame offset for synchronization with point cloud
-        targetFrame += frameOffset;
-
-        // Clamp to valid range
-        targetFrame = Mathf.Clamp(targetFrame, 0, bvhData.FrameCount - 1);
+        int targetFrame = GetTargetFrameForTime((float)currentTime);
 
         // Only update if frame changed
         if (targetFrame != currentFrame)
@@ -96,6 +87,16 @@ public class BvhPlayableBehaviour : PlayableBehaviour
 
         // Apply drift correction if enabled
         ApplyDriftCorrection((float)currentTime);
+    }
+
+    /// <summary>
+    /// Get the target BVH frame for the given timeline time, including offset and clamping
+    /// </summary>
+    private int GetTargetFrameForTime(float timelineTime)
+    {
+        int targetFrame = CalculateTargetFrame(timelineTime, bvhData.FrameRate);
+        targetFrame += frameOffset; // Apply frame offset for synchronization with point cloud
+        return Mathf.Clamp(targetFrame, 0, bvhData.FrameCount - 1); // Clamp to valid range
     }
 
     /// <summary>
@@ -146,77 +147,76 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     /// </summary>
     private int CalculateTargetFrame(float currentTime, float bvhFrameRate)
     {
-        // If drift correction data is available and has keyframes, use keyframe-based mapping
-        if (driftCorrectionData != null && driftCorrectionData.GetKeyframeCount() > 0)
+        if (driftCorrectionData == null || driftCorrectionData.GetKeyframeCount() == 0)
         {
-            var keyframes = driftCorrectionData.GetAllKeyframes();
-
-            // Find surrounding keyframes
-            BvhKeyframe prevKeyframe = null;
-            BvhKeyframe nextKeyframe = null;
-
-            foreach (var kf in keyframes)
-            {
-                if (kf.timelineTime <= currentTime)
-                    prevKeyframe = kf;
-                else if (nextKeyframe == null)
-                    nextKeyframe = kf;
-            }
-
-            int targetFrame;
-
-            // Case 1: Between two keyframes - interpolate frame number
-            if (prevKeyframe != null && nextKeyframe != null)
-            {
-                float timeDelta = nextKeyframe.timelineTime - prevKeyframe.timelineTime;
-                if (timeDelta > 0)
-                {
-                    float frameDelta = nextKeyframe.bvhFrameNumber - prevKeyframe.bvhFrameNumber;
-                    float t = (currentTime - prevKeyframe.timelineTime) / timeDelta;
-                    t = Mathf.Clamp01(t);
-
-                    targetFrame = Mathf.FloorToInt(prevKeyframe.bvhFrameNumber + (frameDelta * t));
-                }
-                else
-                {
-                    targetFrame = prevKeyframe.bvhFrameNumber;
-                }
-            }
-            // Case 2: Before first keyframe - interpolate from (0s, frame 0) to first keyframe
-            else if (prevKeyframe == null && nextKeyframe != null)
-            {
-                float timeDelta = nextKeyframe.timelineTime - 0f;
-                if (timeDelta > 0)
-                {
-                    float frameDelta = nextKeyframe.bvhFrameNumber - 0;
-                    float t = (currentTime - 0f) / timeDelta;
-                    t = Mathf.Clamp01(t);
-
-                    targetFrame = Mathf.FloorToInt(0 + (frameDelta * t));
-                }
-                else
-                {
-                    targetFrame = 0;
-                }
-            }
-            // Case 3: After last keyframe - extrapolate using BVH file's native frame rate
-            else if (prevKeyframe != null && nextKeyframe == null)
-            {
-                float timeSincePrevKeyframe = currentTime - prevKeyframe.timelineTime;
-                float additionalFrames = timeSincePrevKeyframe * bvhFrameRate;
-
-                targetFrame = prevKeyframe.bvhFrameNumber + Mathf.FloorToInt(additionalFrames);
-            }
-            // Case 4: No surrounding keyframes (shouldn't happen if keyframes exist)
-            else
-            {
-                targetFrame = Mathf.FloorToInt((float)(currentTime * bvhFrameRate));
-            }
-
-            return targetFrame;
+            // Fall back to linear mapping when no keyframes available
+            return Mathf.FloorToInt((float)(currentTime * bvhFrameRate));
         }
 
-        // Fall back to linear mapping when no keyframes available
+        FindSurroundingKeyframes(currentTime, out BvhKeyframe prevKeyframe, out BvhKeyframe nextKeyframe);
+        return InterpolateFrameNumber(currentTime, prevKeyframe, nextKeyframe, bvhFrameRate);
+    }
+
+    /// <summary>
+    /// Find keyframes that surround the given time
+    /// </summary>
+    private void FindSurroundingKeyframes(float currentTime, out BvhKeyframe prevKeyframe, out BvhKeyframe nextKeyframe)
+    {
+        prevKeyframe = null;
+        nextKeyframe = null;
+
+        var keyframes = driftCorrectionData.GetAllKeyframes();
+        foreach (var kf in keyframes)
+        {
+            if (kf.timelineTime <= currentTime)
+                prevKeyframe = kf;
+            else if (nextKeyframe == null)
+                nextKeyframe = kf;
+        }
+    }
+
+    /// <summary>
+    /// Interpolate BVH frame number based on surrounding keyframes
+    /// </summary>
+    private int InterpolateFrameNumber(float currentTime, BvhKeyframe prevKeyframe, BvhKeyframe nextKeyframe, float bvhFrameRate)
+    {
+        // Case 1: Between two keyframes - interpolate frame number
+        if (prevKeyframe != null && nextKeyframe != null)
+        {
+            float timeDelta = nextKeyframe.timelineTime - prevKeyframe.timelineTime;
+            if (timeDelta > 0)
+            {
+                float frameDelta = nextKeyframe.bvhFrameNumber - prevKeyframe.bvhFrameNumber;
+                float t = (currentTime - prevKeyframe.timelineTime) / timeDelta;
+                t = Mathf.Clamp01(t);
+                return Mathf.FloorToInt(prevKeyframe.bvhFrameNumber + (frameDelta * t));
+            }
+            return prevKeyframe.bvhFrameNumber;
+        }
+
+        // Case 2: Before first keyframe - interpolate from (0s, frame 0) to first keyframe
+        if (prevKeyframe == null && nextKeyframe != null)
+        {
+            float timeDelta = nextKeyframe.timelineTime;
+            if (timeDelta > 0)
+            {
+                float frameDelta = nextKeyframe.bvhFrameNumber;
+                float t = currentTime / timeDelta;
+                t = Mathf.Clamp01(t);
+                return Mathf.FloorToInt(frameDelta * t);
+            }
+            return 0;
+        }
+
+        // Case 3: After last keyframe - extrapolate using BVH file's native frame rate
+        if (prevKeyframe != null && nextKeyframe == null)
+        {
+            float timeSincePrevKeyframe = currentTime - prevKeyframe.timelineTime;
+            float additionalFrames = timeSincePrevKeyframe * bvhFrameRate;
+            return prevKeyframe.bvhFrameNumber + Mathf.FloorToInt(additionalFrames);
+        }
+
+        // Case 4: No surrounding keyframes (shouldn't happen if keyframes exist)
         return Mathf.FloorToInt((float)(currentTime * bvhFrameRate));
     }
 
@@ -238,111 +238,60 @@ public class BvhPlayableBehaviour : PlayableBehaviour
             return;
         }
 
-        int channelIndex = 0;
-        ApplyJointTransform(bvhData.RootJoint, rootJointTransform, frameData, ref channelIndex, true);
+        var applier = new PlayableFrameApplier(scale, rotationOffset, applyRootMotion);
+        applier.ApplyFrame(bvhData.RootJoint, rootJointTransform, frameData);
     }
 
     /// <summary>
-    /// Recursively apply joint transforms with adjustments
+    /// Custom frame applier for BvhPlayableBehaviour with position/rotation adjustments
     /// </summary>
-    private void ApplyJointTransform(BvhJoint joint, Transform transform, float[] frameData, ref int channelIndex, bool isRoot)
+    private class PlayableFrameApplier : BvhFrameApplier
     {
-        if (joint.IsEndSite) return;
-        if (transform == null) return;
+        private Vector3 scale;
+        private Vector3 rotationOffset;
+        private bool applyRootMotion;
+        private bool hasPositionChannels;
 
-        Vector3 position = joint.Offset;
-        float rotX = 0, rotY = 0, rotZ = 0;
-        bool hasPosition = false;
-
-        // Read channel data
-        foreach (string channel in joint.Channels)
+        public PlayableFrameApplier(Vector3 scale, Vector3 rotationOffset, bool applyRootMotion)
         {
-            if (channelIndex >= frameData.Length) break;
-
-            float value = frameData[channelIndex];
-            channelIndex++;
-
-            switch (channel.ToUpper())
-            {
-                case "XPOSITION":
-                    position.x = value;
-                    hasPosition = true;
-                    break;
-                case "YPOSITION":
-                    position.y = value;
-                    hasPosition = true;
-                    break;
-                case "ZPOSITION":
-                    position.z = value;
-                    hasPosition = true;
-                    break;
-                case "XROTATION":
-                    rotX = value;
-                    break;
-                case "YROTATION":
-                    rotY = value;
-                    break;
-                case "ZROTATION":
-                    rotZ = value;
-                    break;
-            }
+            this.scale = scale;
+            this.rotationOffset = rotationOffset;
+            this.applyRootMotion = applyRootMotion;
         }
 
-        // Apply adjustments for root joint
-        if (isRoot)
+        protected override Vector3 AdjustPosition(Vector3 basePosition, BvhJoint joint, bool isRoot)
         {
-            if (applyRootMotion && hasPosition)
+            if (!isRoot)
+            {
+                // Non-root joints: scale position
+                return Vector3.Scale(basePosition, scale);
+            }
+
+            // Root joint adjustments
+            hasPositionChannels = BvhChannelReader.HasPositionChannels(joint.Channels);
+
+            if (applyRootMotion && hasPositionChannels)
             {
                 // Apply position with scale
-                position = Vector3.Scale(position, scale);
+                return Vector3.Scale(basePosition, scale);
             }
-            else if (!hasPosition)
+            else if (!hasPositionChannels)
             {
                 // Use offset position only
-                position = joint.Offset;
+                return joint.Offset;
             }
 
-            // Apply rotation offset
-            rotX += rotationOffset.x;
-            rotY += rotationOffset.y;
-            rotZ += rotationOffset.z;
-        }
-        else
-        {
-            // Non-root joints: scale position
-            if (hasPosition)
-            {
-                position = Vector3.Scale(position, scale);
-            }
+            return basePosition;
         }
 
-        // Apply position
-        transform.localPosition = position;
-
-        // Apply rotation in ZXY order (mocopi uses Zrotation Xrotation Yrotation)
-        // Unity uses left-handed coordinates, so we need to adjust
-        Quaternion qZ = Quaternion.AngleAxis(rotZ, Vector3.forward);
-        Quaternion qX = Quaternion.AngleAxis(rotX, Vector3.right);
-        Quaternion qY = Quaternion.AngleAxis(rotY, Vector3.up);
-
-        transform.localRotation = qZ * qX * qY;
-
-        // Apply to children
-        foreach (var childJoint in joint.Children)
+        protected override Vector3 AdjustRotation(Vector3 baseRotation, BvhJoint joint, bool isRoot)
         {
-            if (childJoint.IsEndSite) continue;
-
-            Transform childTransform = transform.Find(childJoint.Name);
-            if (childTransform != null)
+            // Apply rotation offset for root joint only
+            if (isRoot)
             {
-                ApplyJointTransform(childJoint, childTransform, frameData, ref channelIndex, false);
+                return baseRotation + rotationOffset;
             }
-            else
-            {
-                // Skip channels if transform not found
-                int skipChannels = childJoint.GetTotalChannelCount();
-                channelIndex += skipChannels;
-            }
+            return baseRotation;
         }
     }
 
