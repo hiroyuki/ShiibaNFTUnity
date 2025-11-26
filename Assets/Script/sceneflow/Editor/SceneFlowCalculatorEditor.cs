@@ -1,7 +1,6 @@
 #if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
-using Assets.Script.sceneflow;
 
 /// <summary>
 /// Custom Inspector for SceneFlowCalculator

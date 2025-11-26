@@ -38,7 +38,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     void Start()
     {
         SetupStatusUI.ShowStatus("Starting Multi-Camera Point Cloud Manager...");
-
+        Debug.Log("[MultiCameraPointCloudManager] Start");
         // Ensure DatasetConfig is set
         // First try runtime config, then fall back to serialized field
         if (GetDatasetConfig() == null && datasetConfig != null)
@@ -53,6 +53,9 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             SetupStatusUI.ShowStatus("ERROR: DatasetConfig not configured");
             return;
         }
+
+        // Initialize BvhDataManager with DatasetConfig
+        BvhDataManager.InitializeWithConfig(GetDatasetConfig());
 
         DisableTimelineAutoPlay();
         LoadDatasetInfo();
@@ -139,6 +142,12 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             displayName = Path.GetFileName(rootDirectory.TrimEnd(Path.DirectorySeparatorChar));
         }
     }
+
+    void Awake()
+    {
+        Debug.Log("[MultiCameraPointCloudManager] Awake");
+    }
+
 
     private void SetupTimelineDuration()
     {

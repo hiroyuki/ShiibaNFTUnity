@@ -1,10 +1,11 @@
 using UnityEngine;
 using UnityEngine.Playables;
-using Assets.Script.sceneflow;
 using System.Collections.Generic;
 
 /// <summary>
 /// Playable behaviour for controlling BVH motion playback in Unity Timeline
+/// Thin adapter that uses BvhFrameMapper and BvhDriftCorrectionController for data transformation logic
+/// Focus: Timeline lifecycle and scene transform updates only
 /// </summary>
 public class BvhPlayableBehaviour : PlayableBehaviour
 {
@@ -23,8 +24,11 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     public BvhDriftCorrectionData driftCorrectionData;
 
     private int currentFrame = -1;
-    private Transform[] jointTransforms;
     private BvhJoint[] joints;
+
+    // Timeline-independent utilities
+    private BvhFrameMapper frameMapper = new BvhFrameMapper();
+    private BvhDriftCorrectionController driftController = new BvhDriftCorrectionController();
 
     /// <summary>
     /// 現在のBVHフレーム番号を取得（キーフレーム記録用）
@@ -43,26 +47,9 @@ public class BvhPlayableBehaviour : PlayableBehaviour
             // Cache joint hierarchy
             var jointList = bvhData.GetAllJoints();
             joints = jointList.ToArray();
-            jointTransforms = new Transform[joints.Length];
 
             // Create or find transforms for all joints
             CreateJointHierarchy();
-
-            // Notify SceneFlowCalculator that BVH data is now available
-            NotifySceneFlowCalculator();
-        }
-    }
-
-    /// <summary>
-    /// Notify SceneFlowCalculator that BVH data has been loaded and is ready
-    /// </summary>
-    private void NotifySceneFlowCalculator()
-    {
-        SceneFlowCalculator calculator = GameObject.FindFirstObjectByType<SceneFlowCalculator>();
-        if (calculator != null && bvhData != null)
-        {
-            calculator.SetBvhData(bvhData, this);
-            Debug.Log("[BvhPlayableBehaviour] Notified SceneFlowCalculator of BVH data availability");
         }
     }
 
@@ -75,8 +62,10 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     {
         if (bvhData == null || targetTransform == null) return;
 
-        double currentTime = playable.GetTime();
-        int targetFrame = GetTargetFrameForTime((float)currentTime);
+        float timelineTime = (float)playable.GetTime();
+
+        // Use BvhFrameMapper to calculate target frame (handles keyframe interpolation)
+        int targetFrame = frameMapper.GetTargetFrameForTime(timelineTime, bvhData, driftCorrectionData, frameOffset);
 
         // Only update if frame changed
         if (targetFrame != currentFrame)
@@ -85,139 +74,10 @@ public class BvhPlayableBehaviour : PlayableBehaviour
             currentFrame = targetFrame;
         }
 
-        // Apply drift correction if enabled
-        ApplyDriftCorrection((float)currentTime);
-    }
-
-    /// <summary>
-    /// Get the target BVH frame for the given timeline time, including offset and clamping
-    /// </summary>
-    private int GetTargetFrameForTime(float timelineTime)
-    {
-        int targetFrame = CalculateTargetFrame(timelineTime, bvhData.FrameRate);
-        targetFrame += frameOffset; // Apply frame offset for synchronization with point cloud
-        return Mathf.Clamp(targetFrame, 0, bvhData.FrameCount - 1); // Clamp to valid range
-    }
-
-    /// <summary>
-    /// Apply BVH drift correction based on keyframe interpolation
-    /// Uses positionOffset (saved initial BVH_Character position) as the baseline reference
-    /// Applies both position and rotation corrections from keyframe data
-    /// </summary>
-    private void ApplyDriftCorrection(float timelineTime)
-    {
-        if (driftCorrectionData == null || !driftCorrectionData.IsEnabled)
-            return;
-
-        if (bvhData == null || targetTransform == null)
-            return;
-
-        // Get target anchor position and rotation from keyframe interpolation
-        Vector3 targetAnchorPositionRelative = driftCorrectionData.GetAnchorPositionAtTime(timelineTime);
-        Vector3 targetAnchorRotationRelative = driftCorrectionData.GetAnchorRotationAtTime(timelineTime);
-
-        // Find root joint transform
-        Transform rootJointTransform = targetTransform.Find(bvhData.RootJoint.Name);
-        if (rootJointTransform == null)
-            return;
-
-        // Calculate the correction delta (difference between target and current relative position)
-        Vector3 currentRelativePosition = rootJointTransform.localPosition;
-
-        // Apply position correction: baseline position (positionOffset) + anchor correction
-        // This preserves the initial BVH_Character position while applying drift correction
-        targetTransform.localPosition = positionOffset + targetAnchorPositionRelative;
-
-        // Apply rotation correction: baseline rotation + anchor rotation correction
-        // Convert both euler angles to quaternions and combine them
-        Quaternion baseRotation = Quaternion.Euler(rotationOffset);
-        Quaternion rotationCorrection = Quaternion.Euler(targetAnchorRotationRelative);
-        targetTransform.localRotation = baseRotation * rotationCorrection;
-    }
-
-    /// <summary>
-    /// Calculate target frame using keyframe-based mapping if available, otherwise use linear mapping
-    ///
-    /// When drift correction keyframes are available, uses them to define Timeline-to-BVH-frame mapping:
-    /// - Finds keyframes before and after current Timeline time
-    /// - Interpolates bvhFrameNumber between keyframes
-    /// - This allows speed adjustment by modifying bvhFrameNumber values in keyframes
-    ///
-    /// Falls back to linear mapping if no keyframes are available.
-    /// </summary>
-    private int CalculateTargetFrame(float currentTime, float bvhFrameRate)
-    {
-        if (driftCorrectionData == null || driftCorrectionData.GetKeyframeCount() == 0)
-        {
-            // Fall back to linear mapping when no keyframes available
-            return Mathf.FloorToInt((float)(currentTime * bvhFrameRate));
-        }
-
-        FindSurroundingKeyframes(currentTime, out BvhKeyframe prevKeyframe, out BvhKeyframe nextKeyframe);
-        return InterpolateFrameNumber(currentTime, prevKeyframe, nextKeyframe, bvhFrameRate);
-    }
-
-    /// <summary>
-    /// Find keyframes that surround the given time
-    /// </summary>
-    private void FindSurroundingKeyframes(float currentTime, out BvhKeyframe prevKeyframe, out BvhKeyframe nextKeyframe)
-    {
-        prevKeyframe = null;
-        nextKeyframe = null;
-
-        var keyframes = driftCorrectionData.GetAllKeyframes();
-        foreach (var kf in keyframes)
-        {
-            if (kf.timelineTime <= currentTime)
-                prevKeyframe = kf;
-            else if (nextKeyframe == null)
-                nextKeyframe = kf;
-        }
-    }
-
-    /// <summary>
-    /// Interpolate BVH frame number based on surrounding keyframes
-    /// </summary>
-    private int InterpolateFrameNumber(float currentTime, BvhKeyframe prevKeyframe, BvhKeyframe nextKeyframe, float bvhFrameRate)
-    {
-        // Case 1: Between two keyframes - interpolate frame number
-        if (prevKeyframe != null && nextKeyframe != null)
-        {
-            float timeDelta = nextKeyframe.timelineTime - prevKeyframe.timelineTime;
-            if (timeDelta > 0)
-            {
-                float frameDelta = nextKeyframe.bvhFrameNumber - prevKeyframe.bvhFrameNumber;
-                float t = (currentTime - prevKeyframe.timelineTime) / timeDelta;
-                t = Mathf.Clamp01(t);
-                return Mathf.FloorToInt(prevKeyframe.bvhFrameNumber + (frameDelta * t));
-            }
-            return prevKeyframe.bvhFrameNumber;
-        }
-
-        // Case 2: Before first keyframe - interpolate from (0s, frame 0) to first keyframe
-        if (prevKeyframe == null && nextKeyframe != null)
-        {
-            float timeDelta = nextKeyframe.timelineTime;
-            if (timeDelta > 0)
-            {
-                float frameDelta = nextKeyframe.bvhFrameNumber;
-                float t = currentTime / timeDelta;
-                t = Mathf.Clamp01(t);
-                return Mathf.FloorToInt(frameDelta * t);
-            }
-            return 0;
-        }
-
-        // Case 3: After last keyframe - extrapolate using BVH file's native frame rate
-        if (prevKeyframe != null && nextKeyframe == null)
-        {
-            float timeSincePrevKeyframe = currentTime - prevKeyframe.timelineTime;
-            float additionalFrames = timeSincePrevKeyframe * bvhFrameRate;
-            return prevKeyframe.bvhFrameNumber + Mathf.FloorToInt(additionalFrames);
-        }
-
-        // Case 4: No surrounding keyframes (shouldn't happen if keyframes exist)
-        return Mathf.FloorToInt((float)(currentTime * bvhFrameRate));
+        // Apply drift correction using BvhDriftCorrectionController
+        Vector3 correctedPos = driftController.GetCorrectedRootPosition(timelineTime, driftCorrectionData, positionOffset);
+        Quaternion correctedRot = driftController.GetCorrectedRootRotation(timelineTime, driftCorrectionData, rotationOffset);
+        targetTransform.SetLocalPositionAndRotation(correctedPos, correctedRot);
     }
 
     /// <summary>

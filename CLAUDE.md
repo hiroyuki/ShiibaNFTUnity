@@ -2,9 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+# Instruction
+When the user writes a prompt in English, rewrite it into more natural, fluent English without changing its meaning, then repeat the rewritten version back to the user.
+Do not explain or justify changes unless explicitly asked. Only show the improved version.
+
+
 ## Project Overview
 
-ShiibaNFTUnity is a real-time 3D point cloud visualization and animation system built with **Unity 6000.1.10f1** and **C#**. It processes multi-camera sensor data (depth + color from multiple cameras), applies computer vision operations (OpenCV integration), and synchronizes skeletal animation (BVH format) with point cloud playback via the Unity Timeline system.
+ShiibaNFTUnity is a real-time 3D point cloud visualization and animation system built with **Unity 6000.1.10f1** and **C#**. It processes multi-camera sensor data (depth + color from multiple cameras), applies computer vision operations (OpenCV integration), and synchronizes skeletal animation (BVH format) with point cloud playback via the Unity Timeline system.1
 
 **Key Technologies:**
 - Game Engine: Unity 6000.1.10f1 with Universal Render Pipeline (URP)
