@@ -92,17 +92,17 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
         cachedBehaviour = behaviour;
 
         // Auto-find target transform by name in scene
-        string searchName = string.IsNullOrEmpty(targetGameObjectName) ? "BVH_Character" : targetGameObjectName;
-        GameObject targetGO = GameObject.Find(searchName);
+        string BVH_Character = string.IsNullOrEmpty(targetGameObjectName) ? "BVH_Character" : targetGameObjectName;
+        GameObject targetGO = GameObject.Find(BVH_Character);
 
         if (targetGO != null)
         {
-            behaviour.targetTransform = targetGO.transform;
-            Debug.Log($"BvhPlayableAsset: Found target GameObject '{searchName}'");
+            behaviour.BvhCharacterTransform = targetGO.transform;
+            Debug.Log($"BvhPlayableAsset: Found target GameObject '{BVH_Character}'");
         }
         else
         {
-            Debug.LogWarning($"BvhPlayableAsset: Target GameObject '{searchName}' not found in scene!");
+            Debug.LogWarning($"BvhPlayableAsset: Target GameObject '{BVH_Character}' not found in scene!");
         }
 
         // Load BVH data
@@ -257,9 +257,9 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     /// </summary>
     public Vector3 GetBvhCharacterPosition()
     {
-        if (cachedBehaviour != null && cachedBehaviour.targetTransform != null)
+        if (cachedBehaviour != null && cachedBehaviour.BvhCharacterTransform != null)
         {
-            return cachedBehaviour.targetTransform.localPosition;
+            return cachedBehaviour.BvhCharacterTransform.localPosition;
         }
 
         // キャッシュがない場合、シーンから探す

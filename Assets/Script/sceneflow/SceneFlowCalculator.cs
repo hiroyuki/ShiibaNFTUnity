@@ -264,7 +264,7 @@ public class SceneFlowCalculator : MonoBehaviour
     }
 
     /// <summary>
-    /// Try to auto-initialize BVH data from BvhDataManager (centralized data source)
+    /// Try to auto-initialize BVH data from BvhDataCache (centralized data source)
     /// This is clean and independent from Timeline
     /// </summary>
     private void TryAutoInitializeBvhData()
@@ -272,20 +272,20 @@ public class SceneFlowCalculator : MonoBehaviour
         if (bvhData != null)
             return;  // Already initialized
 
-        // Get BVH data from BvhDataManager cache (initialized by MultiCameraPointCloudManager)
-        bvhData = BvhDataManager.GetBvhData();
+        // Get BVH data from BvhDataCache cache (initialized by MultiCameraPointCloudManager)
+        bvhData = BvhDataCache.GetBvhData();
 
         if (bvhData != null)
         {
             if (debugMode)
-                Debug.Log("[SceneFlowCalculator] BvhData loaded from BvhDataManager cache");
+                Debug.Log("[SceneFlowCalculator] BvhData loaded from BvhDataCache cache");
             return;
         }
 
         // If not available, clear error message
         Debug.LogError(
             "[SceneFlowCalculator] BvhData not initialized.\n" +
-            "MultiCameraPointCloudManager must be in scene to initialize BvhDataManager.\n" +
+            "MultiCameraPointCloudManager must be in scene to initialize BvhDataCache.\n" +
             "Or manually call: sceneFlowCalculator.SetBvhData(bvhData);");
     }
 
@@ -513,27 +513,27 @@ public class SceneFlowCalculator : MonoBehaviour
     /// Get drift-corrected position (same as BvhPlayableBehaviour applies)
     /// Uses BvhDriftCorrectionController with current frame time
     /// </summary>
-    private Vector3 GetDriftCorrectedPosition(float timelineTime, Vector3 basePositionOffset)
-    {
-        if (bvhData == null)
-            return basePositionOffset;
+    // private Vector3 GetDriftCorrectedPosition(float timelineTime, Vector3 basePositionOffset)
+    // {
+    //     if (bvhData == null)
+    //         return basePositionOffset;
 
-        // Get drift correction data from BvhPlayableBehaviour or BvhDataManager
-        BvhDriftCorrectionData driftCorrectionData = GetDriftCorrectionData();
-        if (driftCorrectionData == null)
-        {
-            Debug.Log("[SceneFlowCalculator] No drift correction data available, using base offset only");
-            return basePositionOffset;
-        }
+    //     // Get drift correction data from BvhPlayableBehaviour or BvhDataCache
+    //     BvhDriftCorrectionData driftCorrectionData = GetDriftCorrectionData();
+    //     if (driftCorrectionData == null)
+    //     {
+    //         Debug.Log("[SceneFlowCalculator] No drift correction data available, using base offset only");
+    //         return basePositionOffset;
+    //     }
 
-        // Apply drift correction using the same controller as BvhPlayableBehaviour
-        var driftController = new BvhDriftCorrectionController();
-        Vector3 correctedPos = driftController.GetCorrectedRootPosition(timelineTime, driftCorrectionData, basePositionOffset);
+    //     // Apply drift correction using the same controller as BvhPlayableBehaviour
+    //     var driftController = new BvhDriftCorrectionController();
+    //     Vector3 correctedPos = driftController.GetCorrectedRootPosition(timelineTime, driftCorrectionData, basePositionOffset);
 
-        Debug.Log($"[SceneFlowCalculator] Drift correction applied: {basePositionOffset} -> {correctedPos}");
+    //     Debug.Log($"[SceneFlowCalculator] Drift correction applied: {basePositionOffset} -> {correctedPos}");
 
-        return correctedPos;
-    }
+    //     return correctedPos;
+    // }
 
     /// <summary>
     /// Get BvhDriftCorrectionData from Timeline asset
@@ -602,6 +602,7 @@ public class SceneFlowCalculator : MonoBehaviour
                 // Use BvhFrameMapper to calculate frame index from timeline time
                 int frameIndex = frameMapper.GetTargetFrameForTime(timelineTime, bvhData, driftCorrectionData, frameOffset);
                 Debug.Log($"[OnShowSceneFlow] Calculated frame index from Timeline time {timelineTime}s: {frameIndex}");
+                // SetFrameInfo(frameIndex, timelineTime);
                 return frameIndex;
             }
         }
@@ -643,7 +644,7 @@ public class SceneFlowCalculator : MonoBehaviour
 
         // Read channel data for root joint (frame data only, no offset)
         int channelIndex = 0;
-        BvhChannelReader.ReadChannelData(rootJoint.Channels, frameData, ref channelIndex, ref localPos, ref localRot);
+        BvhDataReader.ReadChannelData(rootJoint.Channels, frameData, ref channelIndex, ref localPos, ref localRot);
 
         Debug.Log($"[CalculateRootPositionMath] After reading channels (before scale):");
         Debug.Log($"  localPos (from frame data): {localPos}");
@@ -705,7 +706,7 @@ public class SceneFlowCalculator : MonoBehaviour
         Vector3 localRot = Vector3.zero;
         int channelIndex = GetChannelIndexForJoint(joint);
 
-        BvhChannelReader.ReadChannelData(joint.Channels, frameData, ref channelIndex, ref localPos, ref localRot);
+        BvhDataReader.ReadChannelData(joint.Channels, frameData, ref channelIndex, ref localPos, ref localRot);
 
         // Calculate local position (offset + animation)
         Vector3 currentLocalPos = joint.Offset + localPos;
@@ -1101,11 +1102,11 @@ public class SceneFlowCalculator : MonoBehaviour
         Vector3 localRot = Vector3.zero;
 
         // Read frame data for this joint
-        BvhChannelReader.ReadChannelData(joint.Channels, frameData, ref channelIndex, ref localPos, ref localRot);
+        BvhDataReader.ReadChannelData(joint.Channels, frameData, ref channelIndex, ref localPos, ref localRot);
 
         // Apply local position and rotation
         transform.localPosition = joint.Offset + localPos;
-        transform.localRotation = BvhChannelReader.GetRotationQuaternion(localRot);
+        transform.localRotation = BvhDataReader.GetRotationQuaternion(localRot);
 
         if (debugMode)
         {

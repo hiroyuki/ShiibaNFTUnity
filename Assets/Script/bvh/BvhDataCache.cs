@@ -6,27 +6,27 @@ using UnityEngine;
 ///
 /// This solves the problem of having duplicate BvhData in memory and keeps data loading independent from Timeline.
 /// </summary>
-public class BvhDataManager : MonoBehaviour
+public static class BvhDataCache
 {
     private static BvhData cachedBvhData;
     private static string cachedBvhPath = "";
 
     /// <summary>
-    /// Initialize BvhDataManager with configuration.
+    /// Initialize BvhDataCache with configuration.
     /// Called by MultiCameraPointCloudManager during startup.
     /// </summary>
     public static void InitializeWithConfig(DatasetConfig config)
     {
         if (config == null)
         {
-            Debug.LogError("[BvhDataManager] DatasetConfig is null. Cannot initialize.");
+            Debug.LogError("[BvhDataCache] DatasetConfig is null. Cannot initialize.");
             return;
         }
 
         string bvhFilePath = config.GetBvhFilePath();
         if (string.IsNullOrEmpty(bvhFilePath))
         {
-            Debug.LogError("[BvhDataManager] BVH file path is empty in DatasetConfig.");
+            Debug.LogError("[BvhDataCache] BVH file path is empty in DatasetConfig.");
             return;
         }
 
@@ -36,11 +36,11 @@ public class BvhDataManager : MonoBehaviour
 
         if (cachedBvhData != null)
         {
-            Debug.Log($"[BvhDataManager] BVH data initialized from: {bvhFilePath}");
+            Debug.Log($"[BvhDataCache] BVH data initialized from: {bvhFilePath}");
         }
         else
         {
-            Debug.LogError($"[BvhDataManager] Failed to load BVH data from: {bvhFilePath}");
+            Debug.LogError($"[BvhDataCache] Failed to load BVH data from: {bvhFilePath}");
         }
     }
 
@@ -78,7 +78,7 @@ public class BvhDataManager : MonoBehaviour
     {
         cachedBvhData = null;
         cachedBvhPath = "";
-        Debug.Log("[BvhDataManager] BVH data cache cleared.");
+        Debug.Log("[BvhDataCache] BVH data cache cleared.");
     }
 
     /// <summary>

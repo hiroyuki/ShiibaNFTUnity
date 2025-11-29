@@ -54,8 +54,8 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             return;
         }
 
-        // Initialize BvhDataManager with DatasetConfig
-        BvhDataManager.InitializeWithConfig(GetDatasetConfig());
+        // Initialize BvhDataCache with DatasetConfig
+        BvhDataCache.InitializeWithConfig(GetDatasetConfig());
 
         DisableTimelineAutoPlay();
         LoadDatasetInfo();

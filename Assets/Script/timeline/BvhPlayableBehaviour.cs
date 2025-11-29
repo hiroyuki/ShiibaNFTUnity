@@ -10,7 +10,7 @@ using System.Collections.Generic;
 public class BvhPlayableBehaviour : PlayableBehaviour
 {
     public BvhData bvhData;
-    public Transform targetTransform;
+    public Transform BvhCharacterTransform;
     public float frameRate = 30f;
 
     // Transform adjustment settings
@@ -40,11 +40,11 @@ public class BvhPlayableBehaviour : PlayableBehaviour
 
     public override void OnGraphStart(Playable playable)
     {
-        if (bvhData != null && targetTransform != null)
+        if (bvhData != null && BvhCharacterTransform != null)
         {
             // Save the initial position of BVH_Character as baseline for drift correction
             // This allows us to restore or reference the original position during correction
-            targetTransform.localPosition = positionOffset;
+            BvhCharacterTransform.localPosition = positionOffset;
             Debug.Log($"[BvhPlayableBehaviour] OnGraphStart: Saved BVH_Character initial position as positionOffset: {positionOffset}");
 
             // Cache joint hierarchy
@@ -63,7 +63,7 @@ public class BvhPlayableBehaviour : PlayableBehaviour
 
     public override void PrepareFrame(Playable playable, FrameData info)
     {
-        if (bvhData == null || targetTransform == null) return;
+        if (bvhData == null || BvhCharacterTransform == null) return;
 
         float timelineTime = (float)playable.GetTime();
 
@@ -80,7 +80,7 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         // Apply drift correction using BvhDriftCorrectionController
         Vector3 correctedPos = driftController.GetCorrectedRootPosition(timelineTime, driftCorrectionData, positionOffset);
         Quaternion correctedRot = driftController.GetCorrectedRootRotation(timelineTime, driftCorrectionData, rotationOffset);
-        targetTransform.SetLocalPositionAndRotation(correctedPos, correctedRot);
+        BvhCharacterTransform.SetLocalPositionAndRotation(correctedPos, correctedRot);
     }
 
     /// <summary>
@@ -94,10 +94,10 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         if (frameData == null) return;
 
         // Find the root joint transform (child of targetTransform)
-        Transform rootJointTransform = targetTransform.Find(bvhData.RootJoint.Name);
+        Transform rootJointTransform = BvhCharacterTransform.Find(bvhData.RootJoint.Name);
         if (rootJointTransform == null)
         {
-            Debug.LogWarning($"Root joint '{bvhData.RootJoint.Name}' not found under '{targetTransform.name}'");
+            Debug.LogWarning($"Root joint '{bvhData.RootJoint.Name}' not found under '{BvhCharacterTransform.name}'");
             return;
         }
 
@@ -131,7 +131,7 @@ public class BvhPlayableBehaviour : PlayableBehaviour
             }
 
             // Root joint adjustments
-            hasPositionChannels = BvhChannelReader.HasPositionChannels(joint.Channels);
+            hasPositionChannels = BvhDataReader.HasPositionChannels(joint.Channels);
 
             if (applyRootMotion && hasPositionChannels)
             {
@@ -166,17 +166,17 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         if (bvhData == null || bvhData.RootJoint == null) return;
 
         // Create the root joint as a child of targetTransform
-        Transform rootJointTransform = targetTransform.Find(bvhData.RootJoint.Name);
+        Transform rootJointTransform = BvhCharacterTransform.Find(bvhData.RootJoint.Name);
         if (rootJointTransform == null)
         {
             GameObject rootJointObj = new GameObject(bvhData.RootJoint.Name);
             rootJointTransform = rootJointObj.transform;
-            rootJointTransform.SetParent(targetTransform);
+            rootJointTransform.SetParent(BvhCharacterTransform);
             rootJointTransform.localPosition = bvhData.RootJoint.Offset;
             rootJointTransform.localRotation = Quaternion.identity;
             rootJointTransform.localScale = Vector3.one;
 
-            Debug.Log($"Created root joint '{bvhData.RootJoint.Name}' as child of '{targetTransform.name}'");
+            Debug.Log($"Created root joint '{bvhData.RootJoint.Name}' as child of '{BvhCharacterTransform.name}'");
         }
 
         // Create children of root joint

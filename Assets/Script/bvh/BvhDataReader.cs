@@ -4,7 +4,7 @@ using UnityEngine;
 /// Utility class for reading and parsing BVH channel data
 /// Centralizes channel parsing logic to avoid duplication across BvhData and BvhPlayableBehaviour
 /// </summary>
-public static class BvhChannelReader
+public static class BvhDataReader
 {
     /// <summary>
     /// Read channel data from frame data and extract position and rotation values

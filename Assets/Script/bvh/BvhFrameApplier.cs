@@ -34,7 +34,7 @@ public abstract class BvhFrameApplier
         Vector3 rotation = Vector3.zero;
 
         // Read channel data for this joint
-        BvhChannelReader.ReadChannelData(joint.Channels, frameData, ref channelIndex, ref position, ref rotation);
+        BvhDataReader.ReadChannelData(joint.Channels, frameData, ref channelIndex, ref position, ref rotation);
 
         // Allow subclasses to customize adjustments
         position = AdjustPosition(position, joint, isRoot);
@@ -42,7 +42,7 @@ public abstract class BvhFrameApplier
 
         // Apply position and rotation to this transform
         targetTransform.localPosition = position;
-        targetTransform.localRotation = BvhChannelReader.GetRotationQuaternion(rotation);
+        targetTransform.localRotation = BvhDataReader.GetRotationQuaternion(rotation);
 
         // Recursively apply to children
         foreach (var childJoint in joint.Children)
