@@ -20,7 +20,7 @@ public class BvhDriftCorrectionController
     /// <param name="driftCorrectionData">Drift correction data containing keyframe interpolation (can be null)</param>
     /// <param name="positionOffset">Baseline position offset from DatasetConfig</param>
     /// <returns>Drift-corrected local position for BVH_Character root</returns>
-    public Vector3 GetCorrectedRootPosition(float timelineTime, BvhDriftCorrectionData driftCorrectionData, Vector3 positionOffset)
+    public static Vector3 GetCorrectedRootPosition(double timelineTime, BvhDriftCorrectionData driftCorrectionData, Vector3 positionOffset)
     {
         if (driftCorrectionData == null || !driftCorrectionData.IsEnabled)
             return positionOffset;
@@ -40,7 +40,7 @@ public class BvhDriftCorrectionController
     /// <param name="driftCorrectionData">Drift correction data containing keyframe interpolation (can be null)</param>
     /// <param name="rotationOffset">Baseline rotation offset from DatasetConfig (euler angles)</param>
     /// <returns>Drift-corrected local rotation for BVH_Character root</returns>
-    public Quaternion GetCorrectedRootRotation(float timelineTime, BvhDriftCorrectionData driftCorrectionData, Vector3 rotationOffset)
+    public static Quaternion GetCorrectedRootRotation(double timelineTime, BvhDriftCorrectionData driftCorrectionData, Vector3 rotationOffset)
     {
         if (driftCorrectionData == null || !driftCorrectionData.IsEnabled)
             return Quaternion.Euler(rotationOffset);

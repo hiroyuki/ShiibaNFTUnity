@@ -137,7 +137,7 @@ public class BvhDriftCorrectionDataEditor : Editor
 
                     // デフォルトフレームレートでの参考値を表示
                     float bvhFrameRate = driftCorrectionData.GetBvhFrameRate();
-                    int defaultFrameNumber = Mathf.FloorToInt(keyframe.timelineTime * bvhFrameRate);
+                    int defaultFrameNumber = Mathf.FloorToInt((float)keyframe.timelineTime * bvhFrameRate);
                     EditorGUILayout.LabelField("Frame Number Reference", EditorStyles.miniLabel);
                     EditorGUILayout.LabelField($"Default (at {bvhFrameRate:F1}fps): {defaultFrameNumber}", EditorStyles.wordWrappedLabel);
                     EditorGUILayout.LabelField($"Current: {keyframe.bvhFrameNumber}", EditorStyles.wordWrappedLabel);
@@ -372,10 +372,7 @@ public class BvhDriftCorrectionDataEditor : Editor
         }
 
         // タイムラインを指定時刻にジャンプ
-        timeline.time = keyframe.timelineTime;
-
-        // Evaluate を呼び出して、PrepareFrame を強制的に実行
-        timeline.Evaluate();
+        TimelineUtil.SeekToTime(keyframe.timelineTime);
 
         // Timeline ウィンドウをリセット（Timeline アセットをダーティマーク）
         EditorUtility.SetDirty(timeline);

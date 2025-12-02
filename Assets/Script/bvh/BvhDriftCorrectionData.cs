@@ -28,7 +28,7 @@ public class BvhDriftCorrectionData : ScriptableObject
     /// </summary>
     /// <param name="time">Timeline 上の時刻（秒）</param>
     /// <returns>親GameObject からの相対座標</returns>
-    public Vector3 GetAnchorPositionAtTime(float time)
+    public Vector3 GetAnchorPositionAtTime(double time)
     {
         return InterpolateKeyframeValue(
             time,
@@ -41,7 +41,7 @@ public class BvhDriftCorrectionData : ScriptableObject
     /// </summary>
     /// <param name="time">Timeline 上の時刻（秒）</param>
     /// <returns>親GameObject からの相対回転（オイラー角）</returns>
-    public Vector3 GetAnchorRotationAtTime(float time)
+    public Vector3 GetAnchorRotationAtTime(double time)
     {
         return InterpolateKeyframeValue(
             time,
@@ -53,7 +53,7 @@ public class BvhDriftCorrectionData : ScriptableObject
     /// キーフレーム値の補完（位置・回転共通処理）
     /// </summary>
     private Vector3 InterpolateKeyframeValue(
-        float time,
+        double time,
         System.Func<BvhKeyframe, Vector3> getValue)
     {
         if (!isEnabled || keyframes.Count == 0)
@@ -86,21 +86,21 @@ public class BvhDriftCorrectionData : ScriptableObject
             return Vector3.zero;
 
         // キーフレーム間での補完
-        float timeDelta = nextKeyframe.timelineTime - prevKeyframe.timelineTime;
+        double timeDelta = nextKeyframe.timelineTime - prevKeyframe.timelineTime;
         if (timeDelta <= 0)
             return getValue(prevKeyframe);
 
-        float t = (time - prevKeyframe.timelineTime) / timeDelta;
-        t = Mathf.Clamp01(t);
+        double t = (time - prevKeyframe.timelineTime) / timeDelta;
+        t = Mathf.Clamp01((float)t);
 
         return InterpolatePosition(getValue(prevKeyframe),
-                                   getValue(nextKeyframe), t);
+                                   getValue(nextKeyframe), (float)t);
     }
 
     /// <summary>
     /// キーフレーム追加
     /// </summary>
-    public void AddKeyframe(float time, int frameNumber, Vector3 positionRelative)
+    public void AddKeyframe(double time, int frameNumber, Vector3 positionRelative)
     {
         var newKeyframe = new BvhKeyframe(time, frameNumber, positionRelative);
         keyframes.Add(newKeyframe);
@@ -121,7 +121,7 @@ public class BvhDriftCorrectionData : ScriptableObject
     {
         // 時刻とフレーム番号でキーフレームを特定（参照ではなく値で検索）
         var kf = keyframes.FirstOrDefault(k =>
-            Mathf.Approximately(k.timelineTime, keyframe.timelineTime) &&
+            Mathf.Approximately((float)k.timelineTime, (float)keyframe.timelineTime) &&
             k.bvhFrameNumber == keyframe.bvhFrameNumber);
 
         if (kf != null)
@@ -146,7 +146,7 @@ public class BvhDriftCorrectionData : ScriptableObject
 
         // 時刻とフレーム番号でキーフレームを特定（参照ではなく値で検索）
         var kf = keyframes.FirstOrDefault(k =>
-            Mathf.Approximately(k.timelineTime, keyframe.timelineTime) &&
+            Mathf.Approximately((float)k.timelineTime, (float)keyframe.timelineTime) &&
             k.bvhFrameNumber == keyframe.bvhFrameNumber);
 
         if (kf != null)

@@ -79,13 +79,13 @@ public class BvhFrameMapper
         // Case 1: Between two keyframes - interpolate frame number
         if (prevKeyframe != null && nextKeyframe != null)
         {
-            float timeDelta = nextKeyframe.timelineTime - prevKeyframe.timelineTime;
+            double timeDelta = nextKeyframe.timelineTime - prevKeyframe.timelineTime;
             if (timeDelta > 0)
             {
                 float frameDelta = nextKeyframe.bvhFrameNumber - prevKeyframe.bvhFrameNumber;
-                float t = (currentTime - prevKeyframe.timelineTime) / timeDelta;
-                t = Mathf.Clamp01(t);
-                return Mathf.FloorToInt(prevKeyframe.bvhFrameNumber + (frameDelta * t));
+                double t = (currentTime - prevKeyframe.timelineTime) / timeDelta;
+                t = Mathf.Clamp01((float)t);
+                return Mathf.FloorToInt((float)(prevKeyframe.bvhFrameNumber + (frameDelta * t)));
             }
             return prevKeyframe.bvhFrameNumber;
         }
@@ -93,11 +93,11 @@ public class BvhFrameMapper
         // Case 2: Before first keyframe - interpolate from (0s, frame 0) to first keyframe
         if (prevKeyframe == null && nextKeyframe != null)
         {
-            float timeDelta = nextKeyframe.timelineTime;
+            double timeDelta = nextKeyframe.timelineTime;
             if (timeDelta > 0)
             {
                 float frameDelta = nextKeyframe.bvhFrameNumber;
-                float t = currentTime / timeDelta;
+                float t = currentTime / (float)timeDelta;
                 t = Mathf.Clamp01(t);
                 return Mathf.FloorToInt(frameDelta * t);
             }
@@ -107,9 +107,9 @@ public class BvhFrameMapper
         // Case 3: After last keyframe - extrapolate using BVH file's native frame rate
         if (prevKeyframe != null && nextKeyframe == null)
         {
-            float timeSincePrevKeyframe = currentTime - prevKeyframe.timelineTime;
-            float additionalFrames = timeSincePrevKeyframe * bvhFrameRate;
-            return prevKeyframe.bvhFrameNumber + Mathf.FloorToInt(additionalFrames);
+            double timeSincePrevKeyframe = currentTime - prevKeyframe.timelineTime;
+            double additionalFrames = timeSincePrevKeyframe * bvhFrameRate;
+            return prevKeyframe.bvhFrameNumber + Mathf.FloorToInt((float)additionalFrames);
         }
 
         // Case 4: No surrounding keyframes (shouldn't happen if keyframes exist)

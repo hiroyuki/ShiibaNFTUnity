@@ -178,10 +178,7 @@ public class TimelineController : MonoBehaviour
     [ContextMenu("Reset Timeline to Frame 0")]
     public void ResetTimeline()
     {
-        if (timeline == null) return;
-
-        timeline.time = 0;
-        timeline.Evaluate();
+        TimelineUtil.SeekToTime(0);
         if (showDebugLogs)
         {
             Debug.Log("Timeline: RESET to frame 0");
@@ -216,7 +213,7 @@ public class TimelineController : MonoBehaviour
         }
 
         // 現在の情報を取得
-        float currentTime = (float)timeline.time;
+        float currentTime = (float)TimelineUtil.GetCurrentTimelineTime();
         int currentFrame = bvhBehaviour.GetCurrentFrame();
 
         // currentFrameが未初期化（-1）の場合は、時刻から計算

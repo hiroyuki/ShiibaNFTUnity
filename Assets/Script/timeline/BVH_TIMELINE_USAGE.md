@@ -1,12 +1,30 @@
 # BVH Timeline Integration - Usage Guide
 
 ## Overview
-The BVH Timeline system allows you to import and play motion capture data from BVH files directly in Unity Timeline with full control over timing and transforms.
+The BVH Timeline system allows you to import and play motion capture data from BVH files directly in Unity Timeline with full control over timing and transforms. The system uses automatic target discovery and DatasetConfig-based configuration for seamless integration.
 
-## Files Created
-- **BvhPlayableAsset.cs** - Timeline clip asset for BVH data
-- **BvhPlayableBehaviour.cs** - Runtime behaviour for BVH playback
-- **TimelineController.cs** - Updated to support BVH clips
+## Core Components
+
+### Timeline Integration
+- **BvhPlayableAsset.cs** - Timeline clip asset for BVH data, auto-finds BVH file path from DatasetConfig
+- **BvhPlayableBehaviour.cs** - Runtime playback controller with drift correction and frame mapping
+- **TimelineController.cs** - Master timeline orchestration
+
+### BVH Processing & Utilities
+- **BvhFrameMapper.cs** - Maps Timeline time to BVH frame indices with keyframe interpolation support
+- **BvhDriftCorrectionController.cs** - Calculates drift-corrected positions and rotations
+- **BvhDataReader.cs** - Centralized channel data parsing (position/rotation extraction)
+- **BvhFrameApplier.cs** - Abstract base for applying BVH frame data to transform hierarchies
+- **BvhSkeletonVisualizer.cs** - Renders skeleton joints (spheres) and bones (lines) for debugging
+
+### BVH Data Management
+- **BvhData.cs** - Core BVH skeleton structure and frame storage
+- **BvhImporter.cs** - BVH file parsing and import
+- **BvhKeyframe.cs** - Keyframe data for Timeline-to-BVH-frame mapping
+- **BvhDriftCorrectionData.cs** - Keyframe-based drift correction parameters
+- **BvhPlayer.cs** - Standalone BVH playback controller
+- **BvhDataCache.cs** - Caching layer for BVH data
+- **BvhDataReader.cs** - Static utility for channel parsing
 
 ## Setup Instructions
 
@@ -49,21 +67,22 @@ Scene Hierarchy:
 3. Right-click in the tracks area and select **Add > BvhPlayableAsset** (or drag BvhPlayableAsset into timeline)
 4. Select the clip and configure in the Inspector:
 
-#### BVH File Settings
-- **Bvh File Path** - Absolute or relative path to your .bvh file
-- **Auto Load Bvh** - Load the file when timeline starts (recommended: true)
+#### Target Auto-Discovery
+- **Target GameObject Name** - Defaults to "BVH_Character" (auto-searches scene by name)
+- Leave empty to use default, or change to match your GameObject name
 
-#### Target
-- **Target GameObject Name** - Name of GameObject in scene to apply motion to (default: "BVH_Character")
+#### Configuration Sources (in priority order)
+BvhPlayableAsset automatically pulls settings from:
+1. **DatasetConfig** (via MultiCameraPointCloudManager) - Primary source
+2. **Override Transform Settings** - Check this box to use local Inspector values instead of DatasetConfig
 
-#### Transform Adjustments
-- **Position Offset** - Offset applied to root motion (Vector3)
-- **Rotation Offset** - Rotation offset in degrees (Vector3)
-- **Scale** - Scale multiplier for all positions (Vector3)
-- **Apply Root Motion** - If false, only rotation is applied, not position
-
-#### Playback
-- **Override Frame Rate** - Override BVH's frame rate (0 = use BVH's rate)
+#### Transform Settings (from DatasetConfig or local overrides)
+- **Position Offset** - Offset applied to BVH_Character root (Vector3)
+- **Rotation Offset** - Rotation offset in degrees for root joint (Vector3)
+- **Scale** - Scale multiplier for all joint positions (Vector3)
+- **Apply Root Motion** - If true, character moves based on BVH position data; if false, stays in place
+- **Frame Offset** - Offset frames for sync with point cloud (default: 0)
+- **Override Frame Rate** - Override BVH's frame rate (0 = use BVH's native rate)
 
 ### 3. Adjust Clip Timing
 
@@ -107,30 +126,89 @@ scale = new Vector3(0.01f, 0.01f, 0.01f); // Scale down to 1% (cm to m)
 - **true** - Character will move based on BVH position data
 - **false** - Character stays in place, only rotations are applied
 
+## How It Works: Key Components
+
+### BvhPlayableAsset (Timeline Clip)
+- **Auto-discovers BVH file path** from DatasetConfig (via MultiCameraPointCloudManager)
+- **Auto-finds target GameObject** by name in scene
+- **Caches BVH data** to avoid reloading
+- **Creates playable** with BvhPlayableBehaviour
+
+### BvhPlayableBehaviour (Runtime Playback)
+Timeline lifecycle:
+- **OnGraphStart**: Creates joint hierarchy (GameObjects) from BvhData
+- **PrepareFrame**: Called each frame to:
+  - Map Timeline time → BVH frame index (via BvhFrameMapper)
+  - Apply frame data to joints (via BvhFrameApplier)
+  - Apply drift correction (via BvhDriftCorrectionController)
+- **OnGraphStop**: Resets state
+
+### BvhFrameMapper
+- Maps Timeline time to BVH frame index
+- Supports **keyframe-based mapping** via BvhDriftCorrectionData (enables speed adjustment)
+- Falls back to linear mapping (frame = time * frameRate)
+- Handles frame offsets and clamping
+
+### BvhDriftCorrectionController
+- Calculates drift-corrected position/rotation at any Timeline time
+- Uses keyframe interpolation from BvhDriftCorrectionData
+- Returns corrected position and rotation quaternion
+- Works offline without Timeline
+
+### BvhFrameApplier (Abstract Base)
+- Recursive joint hierarchy application
+- Reads channel data (position/rotation) via BvhDataReader
+- Allows subclasses to customize adjustments (scale, offset, root motion)
+- Used by BvhPlayableBehaviour.PlayableFrameApplier
+
+### BvhSkeletonVisualizer
+- Creates GameObject hierarchy: renderRoot → Joint spheres + Bone lines
+- Updates visualization in LateUpdate
+- Settings: skeletonColor, jointRadius, boneWidth
+- Invoke delay: 1.0s (waits for joint hierarchy creation)
+
 ## Common Use Cases
 
 ### Case 1: Import BVH with correct scale
 BVH files often use centimeters while Unity uses meters:
 ```
-Scale = (0.01, 0.01, 0.01)
+In DatasetConfig:
+  BvhScale = (0.01, 0.01, 0.01)
 ```
 
 ### Case 2: Rotate character to face different direction
 Character facing wrong way:
 ```
-Rotation Offset = (0, 180, 0)
+In DatasetConfig:
+  BvhRotationOffset = (0, 180, 0)
 ```
 
 ### Case 3: Stationary animation
 Only want the joint rotations, not position changes:
 ```
-Apply Root Motion = false
+In DatasetConfig:
+  BvhApplyRootMotion = false
 ```
 
-### Case 4: Multiple BVH clips in sequence
+### Case 4: Sync BVH with point cloud frames
+Use frame offset to align BVH with point cloud:
+```
+In DatasetConfig:
+  BvhFrameOffset = 5  // Start 5 frames ahead of timeline
+```
+
+### Case 5: Adjust BVH playback speed
+Use BvhDriftCorrectionData keyframes to remap Timeline → BVH frames:
+1. Create BvhDriftCorrectionData asset
+2. Add keyframes: (timelineTime=0s, bvhFrame=0) → (timelineTime=10s, bvhFrame=200)
+3. Assign to DatasetConfig.BvhDriftCorrectionData
+4. Now 10s of Timeline plays 200 BVH frames (2x speed)
+
+### Case 6: Multiple BVH clips in sequence
 1. Add multiple BVH clips to the timeline
 2. Arrange them sequentially
-3. Timeline will play them in order
+3. Each clip can target different BVH files via DatasetConfig
+4. Timeline will play them in order with proper synchronization
 
 ## Timeline Control
 
@@ -167,6 +245,16 @@ foreach (var track in timelineAsset.GetOutputTracks())
             BvhData data = bvhAsset.GetBvhData();
             Debug.Log(data.GetSummary());
 
+            // Get current BVH frame
+            BvhPlayableBehaviour behaviour = bvhAsset.GetBvhPlayableBehaviour();
+            int currentFrame = behaviour.GetCurrentFrame();
+
+            // Get drift correction data
+            BvhDriftCorrectionData driftData = bvhAsset.GetDriftCorrectionData();
+
+            // Get BVH character position (for keyframe recording)
+            Vector3 characterPos = bvhAsset.GetBvhCharacterPosition();
+
             // Reload BVH file
             bvhAsset.ReloadBvhData();
         }
@@ -174,37 +262,118 @@ foreach (var track in timelineAsset.GetOutputTracks())
 }
 ```
 
+### Using BVH Frame Mapper Directly
+```csharp
+// Map timeline time to BVH frame without Timeline
+BvhFrameMapper mapper = new BvhFrameMapper();
+BvhData bvhData = BvhImporter.ImportFromBVH("path/to/file.bvh");
+
+// Get frame for timeline time 2.5 seconds
+int targetFrame = mapper.GetTargetFrameForTime(
+    timelineTime: 2.5f,
+    bvhData: bvhData,
+    driftCorrectionData: null,  // Optional
+    frameOffset: 0
+);
+
+Debug.Log($"Timeline 2.5s = BVH frame {targetFrame}");
+```
+
+### Using Drift Correction Controller Directly
+```csharp
+// Calculate corrected position/rotation without Timeline
+BvhDriftCorrectionController driftController = new BvhDriftCorrectionController();
+BvhDriftCorrectionData driftData = /* load from DatasetConfig */;
+
+// Get corrected transforms for timeline time 5.0 seconds
+Vector3 correctedPos = driftController.GetCorrectedRootPosition(
+    timelineTime: 5.0f,
+    driftCorrectionData: driftData,
+    positionOffset: Vector3.zero
+);
+
+Quaternion correctedRot = driftController.GetCorrectedRootRotation(
+    timelineTime: 5.0f,
+    driftCorrectionData: driftData,
+    rotationOffset: Vector3.zero
+);
+```
+
 ## Automatic Skeleton Creation
 
-If the target Transform doesn't have matching child transforms for the BVH joints:
-- The system will automatically create GameObjects for each joint
-- Joints are created with proper offsets and hierarchy
-- You can pre-create the skeleton for better control
+BvhPlayableBehaviour.CreateJointHierarchy() (called in OnGraphStart):
+- Creates GameObjects for each BVH joint if not found
+- Builds parent-child transform hierarchy matching BVH structure
+- Sets localPosition to joint.Offset, localRotation to identity
+- Skips end sites (leaf nodes without animation)
+
+Can pre-create hierarchy for better control:
+- Manually create GameObjects matching BVH joint names
+- System will find and reuse them instead of creating new ones
+- Useful if you want custom components or materials on joints
+
+## Configuration via DatasetConfig
+
+Key BVH fields in DatasetConfig:
+```csharp
+public string BvhFilePath { get; set; }
+public Vector3 BvhPositionOffset { get; set; }
+public Vector3 BvhRotationOffset { get; set; }
+public Vector3 BvhScale { get; set; }
+public bool BvhApplyRootMotion { get; set; }
+public float BvhOverrideFrameRate { get; set; }  // 0 = use BVH's rate
+public int BvhFrameOffset { get; set; }
+public BvhDriftCorrectionData BvhDriftCorrectionData { get; set; }
+```
+
+These are loaded by BvhPlayableAsset at clip creation time and passed to BvhPlayableBehaviour.
 
 ## Troubleshooting
 
 ### "BVH data not loaded"
-- Check that the file path is correct
-- Use absolute path or path relative to project root
-- Ensure autoLoadBvh is checked
+- Verify BvhFilePath is set in DatasetConfig
+- Check that the file path is correct (absolute or relative to project root)
+- Confirm MultiCameraPointCloudManager is in scene with DatasetConfig assigned
+- Check Console for load errors
 
 ### "Target GameObject not found"
-- Ensure a GameObject named "BVH_Character" exists in the scene
-- Or set targetGameObjectName in the clip inspector to match your GameObject name
+- Ensure a GameObject named "BVH_Character" exists in scene, OR
+- Set targetGameObjectName in BvhPlayableAsset Inspector to match your GameObject
 
-### Motion looks wrong
-- Adjust Scale if BVH uses different units
-- Try different Rotation Offset values
-- Toggle Apply Root Motion
+### Skeleton not visible
+- Check BvhSkeletonVisualizer is attached to BVH_Character
+- Wait 1+ second for OnGraphStart to complete and visualization to create
+- Verify jointRadius and boneWidth are > 0
+- Check if BVH_Visuals GameObject was created (child of BVH_Character)
 
-### Multiple clips overlapping
-- Only one BVH clip should be active at a time
+### Motion doesn't match point cloud
+- Adjust BvhFrameOffset in DatasetConfig to sync frames
+- Check BvhScale matches point cloud scale
+- Use BvhDriftCorrectionData keyframes to remap Timeline → BVH frames
+- Verify frame rates: (timeline duration * timeline frame rate) ≈ (BVH frame count / BVH frame rate)
+
+### Motion looks wrong (scale, rotation, position)
+- Adjust BvhScale if BVH uses different units (typically 0.01 for cm→m)
+- Adjust BvhRotationOffset if character faces wrong direction
+- Toggle BvhApplyRootMotion if character should stay in place
+- Adjust BvhPositionOffset to reposition character
+
+### Multiple clips overlapping cause issues
+- Only one BVH clip should be active at a time on the same target
 - Arrange clips sequentially rather than overlapping
+- Timeline automatically switches between clips
 
 ## Editor Helper Functions
 
+### BvhPlayableAsset Context Menu
 Right-click on BvhPlayableAsset in Inspector:
-- **Update Clip Duration from BVH** - Resize clip to match BVH file duration
+- **Update Clip Duration from BVH** - Logs BVH duration and frame count
+  - Allows manual clip duration adjustment based on loaded BVH data
+
+### DatasetConfig Integration
+- **MultiCameraPointCloudManager** finds and stores DatasetConfig reference
+- **BvhPlayableAsset** reads BVH settings from DatasetConfig at clip creation
+- **BvhDriftCorrectionDataEditor** (custom inspector) provides UI for keyframe editing
 
 ## Integration with Point Cloud Timeline
 
@@ -245,7 +414,67 @@ Both systems auto-find their targets - no manual binding needed.
 
 ### Synchronization Tips:
 
-- Both clips share the same timeline time
-- If your BVH is 30fps and point cloud is 30fps, they stay in sync
-- Use clip offsets to adjust relative timing
-- Can have multiple BVH clips playing different characters (each needs its own GameObject)
+- Both clips share the same timeline time via PlayableDirector
+- Frame sync via BvhFrameOffset in DatasetConfig
+- Use BvhDriftCorrectionData keyframes for fine-grained Timeline → BVH frame mapping
+- Playback speed: adjust timeline duration to change playback speed (timeline duration controls rate)
+- Can have multiple BVH clips playing different characters (each needs its own GameObject/target)
+
+### Data Flow
+
+```
+Timeline (PlayableDirector)
+  ├── PointCloudPlayableAsset/Behaviour
+  │   └── Finds MultiCameraPointCloudManager → DatasetConfig
+  │       └── Reads point cloud settings
+  │
+  └── BvhPlayableAsset
+      └── Reads BvhFilePath, scale, offset, frameOffset from DatasetConfig
+          └── Creates BvhPlayableBehaviour
+              └── Each frame (PrepareFrame):
+                  1. BvhFrameMapper: Timeline time + frameOffset → BVH frame index
+                  2. BvhFrameApplier: Apply BVH frame data to joints
+                  3. BvhDriftCorrectionController: Apply drift correction
+                  4. Set BVH_Character position/rotation
+```
+
+## Advanced: Frame Mapper & Drift Correction
+
+### Linear Frame Mapping (Default)
+```
+BVH Frame = floor(Timeline Time * BVH Frame Rate)
+```
+
+Example: 2.5s timeline @ 30fps BVH = frame 75
+
+### Keyframe-Based Mapping (with BvhDriftCorrectionData)
+Keyframes define Timeline → BVH frame mapping:
+- Creates custom speed curves by defining frame numbers at specific timeline times
+- Interpolates between keyframes
+- Allows variable playback speeds
+
+Example keyframes:
+```
+Keyframe 1: timelineTime=0.0s, bvhFrame=0
+Keyframe 2: timelineTime=5.0s, bvhFrame=200    // 200 frames in 5s = 40fps
+Keyframe 3: timelineTime=10.0s, bvhFrame=300   // 100 frames in 5s = 20fps
+```
+
+At timeline time 2.5s: interpolates between kf1 and kf2 → frame ≈ 100
+
+### Drift Correction
+Corrects root position/rotation drift over time:
+- Each keyframe in BvhDriftCorrectionData contains:
+  - `timelineTime`: When to apply correction
+  - `anchorPositionCorrection`: Position offset (e.g., to shift character back)
+  - `anchorRotationCorrection`: Rotation offset (e.g., to straighten character)
+- Linear interpolation between keyframes
+- Applied in PrepareFrame via BvhDriftCorrectionController
+
+Example: If BVH drifts forward over 10 seconds:
+```
+Keyframe 1: time=0s, anchorPos=(0,0,0), anchorRot=(0,0,0)
+Keyframe 2: time=10s, anchorPos=(0,0,-2), anchorRot=(0,5,0)  // Shift back 2 units, rotate 5°
+```
+
+At time 5s: anchorPos interpolates to (0,0,-1), rotation to (0,2.5,0)

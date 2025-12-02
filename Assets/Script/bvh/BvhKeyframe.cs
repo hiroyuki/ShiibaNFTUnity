@@ -8,7 +8,7 @@ using UnityEngine;
 public class BvhKeyframe
 {
     [Tooltip("Timeline上の時刻（秒）")]
-    public float timelineTime;
+    public double timelineTime;
 
     [Tooltip("対応するBVHフレーム番号")]
     public int bvhFrameNumber;
@@ -24,13 +24,13 @@ public class BvhKeyframe
 
     public BvhKeyframe()
     {
-        timelineTime = 0f;
+        timelineTime = 0.0;
         bvhFrameNumber = 0;
         anchorPositionRelative = Vector3.zero;
         anchorRotationRelative = Vector3.zero;
     }
 
-    public BvhKeyframe(float time, int frame, Vector3 positionRelative, Vector3 rotationRelative = default)
+    public BvhKeyframe(double time, int frame, Vector3 positionRelative, Vector3 rotationRelative = default)
     {
         timelineTime = time;
         bvhFrameNumber = frame;

@@ -68,19 +68,8 @@ public class PlyModeHandler : BaseProcessingModeHandler
     {
         if (!plyFrameController.IsFirstFrameProcessed)
         {
-            // LoadPlyFrame(0);
-
-        // // Try to find timeline (lazy lookup - only when needed)
-            PlayableDirector timelinePlayableDirector = Object.FindFirstObjectByType<PlayableDirector>();
-
             // If timeline is available, sync it so BVH updates properly
-            if (timelinePlayableDirector != null)
-            {
-                int fps = plyFrameController.GetFps();
-                double timelineTimeInSeconds = (double)0 / fps;
-                timelinePlayableDirector.time = timelineTimeInSeconds;
-                timelinePlayableDirector.Evaluate();
-            }
+            TimelineUtil.SeekToTime(0);
         }
     }
 

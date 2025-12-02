@@ -28,7 +28,6 @@ public class BvhPlayableBehaviour : PlayableBehaviour
 
     // Timeline-independent utilities
     private BvhFrameMapper frameMapper = new BvhFrameMapper();
-    private BvhDriftCorrectionController driftController = new BvhDriftCorrectionController();
 
     public Vector3 RotationOffset { set => rotationOffset = value; }
     public Vector3 PositionOffset { set => positionOffset = value; }
@@ -78,8 +77,8 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         }
 
         // Apply drift correction using BvhDriftCorrectionController
-        Vector3 correctedPos = driftController.GetCorrectedRootPosition(timelineTime, driftCorrectionData, positionOffset);
-        Quaternion correctedRot = driftController.GetCorrectedRootRotation(timelineTime, driftCorrectionData, rotationOffset);
+        Vector3 correctedPos = BvhDriftCorrectionController.GetCorrectedRootPosition(timelineTime, driftCorrectionData, positionOffset);
+        Quaternion correctedRot = BvhDriftCorrectionController.GetCorrectedRootRotation(timelineTime, driftCorrectionData, rotationOffset);
         BvhCharacterTransform.SetLocalPositionAndRotation(correctedPos, correctedRot);
     }
 
