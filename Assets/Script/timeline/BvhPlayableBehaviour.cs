@@ -102,7 +102,7 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         }
 
         var applier = new PlayableFrameApplier(scale, rotationOffset, applyRootMotion);
-        applier.ApplyFrame(bvhData.RootJoint, rootJointTransform, frameData);
+        applier.ApplyFrameToJointHierarchy(bvhData.RootJoint, rootJointTransform, frameData);
     }
 
     /// <summary>

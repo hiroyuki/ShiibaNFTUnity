@@ -14,7 +14,7 @@ The BVH Timeline system allows you to import and play motion capture data from B
 - **BvhFrameMapper.cs** - Maps Timeline time to BVH frame indices with keyframe interpolation support
 - **BvhDriftCorrectionController.cs** - Calculates drift-corrected positions and rotations
 - **BvhDataReader.cs** - Centralized channel data parsing (position/rotation extraction)
-- **BvhFrameApplier.cs** - Abstract base for applying BVH frame data to transform hierarchies
+- **BvhFrameApplier.cs** - Applies BVH frame data to transform hierarchies (extensible via virtual methods)
 - **BvhSkeletonVisualizer.cs** - Renders skeleton joints (spheres) and bones (lines) for debugging
 
 ### BVH Data Management
@@ -22,9 +22,8 @@ The BVH Timeline system allows you to import and play motion capture data from B
 - **BvhImporter.cs** - BVH file parsing and import
 - **BvhKeyframe.cs** - Keyframe data for Timeline-to-BVH-frame mapping
 - **BvhDriftCorrectionData.cs** - Keyframe-based drift correction parameters
-- **BvhPlayer.cs** - Standalone BVH playback controller
-- **BvhDataCache.cs** - Caching layer for BVH data
-- **BvhDataReader.cs** - Static utility for channel parsing
+- **BvhDataCache.cs** - Caching layer for BVH data (centralized data management)
+- **BvhJointHierarchyBuilder.cs** - Utility for creating joint hierarchies (frame-agnostic, idempotent)
 
 ## Setup Instructions
 
@@ -155,11 +154,13 @@ Timeline lifecycle:
 - Returns corrected position and rotation quaternion
 - Works offline without Timeline
 
-### BvhFrameApplier (Abstract Base)
-- Recursive joint hierarchy application
+### BvhFrameApplier
+- Concrete class for applying BVH frame data to joint hierarchies
+- Can be instantiated directly for basic usage with no adjustments
+- Provides extension points via virtual methods for custom adjustments (scale, offset, root motion)
+- Used by BvhData, BvhPlayableBehaviour, and SceneFlowCalculator
 - Reads channel data (position/rotation) via BvhDataReader
-- Allows subclasses to customize adjustments (scale, offset, root motion)
-- Used by BvhPlayableBehaviour.PlayableFrameApplier
+- Key method: `ApplyFrameToJointHierarchy()` - Recursively applies frame data to all joints
 
 ### BvhSkeletonVisualizer
 - Creates GameObject hierarchy: renderRoot → Joint spheres + Bone lines
@@ -196,6 +197,35 @@ Use frame offset to align BVH with point cloud:
 In DatasetConfig:
   BvhFrameOffset = 5  // Start 5 frames ahead of timeline
 ```
+
+### Understanding Frame Mapping (Timeline Time → BVH Frame)
+
+The BvhFrameMapper component handles the conversion from Timeline playback time to BVH frame indices. It supports two mapping modes:
+
+**Linear Mapping (Default - No Keyframes)**
+- When no drift correction keyframes are set
+- Formula: `bvhFrameIndex = timelineTime * frameRate`
+- Example: At 2.5 seconds with 30 fps → Frame 75
+
+**Keyframe-Based Mapping (With Drift Correction)**
+- When BvhDriftCorrectionData keyframes are assigned
+- Each keyframe defines a (timelineTime, bvhFrameNumber) pair
+- Interpolates frame numbers between keyframes for smooth transitions
+- Allows timeline speed adjustment and frame skipping
+
+The mapper handles four interpolation cases automatically:
+
+| Case | Condition | Behavior |
+|------|-----------|----------|
+| **1. Between keyframes** | Current time is between two keyframes | Linearly interpolates bvhFrameNumber between them |
+| **2. Before first keyframe** | Current time < first keyframe | Interpolates from implicit (0s, frame 0) to first keyframe |
+| **3. After last keyframe** | Current time > last keyframe | Extrapolates at BVH's native frame rate |
+| **4. No keyframes** | No drift correction data | Falls back to linear time-based mapping |
+
+**Why Keyframe-Based Mapping?**
+- Allows you to "slow down" or "speed up" the BVH playback by adjusting frame numbers in keyframes
+- Enables smooth handling of Timeline time ranges not covered by keyframes
+- Provides flexibility without modifying the original BVH file
 
 ### Case 5: Adjust BVH playback speed
 Use BvhDriftCorrectionData keyframes to remap Timeline → BVH frames:

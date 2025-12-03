@@ -66,15 +66,18 @@ Assets/Script/
 ├── bvh/                                 # Skeletal animation (BVH format)
 │   ├── BvhData.cs                       # Core BVH data structures
 │   ├── BvhImporter.cs                   # BVH file import
-│   ├── BvhPlayer.cs                     # Playback controller
 │   ├── BvhChannelReader.cs              # BVH channel data parsing
 │   ├── BvhKeyframe.cs                   # Keyframe data structure
-│   ├── BvhFrameApplier.cs               # Applies frames to skeleton
-│   ├── BvhJointHierarchyBuilder.cs      # Utility for creating joint hierarchies
+│   ├── BvhFrameApplier.cs               # Applies frame data to joint hierarchy (extensible)
+│   ├── BvhFrameMapper.cs                # Maps Timeline time → BVH frame (with drift correction)
+│   ├── BvhDataReader.cs                 # Parses channel data from frame arrays
+│   ├── BvhDataCache.cs                  # Centralized BVH data management
+│   ├── BvhDriftCorrectionController.cs  # Calculates drift-corrected transforms
+│   ├── BvhDriftCorrectionData.cs        # Stores keyframes for drift correction
+│   ├── BvhJointHierarchyBuilder.cs      # Creates joint hierarchies (frame-agnostic, idempotent)
 │   ├── BvhSkeletonVisualizer.cs         # Skeleton joint/bone rendering
-│   ├── BvhDriftCorrectionData.cs        # Animation drift correction
 │   └── Editor/
-│       └── BvhDriftCorrectionDataEditor.cs  # Custom inspector UI
+│       └── BvhDriftCorrectionDataEditor.cs  # Custom inspector UI for drift correction
 │
 ├── config/
 │   └── DatasetConfig.cs                 # Central configuration ScriptableObject
@@ -215,6 +218,29 @@ Transform rootJoint = BvhJointHierarchyBuilder.CreateOrGetJointHierarchy(bvhData
 - Decouples skeleton creation from Timeline lifecycle
 - Enables reuse in SceneFlowCalculator, visualizers, and other components
 - Single source of truth for hierarchy creation logic
+
+### BVH Frame Handling System Architecture
+
+The BVH frame application system is built on clear separation of concerns with specialized utility classes:
+
+| Component | Responsibility | Key Methods | Used By |
+|-----------|-----------------|-------------|---------|
+| **BvhFrameApplier** | Convert BVH frame data to joint transforms | `ApplyFrameToJointHierarchy()` | BvhData, BvhPlayableBehaviour, SceneFlowCalculator |
+| **BvhFrameMapper** | Map Timeline time → BVH frame index (with drift correction) | `GetTargetFrameForTime()` | BvhPlayableBehaviour |
+| **BvhDataReader** | Parse channel data from frame arrays | `ReadChannelData()`, `GetRotationQuaternion()` | BvhFrameApplier |
+| **BvhData** | Store BVH structure + frame data; provide frame access | `GetFrame()`, `UpdateTransforms()` | BvhPlayableBehaviour, offline processing |
+| **BvhDriftCorrectionController** | Calculate drift-corrected root transform | `GetCorrectedRootPosition()`, `GetCorrectedRootRotation()` | BvhPlayableBehaviour |
+| **BvhDriftCorrectionData** | Store keyframes; interpolate position/rotation at time | `GetAnchorPositionAtTime()`, `GetAnchorRotationAtTime()` | BvhFrameMapper, BvhDriftCorrectionController |
+
+**Key Design Principles:**
+
+1. **BvhFrameApplier is concrete and extensible**: Can be instantiated directly for basic usage, or subclassed to override `AdjustPosition()` and `AdjustRotation()` for custom behavior (e.g., BvhPlayableBehaviour's PlayableFrameApplier adds scale and rotation offsets).
+
+2. **BvhFrameMapper is stateless and reusable**: All parameters are passed explicitly; no hidden dependencies. Can be instantiated fresh or cached without side effects.
+
+3. **Timeline-independent utilities**: All core logic (BvhFrameMapper, BvhDriftCorrectionController, BvhFrameApplier) work outside Timeline context, enabling reuse in Scene Flow, offline processing, and other components.
+
+4. **Single frame application point**: BvhFrameApplier is the authoritative implementation of frame-to-transform conversion, eliminating duplication across the codebase.
 
 ### Synchronizing Timeline with Point Cloud/Skeleton
 

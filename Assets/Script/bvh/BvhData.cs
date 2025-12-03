@@ -201,15 +201,7 @@ public class BvhData
     /// <param name="frameData">Frame data array (channel values)</param>
     public static void ApplyFrameToTransforms(BvhJoint rootJoint, Transform rootTransform, float[] frameData)
     {
-        var applier = new DefaultFrameApplier();
-        applier.ApplyFrame(rootJoint, rootTransform, frameData);
-    }
-
-    /// <summary>
-    /// Default frame applier with no custom adjustments
-    /// </summary>
-    private class DefaultFrameApplier : BvhFrameApplier
-    {
-        // Uses base implementation without any adjustments
+        var applier = new BvhFrameApplier();
+        applier.ApplyFrameToJointHierarchy(rootJoint, rootTransform, frameData);
     }
 }

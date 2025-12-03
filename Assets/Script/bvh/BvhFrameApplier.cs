@@ -1,19 +1,50 @@
 using UnityEngine;
 
 /// <summary>
-/// Abstract base class for applying BVH frame data to transform hierarchies
-/// Provides common frame application logic while allowing subclasses to customize position/rotation adjustments
-/// This eliminates code duplication between BvhData and BvhPlayableBehaviour
+/// Applies BVH frame data to transform hierarchies with extensible position/rotation adjustment hooks.
+///
+/// This class provides the core logic for converting BVH motion data into transform hierarchies.
+/// It can be instantiated directly for basic frame application, or subclassed to customize behavior.
+///
+/// Core Responsibilities:
+/// - Read channel data from BVH frame arrays using BvhDataReader
+/// - Recursively traverse joint hierarchy and apply transforms
+/// - Provide extension points via virtual methods for custom adjustments (position/rotation)
+///
+/// Usage Examples:
+///
+/// 1. Direct usage (no adjustments):
+///    var applier = new BvhFrameApplier();
+///    applier.ApplyFrameToJointHierarchy(rootJoint, rootTransform, frameData);
+///
+/// 2. Custom adjustments via subclassing:
+///    private class ScaledFrameApplier : BvhFrameApplier
+///    {
+///        protected override Vector3 AdjustPosition(Vector3 basePos, BvhJoint joint, bool isRoot)
+///        {
+///            return Vector3.Scale(basePos, scale);
+///        }
+///    }
+///
+/// Extension Points:
+/// - AdjustPosition(): Override to customize position values (e.g., apply scale, root motion handling)
+/// - AdjustRotation(): Override to customize rotation values (e.g., apply offset rotations)
 /// </summary>
-public abstract class BvhFrameApplier
+public class BvhFrameApplier
 {
     /// <summary>
-    /// Apply BVH frame data to a transform hierarchy
+    /// Apply BVH frame data to a joint hierarchy by recursively updating transforms.
+    ///
+    /// This method:
+    /// 1. Reads channel data using BvhDataReader
+    /// 2. Calls AdjustPosition/AdjustRotation hooks for customization
+    /// 3. Applies transforms to the joint hierarchy
+    /// 4. Creates missing child transforms as needed (idempotent)
     /// </summary>
-    /// <param name="rootJoint">Root joint of the BVH skeleton</param>
-    /// <param name="rootTransform">Root transform to apply motion to</param>
-    /// <param name="frameData">Frame data array (channel values)</param>
-    public void ApplyFrame(BvhJoint rootJoint, Transform rootTransform, float[] frameData)
+    /// <param name="rootJoint">Root joint of the BVH skeleton structure</param>
+    /// <param name="rootTransform">Root transform in the scene to apply motion to</param>
+    /// <param name="frameData">Frame data array containing channel values [pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, ...]</param>
+    public void ApplyFrameToJointHierarchy(BvhJoint rootJoint, Transform rootTransform, float[] frameData)
     {
         if (rootJoint == null || rootTransform == null || frameData == null)
             return;

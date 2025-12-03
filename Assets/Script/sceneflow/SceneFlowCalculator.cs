@@ -554,7 +554,7 @@ public class SceneFlowCalculator : MonoBehaviour
             {
                 // Create a custom applier with scale
                 var applier = new SceneFlowFrameApplier(bvhScale);
-                applier.ApplyFrame(bvhData.RootJoint, rootJointTransform, frameData);
+                applier.ApplyFrameToJointHierarchy(bvhData.RootJoint, rootJointTransform, frameData);
             }
         }
 
