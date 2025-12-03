@@ -321,14 +321,10 @@ public class SceneFlowCalculator : MonoBehaviour
     /// </summary>
     private Vector3 GetBvhPositionOffset()
     {
-        var pointCloudManager = FindFirstObjectByType<MultiCameraPointCloudManager>();
-        if (pointCloudManager != null)
+        DatasetConfig config = DatasetConfig.GetInstance();
+        if (config != null)
         {
-            DatasetConfig config = pointCloudManager.GetDatasetConfig();
-            if (config != null)
-            {
-                return config.BvhPositionOffset;
-            }
+            return config.BvhPositionOffset;
         }
 
         Debug.LogWarning("[SceneFlowCalculator] Could not find BvhPositionOffset from config, using zero");
@@ -341,14 +337,10 @@ public class SceneFlowCalculator : MonoBehaviour
     /// </summary>
     private Vector3 GetBvhRotationOffset()
     {
-        var pointCloudManager = FindFirstObjectByType<MultiCameraPointCloudManager>();
-        if (pointCloudManager != null)
+        DatasetConfig config = DatasetConfig.GetInstance();
+        if (config != null)
         {
-            DatasetConfig config = pointCloudManager.GetDatasetConfig();
-            if (config != null)
-            {
-                return config.BvhRotationOffset;
-            }
+            return config.BvhRotationOffset;
         }
 
         Debug.LogWarning("[SceneFlowCalculator] Could not find BvhRotationOffset from config, using zero");
@@ -361,14 +353,10 @@ public class SceneFlowCalculator : MonoBehaviour
     /// </summary>
     private Vector3 GetBvhScale()
     {
-        var pointCloudManager = FindFirstObjectByType<MultiCameraPointCloudManager>();
-        if (pointCloudManager != null)
+        DatasetConfig config = DatasetConfig.GetInstance();
+        if (config != null)
         {
-            DatasetConfig config = pointCloudManager.GetDatasetConfig();
-            if (config != null)
-            {
-                return config.BvhScale;
-            }
+            return config.BvhScale;
         }
 
         Debug.LogWarning("[SceneFlowCalculator] Could not find BvhScale from config, using identity");
@@ -381,7 +369,7 @@ public class SceneFlowCalculator : MonoBehaviour
     /// </summary>
     private BvhDriftCorrectionData GetDriftCorrectionData()
     {
-        // Find TimelineController and access its playable director
+        // Try to find from Timeline first (for active playback)
         var timelineController = FindFirstObjectByType<TimelineController>();
         if (timelineController != null)
         {
@@ -405,7 +393,14 @@ public class SceneFlowCalculator : MonoBehaviour
             }
         }
 
-        Debug.LogWarning("[SceneFlowCalculator] Could not find BvhDriftCorrectionData from Timeline");
+        // Fallback: Get from DatasetConfig directly
+        var config = DatasetConfig.GetInstance();
+        if (config != null)
+        {
+            return config.BvhDriftCorrectionData;
+        }
+
+        Debug.LogWarning("[SceneFlowCalculator] Could not find BvhDriftCorrectionData from Timeline or DatasetConfig");
         return null;
     }
 
@@ -423,14 +418,10 @@ public class SceneFlowCalculator : MonoBehaviour
 
         // Get frame offset from config if available
         int frameOffset = 0;
-        var pointCloudManager = FindFirstObjectByType<MultiCameraPointCloudManager>();
-        if (pointCloudManager != null)
+        var config = DatasetConfig.GetInstance();
+        if (config != null)
         {
-            var config = pointCloudManager.GetDatasetConfig();
-            if (config != null)
-            {
-                frameOffset = config.BvhFrameOffset;
-            }
+            frameOffset = config.BvhFrameOffset;
         }
 
         // Use BvhFrameMapper to calculate frame index from timeline time

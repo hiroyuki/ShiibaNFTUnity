@@ -31,35 +31,26 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     private BvhPlayableBehaviour cachedBehaviour;
 
     /// <summary>
-    /// Get the actual BVH file path from MultiCameraPointCloudManager
+    /// Get the actual BVH file path from DatasetConfig
     /// </summary>
     private string GetBvhFilePath()
     {
-        var pointCloudManager = GameObject.FindFirstObjectByType<MultiCameraPointCloudManager>();
-        if (pointCloudManager != null)
+        DatasetConfig config = DatasetConfig.GetInstance();
+        if (config != null)
         {
-            DatasetConfig config = pointCloudManager.GetDatasetConfig();
-            if (config != null)
-            {
-                return config.GetBvhFilePath();
-            }
+            return config.GetBvhFilePath();
         }
 
-        Debug.LogWarning("BvhPlayableAsset: No DatasetConfig found in MultiCameraPointCloudManager!");
+        Debug.LogWarning("BvhPlayableAsset: No DatasetConfig found in scene!");
         return "";
     }
 
     /// <summary>
-    /// Get transform settings from DatasetConfig (via MultiCameraPointCloudManager) or override values
+    /// Get transform settings from DatasetConfig or override values
     /// </summary>
     private void GetTransformSettings(out Vector3 position, out Vector3 rotation, out Vector3 scaleVal, out bool applyRoot, out float frameRate, out int frameOff)
     {
-        DatasetConfig config = null;
-        var pointCloudManager = GameObject.FindFirstObjectByType<MultiCameraPointCloudManager>();
-        if (pointCloudManager != null)
-        {
-            config = pointCloudManager.GetDatasetConfig();
-        }
+        DatasetConfig config = DatasetConfig.GetInstance();
 
         if (config != null && !overrideTransformSettings)
         {
@@ -137,15 +128,11 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
         behaviour.applyRootMotion = applyRoot;
         behaviour.frameOffset = frameOff;
 
-        // Set drift correction data from DatasetConfig (via MultiCameraPointCloudManager)
-        var pointCloudMgr = GameObject.FindFirstObjectByType<MultiCameraPointCloudManager>();
-        if (pointCloudMgr != null)
+        // Set drift correction data from DatasetConfig
+        var config = DatasetConfig.GetInstance();
+        if (config != null && config.BvhDriftCorrectionData != null)
         {
-            var config = pointCloudMgr.GetDatasetConfig();
-            if (config != null && config.BvhDriftCorrectionData != null)
-            {
-                behaviour.driftCorrectionData = config.BvhDriftCorrectionData;
-            }
+            behaviour.driftCorrectionData = config.BvhDriftCorrectionData;
         }
 
         if (behaviour.bvhData == null)
@@ -231,14 +218,10 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
         }
 
         // キャッシュがない場合、DatasetConfig から取得
-        var pointCloudMgr = GameObject.FindFirstObjectByType<MultiCameraPointCloudManager>();
-        if (pointCloudMgr != null)
+        var config = DatasetConfig.GetInstance();
+        if (config != null)
         {
-            var config = pointCloudMgr.GetDatasetConfig();
-            if (config != null)
-            {
-                return config.BvhDriftCorrectionData;
-            }
+            return config.BvhDriftCorrectionData;
         }
 
         return null;

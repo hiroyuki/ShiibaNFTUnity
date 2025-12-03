@@ -26,19 +26,18 @@ public class PointCloudPlayableAsset : PlayableAsset, ITimelineClipAsset
             return playable;
         }
 
-        // Get DatasetConfig from MultiCameraPointCloudManager
-        // Note: At this point, the manager's Start() may not have run yet, so currentDatasetConfig could be null
-        DatasetConfig configToUse = behaviour.pointCloudManager.GetDatasetConfig();
+        // Get DatasetConfig from ConfigManager (centralized config storage)
+        DatasetConfig configToUse = DatasetConfig.GetInstance();
 
-        // If not found in manager's runtime config, the manager should load it from its serialized field in Start()
-        // The manager will handle finding the DatasetConfig via its own fallback logic
         if (configToUse == null)
         {
-            Debug.Log("PointCloudPlayableAsset: DatasetConfig not yet initialized. Manager will load it in Start().");
+            Debug.LogWarning("PointCloudPlayableAsset: DatasetConfig not found in ConfigManager. Ensure ConfigManager is in scene with DatasetConfig assigned.");
         }
         else
         {
-            Debug.Log($"PointCloudPlayableAsset: Using DatasetConfig from MultiCameraPointCloudManager: {configToUse.DatasetName}");
+            Debug.Log($"PointCloudPlayableAsset: Using DatasetConfig from ConfigManager: {configToUse.DatasetName}");
+            // Pass config to manager so it can initialize
+            behaviour.pointCloudManager.SetDatasetConfig(configToUse);
         }
 
         return playable;

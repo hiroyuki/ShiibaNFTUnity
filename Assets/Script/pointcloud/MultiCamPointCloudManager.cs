@@ -8,45 +8,33 @@ using UnityEngine;
 /// </summary>
 public class MultiCameraPointCloudManager : MonoBehaviour
 {
-    [Header("Configuration")]
-    [SerializeField] private DatasetConfig datasetConfig;
-
     private IProcessingModeHandler currentHandler;
     private string displayName = "";
-    private DatasetConfig currentDatasetConfig;
 
     /// <summary>
     /// Set and store DatasetConfig at runtime (called from PointCloudPlayableAsset)
+    /// Delegates to ConfigManager for centralized storage
     /// </summary>
     public void SetDatasetConfig(DatasetConfig config)
     {
-        currentDatasetConfig = config;
-        if (config != null)
-        {
-            Debug.Log($"DatasetConfig set to: {config.DatasetName}");
-        }
+        ConfigManager.SetDatasetConfig(config);
     }
 
     /// <summary>
     /// Get the current DatasetConfig
+    /// Delegates to ConfigManager for centralized retrieval
     /// </summary>
     public DatasetConfig GetDatasetConfig()
     {
-        return currentDatasetConfig;
+        return ConfigManager.GetDatasetConfig();
     }
 
     void Start()
     {
         SetupStatusUI.ShowStatus("Starting Multi-Camera Point Cloud Manager...");
         Debug.Log("[MultiCameraPointCloudManager] Start");
-        // Ensure DatasetConfig is set
-        // First try runtime config, then fall back to serialized field
-        if (GetDatasetConfig() == null && datasetConfig != null)
-        {
-            SetDatasetConfig(datasetConfig);
-            Debug.Log("DatasetConfig: Using serialized field from Inspector");
-        }
 
+        // Ensure DatasetConfig is set (should be set by ConfigManager or PointCloudPlayableAsset)
         if (GetDatasetConfig() == null)
         {
             Debug.LogError("DatasetConfig not set! Cannot initialize.");

@@ -159,4 +159,13 @@ public class DatasetConfig : ScriptableObject
                $"PointCloud Root: {GetPointCloudRootDirectory()}\n" +
                $"Binary Data Root: {GetBinaryDataRootDirectory()}";
     }
+
+    /// <summary>
+    /// Get the active DatasetConfig instance from ConfigManager
+    /// Allows independent discovery without going through MultiCameraPointCloudManager
+    /// </summary>
+    public static DatasetConfig GetInstance()
+    {
+        return ConfigManager.GetDatasetConfig();
+    }
 }
