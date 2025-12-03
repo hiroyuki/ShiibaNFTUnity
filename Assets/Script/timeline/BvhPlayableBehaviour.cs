@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.Playables;
 using System.Collections.Generic;
+using ShiibaNFT.BVH;
 
 /// <summary>
 /// Playable behaviour for controlling BVH motion playback in Unity Timeline
@@ -50,8 +51,8 @@ public class BvhPlayableBehaviour : PlayableBehaviour
             var jointList = bvhData.GetAllJoints();
             joints = jointList.ToArray();
 
-            // Create or find transforms for all joints
-            CreateJointHierarchy();
+            // Create or find transforms for all joints using the utility builder
+            BvhJointHierarchyBuilder.CreateOrGetJointHierarchy(bvhData, BvhCharacterTransform);
         }
     }
 
@@ -157,56 +158,4 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         }
     }
 
-    /// <summary>
-    /// Create joint hierarchy GameObjects if they don't exist
-    /// </summary>
-    private void CreateJointHierarchy()
-    {
-        if (bvhData == null || bvhData.RootJoint == null) return;
-
-        // Create the root joint as a child of targetTransform
-        Transform rootJointTransform = BvhCharacterTransform.Find(bvhData.RootJoint.Name);
-        if (rootJointTransform == null)
-        {
-            GameObject rootJointObj = new GameObject(bvhData.RootJoint.Name);
-            rootJointTransform = rootJointObj.transform;
-            rootJointTransform.SetParent(BvhCharacterTransform);
-            rootJointTransform.localPosition = bvhData.RootJoint.Offset;
-            rootJointTransform.localRotation = Quaternion.identity;
-            rootJointTransform.localScale = Vector3.one;
-
-            Debug.Log($"Created root joint '{bvhData.RootJoint.Name}' as child of '{BvhCharacterTransform.name}'");
-        }
-
-        // Create children of root joint
-        foreach (var childJoint in bvhData.RootJoint.Children)
-        {
-            CreateJointRecursive(childJoint, rootJointTransform);
-        }
-    }
-
-    /// <summary>
-    /// Recursively create joint GameObjects
-    /// </summary>
-    private void CreateJointRecursive(BvhJoint joint, Transform parent)
-    {
-        if (joint.IsEndSite) return;
-
-        Transform jointTransform = parent.Find(joint.Name);
-        if (jointTransform == null)
-        {
-            GameObject jointObj = new GameObject(joint.Name);
-            jointTransform = jointObj.transform;
-            jointTransform.SetParent(parent);
-            jointTransform.localPosition = joint.Offset;
-            jointTransform.localRotation = Quaternion.identity;
-            jointTransform.localScale = Vector3.one;
-        }
-
-        // Create children
-        foreach (var childJoint in joint.Children)
-        {
-            CreateJointRecursive(childJoint, jointTransform);
-        }
-    }
 }

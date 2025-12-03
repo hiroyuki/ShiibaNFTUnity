@@ -70,6 +70,7 @@ Assets/Script/
 │   ├── BvhChannelReader.cs              # BVH channel data parsing
 │   ├── BvhKeyframe.cs                   # Keyframe data structure
 │   ├── BvhFrameApplier.cs               # Applies frames to skeleton
+│   ├── BvhJointHierarchyBuilder.cs      # Utility for creating joint hierarchies
 │   ├── BvhSkeletonVisualizer.cs         # Skeleton joint/bone rendering
 │   ├── BvhDriftCorrectionData.cs        # Animation drift correction
 │   └── Editor/
@@ -194,6 +195,27 @@ Assets/Script/
 3. Register in `MultiCameraPointCloudManager.InitializeHandler()` method
 4. Expose mode selection in `DatasetConfig.processingMode`
 
+### Creating BVH Joint Hierarchies
+
+Use the `BvhJointHierarchyBuilder` utility for creating skeleton hierarchies:
+
+```csharp
+// Create a complete skeleton hierarchy from BVH data
+BvhData bvhData = GetBvhData();
+Transform parentTransform = GameObject.Find("BVH_Character").transform;
+Transform rootJoint = BvhJointHierarchyBuilder.CreateOrGetJointHierarchy(bvhData, parentTransform);
+
+// Features:
+// - Idempotent: Safe to call multiple times (existing joints are reused)
+// - Frame-agnostic: Creates hierarchy structure; frame data applied separately
+// - Timeline-independent: Can be used in any component, not just Timeline playback
+```
+
+**Benefits:**
+- Decouples skeleton creation from Timeline lifecycle
+- Enables reuse in SceneFlowCalculator, visualizers, and other components
+- Single source of truth for hierarchy creation logic
+
 ### Synchronizing Timeline with Point Cloud/Skeleton
 
 Timeline synchronization works via PlayableAsset/PlayableBehaviour pattern:
@@ -233,14 +255,15 @@ The system handles multi-camera sensor fusion through:
 **Symptom:** BVH_Visuals GameObject is created under BVH_Character, but the skeleton visualization (joint spheres and bone lines) is not visible in the viewport.
 
 **Diagnosis:**
-- BvhPlayableBehaviour creates the joint hierarchy (via `CreateJointHierarchy()`) during Timeline `OnGraphStart()`
+- BvhPlayableBehaviour creates the joint hierarchy via `BvhJointHierarchyBuilder.CreateOrGetJointHierarchy()` during Timeline `OnGraphStart()`
 - BvhSkeletonVisualizer attempts to visualize joints but may encounter timing issues
 - Root cause: Timing issue between joint creation and visualization attempt
 - Delay increased from 0.2s → 1.0s in `BvhSkeletonVisualizer.Start()`, but issue persists
 - Recent refactoring (commit 82ba346) may have addressed this
 
 **Files Involved:**
-- [Assets/Script/timeline/BvhPlayableBehaviour.cs](Assets/Script/timeline/BvhPlayableBehaviour.cs) - Creates joint hierarchy in `OnGraphStart()`
+- [Assets/Script/timeline/BvhPlayableBehaviour.cs](Assets/Script/timeline/BvhPlayableBehaviour.cs) - Calls joint hierarchy builder in `OnGraphStart()`
+- [Assets/Script/bvh/BvhJointHierarchyBuilder.cs](Assets/Script/bvh/BvhJointHierarchyBuilder.cs) - Creates joint hierarchy (utility class)
 - [Assets/Script/bvh/BvhSkeletonVisualizer.cs](Assets/Script/bvh/BvhSkeletonVisualizer.cs) - Visualization logic
 - [Assets/Script/bvh/BvhFrameApplier.cs](Assets/Script/bvh/BvhFrameApplier.cs) - Frame application (new component)
 
@@ -268,10 +291,19 @@ The BVH skeletal animation system has been significantly enhanced with new dedic
 - **BvhChannelReader.cs** - Parses BVH motion data channels
 - **BvhKeyframe.cs** - Represents individual animation keyframes
 - **BvhFrameApplier.cs** - Applies keyframe data to skeleton hierarchy
+- **BvhJointHierarchyBuilder.cs** - Static utility for creating and managing joint hierarchies (frame-agnostic, idempotent)
 - **BvhDriftCorrectionData.cs** - Corrects animation drift/misalignment issues
 - Custom inspector editor for drift correction parameters
 
 This modular approach improves maintainability and allows fine-grained control over BVH animation playback.
+
+#### Joint Hierarchy Builder (New - 2025-12-03)
+**BvhJointHierarchyBuilder** is a new static utility class that extracts joint hierarchy creation logic from BvhPlayableBehaviour. Key features:
+- **Reusable**: Any component can create joint hierarchies without Timeline dependency
+- **Frame-agnostic**: Creates skeleton structure only; frame data applied separately via BvhFrameApplier
+- **Idempotent**: Safe to call multiple times without duplicating GameObjects
+- **Usage**: `BvhJointHierarchyBuilder.CreateOrGetJointHierarchy(bvhData, parentTransform)`
+- **Benefits**: Decouples hierarchy creation from Timeline lifecycle; enables use in SceneFlowCalculator and other components
 
 ### Scene Flow System (sceneflow/ directory)
 New scene flow calculation system for optical flow/motion visualization:
