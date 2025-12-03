@@ -130,9 +130,9 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
 
         // Set drift correction data from DatasetConfig
         var config = DatasetConfig.GetInstance();
-        if (config != null && config.BvhDriftCorrectionData != null)
+        if (config != null && config.BvhPlaybackCorrectionKeyframes != null)
         {
-            behaviour.driftCorrectionData = config.BvhDriftCorrectionData;
+            behaviour.driftCorrectionData = config.BvhPlaybackCorrectionKeyframes;
         }
 
         if (behaviour.bvhData == null)
@@ -210,7 +210,7 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     /// <summary>
     /// ドリフト補正データを取得（TimelineController用）
     /// </summary>
-    public BvhDriftCorrectionData GetDriftCorrectionData()
+    public BvhPlaybackCorrectionKeyframes GetDriftCorrectionData()
     {
         if (cachedBehaviour != null)
         {
@@ -221,7 +221,7 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
         var config = DatasetConfig.GetInstance();
         if (config != null)
         {
-            return config.BvhDriftCorrectionData;
+            return config.BvhPlaybackCorrectionKeyframes;
         }
 
         return null;

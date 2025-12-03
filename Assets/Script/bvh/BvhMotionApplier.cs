@@ -1,24 +1,24 @@
 using UnityEngine;
 
 /// <summary>
-/// Applies BVH frame data to transform hierarchies with extensible position/rotation adjustment hooks.
+/// Applies BVH motion data to transform hierarchies with extensible position/rotation adjustment hooks.
 ///
-/// This class provides the core logic for converting BVH motion data into transform hierarchies.
-/// It can be instantiated directly for basic frame application, or subclassed to customize behavior.
+/// This class provides the core logic for converting BVH motion capture data into transform hierarchies.
+/// It can be instantiated directly for basic motion application, or subclassed to customize behavior.
 ///
 /// Core Responsibilities:
 /// - Read channel data from BVH frame arrays using BvhDataReader
-/// - Recursively traverse joint hierarchy and apply transforms
+/// - Recursively traverse joint hierarchy and apply motion transforms
 /// - Provide extension points via virtual methods for custom adjustments (position/rotation)
 ///
 /// Usage Examples:
 ///
 /// 1. Direct usage (no adjustments):
-///    var applier = new BvhFrameApplier();
+///    var applier = new BvhMotionApplier();
 ///    applier.ApplyFrameToJointHierarchy(rootJoint, rootTransform, frameData);
 ///
 /// 2. Custom adjustments via subclassing:
-///    private class ScaledFrameApplier : BvhFrameApplier
+///    private class ScaledMotionApplier : BvhMotionApplier
 ///    {
 ///        protected override Vector3 AdjustPosition(Vector3 basePos, BvhJoint joint, bool isRoot)
 ///        {
@@ -30,7 +30,7 @@ using UnityEngine;
 /// - AdjustPosition(): Override to customize position values (e.g., apply scale, root motion handling)
 /// - AdjustRotation(): Override to customize rotation values (e.g., apply offset rotations)
 /// </summary>
-public class BvhFrameApplier
+public class BvhMotionApplier
 {
     /// <summary>
     /// Apply BVH frame data to a joint hierarchy by recursively updating transforms.

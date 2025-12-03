@@ -3,11 +3,16 @@ using System.Collections.Generic;
 using System.Linq;
 
 /// <summary>
-/// BVH ドリフト補正データを管理する ScriptableObject
-/// キーフレーム間での位置補完により、ドリフトを手動補正
+/// Unified keyframe container for BVH playback correction
+/// Stores frame mapping corrections (which frame to use at which time)
+/// and transform corrections (position/rotation adjustments)
+///
+/// This single asset manages all correction keyframes used by:
+/// - BvhPlaybackFrameMapper (frame timing corrections)
+/// - BvhPlaybackTransformCorrector (position/rotation corrections)
 /// </summary>
-[CreateAssetMenu(menuName = "BVH/Drift Correction Data", fileName = "BvhDriftCorrectionData")]
-public class BvhDriftCorrectionData : ScriptableObject
+[CreateAssetMenu(menuName = "BVH/Playback Correction Keyframes", fileName = "BvhPlaybackCorrectionKeyframes")]
+public class BvhPlaybackCorrectionKeyframes : ScriptableObject
 {
     [Header("Keyframe Settings")]
     [SerializeField] private List<BvhKeyframe> keyframes = new List<BvhKeyframe>();

@@ -11,8 +11,8 @@ The BVH Timeline system allows you to import and play motion capture data from B
 - **TimelineController.cs** - Master timeline orchestration
 
 ### BVH Processing & Utilities
-- **BvhFrameMapper.cs** - Maps Timeline time to BVH frame indices with keyframe interpolation support
-- **BvhDriftCorrectionController.cs** - Calculates drift-corrected positions and rotations
+- **BvhPlaybackFrameMapper.cs** - Maps Timeline time to BVH frame indices with keyframe interpolation support
+- **BvhPlaybackTransformCorrector.cs** - Calculates drift-corrected positions and rotations
 - **BvhDataReader.cs** - Centralized channel data parsing (position/rotation extraction)
 - **BvhFrameApplier.cs** - Applies BVH frame data to transform hierarchies (extensible via virtual methods)
 - **BvhSkeletonVisualizer.cs** - Renders skeleton joints (spheres) and bones (lines) for debugging
@@ -21,7 +21,7 @@ The BVH Timeline system allows you to import and play motion capture data from B
 - **BvhData.cs** - Core BVH skeleton structure and frame storage
 - **BvhImporter.cs** - BVH file parsing and import
 - **BvhKeyframe.cs** - Keyframe data for Timeline-to-BVH-frame mapping
-- **BvhDriftCorrectionData.cs** - Keyframe-based drift correction parameters
+- **BvhPlaybackCorrectionKeyframes.cs** - Keyframe-based drift correction parameters
 - **BvhDataCache.cs** - Caching layer for BVH data (centralized data management)
 - **BvhJointHierarchyBuilder.cs** - Utility for creating joint hierarchies (frame-agnostic, idempotent)
 
@@ -137,20 +137,20 @@ scale = new Vector3(0.01f, 0.01f, 0.01f); // Scale down to 1% (cm to m)
 Timeline lifecycle:
 - **OnGraphStart**: Creates joint hierarchy (GameObjects) from BvhData
 - **PrepareFrame**: Called each frame to:
-  - Map Timeline time → BVH frame index (via BvhFrameMapper)
+  - Map Timeline time → BVH frame index (via BvhPlaybackFrameMapper)
   - Apply frame data to joints (via BvhFrameApplier)
-  - Apply drift correction (via BvhDriftCorrectionController)
+  - Apply drift correction (via BvhPlaybackTransformCorrector)
 - **OnGraphStop**: Resets state
 
-### BvhFrameMapper
+### BvhPlaybackFrameMapper
 - Maps Timeline time to BVH frame index
-- Supports **keyframe-based mapping** via BvhDriftCorrectionData (enables speed adjustment)
+- Supports **keyframe-based mapping** via BvhPlaybackCorrectionKeyframes (enables speed adjustment)
 - Falls back to linear mapping (frame = time * frameRate)
 - Handles frame offsets and clamping
 
-### BvhDriftCorrectionController
+### BvhPlaybackTransformCorrector
 - Calculates drift-corrected position/rotation at any Timeline time
-- Uses keyframe interpolation from BvhDriftCorrectionData
+- Uses keyframe interpolation from BvhPlaybackCorrectionKeyframes
 - Returns corrected position and rotation quaternion
 - Works offline without Timeline
 
@@ -200,7 +200,7 @@ In DatasetConfig:
 
 ### Understanding Frame Mapping (Timeline Time → BVH Frame)
 
-The BvhFrameMapper component handles the conversion from Timeline playback time to BVH frame indices. It supports two mapping modes:
+The BvhPlaybackFrameMapper component handles the conversion from Timeline playback time to BVH frame indices. It supports two mapping modes:
 
 **Linear Mapping (Default - No Keyframes)**
 - When no drift correction keyframes are set
@@ -208,7 +208,7 @@ The BvhFrameMapper component handles the conversion from Timeline playback time 
 - Example: At 2.5 seconds with 30 fps → Frame 75
 
 **Keyframe-Based Mapping (With Drift Correction)**
-- When BvhDriftCorrectionData keyframes are assigned
+- When BvhPlaybackCorrectionKeyframes keyframes are assigned
 - Each keyframe defines a (timelineTime, bvhFrameNumber) pair
 - Interpolates frame numbers between keyframes for smooth transitions
 - Allows timeline speed adjustment and frame skipping
@@ -228,10 +228,10 @@ The mapper handles four interpolation cases automatically:
 - Provides flexibility without modifying the original BVH file
 
 ### Case 5: Adjust BVH playback speed
-Use BvhDriftCorrectionData keyframes to remap Timeline → BVH frames:
-1. Create BvhDriftCorrectionData asset
+Use BvhPlaybackCorrectionKeyframes keyframes to remap Timeline → BVH frames:
+1. Create BvhPlaybackCorrectionKeyframes asset
 2. Add keyframes: (timelineTime=0s, bvhFrame=0) → (timelineTime=10s, bvhFrame=200)
-3. Assign to DatasetConfig.BvhDriftCorrectionData
+3. Assign to DatasetConfig.BvhPlaybackCorrectionKeyframes
 4. Now 10s of Timeline plays 200 BVH frames (2x speed)
 
 ### Case 6: Multiple BVH clips in sequence
@@ -280,7 +280,7 @@ foreach (var track in timelineAsset.GetOutputTracks())
             int currentFrame = behaviour.GetCurrentFrame();
 
             // Get drift correction data
-            BvhDriftCorrectionData driftData = bvhAsset.GetDriftCorrectionData();
+            BvhPlaybackCorrectionKeyframes driftData = bvhAsset.GetDriftCorrectionData();
 
             // Get BVH character position (for keyframe recording)
             Vector3 characterPos = bvhAsset.GetBvhCharacterPosition();
@@ -295,7 +295,7 @@ foreach (var track in timelineAsset.GetOutputTracks())
 ### Using BVH Frame Mapper Directly
 ```csharp
 // Map timeline time to BVH frame without Timeline
-BvhFrameMapper mapper = new BvhFrameMapper();
+BvhPlaybackFrameMapper mapper = new BvhPlaybackFrameMapper();
 BvhData bvhData = BvhImporter.ImportFromBVH("path/to/file.bvh");
 
 // Get frame for timeline time 2.5 seconds
@@ -312,8 +312,8 @@ Debug.Log($"Timeline 2.5s = BVH frame {targetFrame}");
 ### Using Drift Correction Controller Directly
 ```csharp
 // Calculate corrected position/rotation without Timeline
-BvhDriftCorrectionController driftController = new BvhDriftCorrectionController();
-BvhDriftCorrectionData driftData = /* load from DatasetConfig */;
+BvhPlaybackTransformCorrector driftController = new BvhPlaybackTransformCorrector();
+BvhPlaybackCorrectionKeyframes driftData = /* load from DatasetConfig */;
 
 // Get corrected transforms for timeline time 5.0 seconds
 Vector3 correctedPos = driftController.GetCorrectedRootPosition(
@@ -353,7 +353,7 @@ public Vector3 BvhScale { get; set; }
 public bool BvhApplyRootMotion { get; set; }
 public float BvhOverrideFrameRate { get; set; }  // 0 = use BVH's rate
 public int BvhFrameOffset { get; set; }
-public BvhDriftCorrectionData BvhDriftCorrectionData { get; set; }
+public BvhPlaybackCorrectionKeyframes BvhPlaybackCorrectionKeyframes { get; set; }
 ```
 
 These are loaded by BvhPlayableAsset at clip creation time and passed to BvhPlayableBehaviour.
@@ -379,7 +379,7 @@ These are loaded by BvhPlayableAsset at clip creation time and passed to BvhPlay
 ### Motion doesn't match point cloud
 - Adjust BvhFrameOffset in DatasetConfig to sync frames
 - Check BvhScale matches point cloud scale
-- Use BvhDriftCorrectionData keyframes to remap Timeline → BVH frames
+- Use BvhPlaybackCorrectionKeyframes keyframes to remap Timeline → BVH frames
 - Verify frame rates: (timeline duration * timeline frame rate) ≈ (BVH frame count / BVH frame rate)
 
 ### Motion looks wrong (scale, rotation, position)
@@ -403,7 +403,7 @@ Right-click on BvhPlayableAsset in Inspector:
 ### DatasetConfig Integration
 - **MultiCameraPointCloudManager** finds and stores DatasetConfig reference
 - **BvhPlayableAsset** reads BVH settings from DatasetConfig at clip creation
-- **BvhDriftCorrectionDataEditor** (custom inspector) provides UI for keyframe editing
+- **BvhPlaybackCorrectionKeyframesEditor** (custom inspector) provides UI for keyframe editing
 
 ## Integration with Point Cloud Timeline
 
@@ -446,7 +446,7 @@ Both systems auto-find their targets - no manual binding needed.
 
 - Both clips share the same timeline time via PlayableDirector
 - Frame sync via BvhFrameOffset in DatasetConfig
-- Use BvhDriftCorrectionData keyframes for fine-grained Timeline → BVH frame mapping
+- Use BvhPlaybackCorrectionKeyframes keyframes for fine-grained Timeline → BVH frame mapping
 - Playback speed: adjust timeline duration to change playback speed (timeline duration controls rate)
 - Can have multiple BVH clips playing different characters (each needs its own GameObject/target)
 
@@ -462,9 +462,9 @@ Timeline (PlayableDirector)
       └── Reads BvhFilePath, scale, offset, frameOffset from DatasetConfig
           └── Creates BvhPlayableBehaviour
               └── Each frame (PrepareFrame):
-                  1. BvhFrameMapper: Timeline time + frameOffset → BVH frame index
+                  1. BvhPlaybackFrameMapper: Timeline time + frameOffset → BVH frame index
                   2. BvhFrameApplier: Apply BVH frame data to joints
-                  3. BvhDriftCorrectionController: Apply drift correction
+                  3. BvhPlaybackTransformCorrector: Apply drift correction
                   4. Set BVH_Character position/rotation
 ```
 
@@ -477,7 +477,7 @@ BVH Frame = floor(Timeline Time * BVH Frame Rate)
 
 Example: 2.5s timeline @ 30fps BVH = frame 75
 
-### Keyframe-Based Mapping (with BvhDriftCorrectionData)
+### Keyframe-Based Mapping (with BvhPlaybackCorrectionKeyframes)
 Keyframes define Timeline → BVH frame mapping:
 - Creates custom speed curves by defining frame numbers at specific timeline times
 - Interpolates between keyframes
@@ -494,12 +494,12 @@ At timeline time 2.5s: interpolates between kf1 and kf2 → frame ≈ 100
 
 ### Drift Correction
 Corrects root position/rotation drift over time:
-- Each keyframe in BvhDriftCorrectionData contains:
+- Each keyframe in BvhPlaybackCorrectionKeyframes contains:
   - `timelineTime`: When to apply correction
   - `anchorPositionCorrection`: Position offset (e.g., to shift character back)
   - `anchorRotationCorrection`: Rotation offset (e.g., to straighten character)
 - Linear interpolation between keyframes
-- Applied in PrepareFrame via BvhDriftCorrectionController
+- Applied in PrepareFrame via BvhPlaybackTransformCorrector
 
 Example: If BVH drifts forward over 10 seconds:
 ```

@@ -5,7 +5,7 @@ using ShiibaNFT.BVH;
 
 /// <summary>
 /// Playable behaviour for controlling BVH motion playback in Unity Timeline
-/// Thin adapter that uses BvhFrameMapper and BvhDriftCorrectionController for data transformation logic
+/// Thin adapter that uses BvhPlaybackFrameMapper and BvhPlaybackTransformCorrector for data transformation logic
 /// Focus: Timeline lifecycle and scene transform updates only
 /// </summary>
 public class BvhPlayableBehaviour : PlayableBehaviour
@@ -22,13 +22,13 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     public int frameOffset = 0;
 
     // BVH Drift Correction
-    public BvhDriftCorrectionData driftCorrectionData;
+    public BvhPlaybackCorrectionKeyframes driftCorrectionData;
 
     private int currentFrame = -1;
     private BvhJoint[] joints;
 
     // Timeline-independent utilities
-    private BvhFrameMapper frameMapper = new BvhFrameMapper();
+    private BvhPlaybackFrameMapper frameMapper = new BvhPlaybackFrameMapper();
 
     public Vector3 RotationOffset { set => rotationOffset = value; }
     public Vector3 PositionOffset { set => positionOffset = value; }
@@ -67,7 +67,7 @@ public class BvhPlayableBehaviour : PlayableBehaviour
 
         float timelineTime = (float)playable.GetTime();
 
-        // Use BvhFrameMapper to calculate target frame (handles keyframe interpolation)
+        // Use BvhPlaybackFrameMapper to calculate target frame (handles keyframe interpolation)
         int targetFrame = frameMapper.GetTargetFrameForTime(timelineTime, bvhData, driftCorrectionData, frameOffset);
 
         // Only update if frame changed
@@ -77,9 +77,9 @@ public class BvhPlayableBehaviour : PlayableBehaviour
             currentFrame = targetFrame;
         }
 
-        // Apply drift correction using BvhDriftCorrectionController
-        Vector3 correctedPos = BvhDriftCorrectionController.GetCorrectedRootPosition(timelineTime, driftCorrectionData, positionOffset);
-        Quaternion correctedRot = BvhDriftCorrectionController.GetCorrectedRootRotation(timelineTime, driftCorrectionData, rotationOffset);
+        // Apply drift correction using BvhPlaybackTransformCorrector
+        Vector3 correctedPos = BvhPlaybackTransformCorrector.GetCorrectedRootPosition(timelineTime, driftCorrectionData, positionOffset);
+        Quaternion correctedRot = BvhPlaybackTransformCorrector.GetCorrectedRootRotation(timelineTime, driftCorrectionData, rotationOffset);
         BvhCharacterTransform.SetLocalPositionAndRotation(correctedPos, correctedRot);
     }
 
@@ -108,7 +108,7 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     /// <summary>
     /// Custom frame applier for BvhPlayableBehaviour with position/rotation adjustments
     /// </summary>
-    private class PlayableFrameApplier : BvhFrameApplier
+    private class PlayableFrameApplier : BvhMotionApplier
     {
         private Vector3 scale;
         private Vector3 rotationOffset;

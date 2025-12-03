@@ -194,14 +194,14 @@ public class BvhData
 
     /// <summary>
     /// Apply BVH frame data to a Transform hierarchy
-    /// Uses BvhFrameApplier to apply motion capture data to bones
+    /// Uses BvhMotionApplier to apply motion capture data to bones
     /// </summary>
     /// <param name="rootJoint">Root joint of the BVH skeleton</param>
     /// <param name="rootTransform">Root transform to apply motion to</param>
     /// <param name="frameData">Frame data array (channel values)</param>
     public static void ApplyFrameToTransforms(BvhJoint rootJoint, Transform rootTransform, float[] frameData)
     {
-        var applier = new BvhFrameApplier();
+        var applier = new BvhMotionApplier();
         applier.ApplyFrameToJointHierarchy(rootJoint, rootTransform, frameData);
     }
 }

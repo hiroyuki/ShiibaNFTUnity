@@ -197,7 +197,7 @@ public class TimelineController : MonoBehaviour
         }
 
         // ドリフト補正データを取得
-        BvhDriftCorrectionData driftCorrectionData = bvhPlayableAsset.GetDriftCorrectionData();
+        BvhPlaybackCorrectionKeyframes driftCorrectionData = bvhPlayableAsset.GetDriftCorrectionData();
         if (driftCorrectionData == null)
         {
             Debug.LogWarning("TimelineController: No drift correction data assigned to BVH asset");

@@ -127,7 +127,7 @@ public class SceneFlowCalculator : MonoBehaviour
     private BvhData bvhData;
 
     /// <summary>Frame mapper for calculating BVH frame from timeline time</summary>
-    private readonly BvhFrameMapper frameMapper = new();
+    private readonly BvhPlaybackFrameMapper frameMapper = new();
 
     /// <summary>BVH joint hierarchy gathered from BvhData (not Scene GameObjects)</summary>
     private List<BvhJoint> bvhJoints = new();
@@ -229,7 +229,7 @@ public class SceneFlowCalculator : MonoBehaviour
         Debug.Log($"[OnShowSceneFlow] Root joint offset: {rootJoint.Offset}");
         Debug.Log($"[OnShowSceneFlow] Root joint channels: {string.Join(", ", rootJoint.Channels)}");
 
-        // Get BVH frame index from Timeline time using BvhFrameMapper
+        // Get BVH frame index from Timeline time using BvhPlaybackFrameMapper
         int frameIndex = GetBvhFrameIndexFromTimelineTime();
         Debug.Log($"[OnShowSceneFlow] Calculated BVH frame index from Timeline time: {frameIndex}");
 
@@ -252,10 +252,10 @@ public class SceneFlowCalculator : MonoBehaviour
 
         // Step 5: Get drift correction for current frame time
 
-        BvhDriftCorrectionData driftCorrectionData = GetDriftCorrectionData();
+        BvhPlaybackCorrectionKeyframes driftCorrectionData = GetDriftCorrectionData();
         currentFrameTime = TimelineUtil.GetCurrentTimelineTime();
-        Vector3 correctedPos = BvhDriftCorrectionController.GetCorrectedRootPosition(currentFrameTime, driftCorrectionData, positionOffset);
-        Quaternion correctedRot = BvhDriftCorrectionController.GetCorrectedRootRotation(currentFrameTime, driftCorrectionData, rotationOffset);
+        Vector3 correctedPos = BvhPlaybackTransformCorrector.GetCorrectedRootPosition(currentFrameTime, driftCorrectionData, positionOffset);
+        Quaternion correctedRot = BvhPlaybackTransformCorrector.GetCorrectedRootRotation(currentFrameTime, driftCorrectionData, rotationOffset);
         transform.SetLocalPositionAndRotation(correctedPos, correctedRot);
     
         Debug.Log($"[SceneFlowCalculator] Drift-corrected position for frame time {currentFrameTime}: {correctedPos}");
@@ -292,14 +292,14 @@ public class SceneFlowCalculator : MonoBehaviour
 
     // /// <summary>
     // /// Get drift-corrected position for current frame time
-    // /// Uses BvhDriftCorrectionData directly based on currentFrameTime
+    // /// Uses BvhPlaybackCorrectionKeyframes directly based on currentFrameTime
     // /// </summary>
     // private Vector3 GetDriftCorrectedPositionForCurrentFrame(float frameTime, Vector3 basePositionOffset)
     // {
     //     // Get drift correction data
-    //     BvhDriftCorrectionData driftCorrectionData = GetDriftCorrectionData();
-    //             // Vector3 correctedPos = BvhDriftCorrectionController.GetCorrectedRootPosition(timelineTime, driftCorrectionData, positionOffset);
-    //     // Quaternion correctedRot = BvhDriftCorrectionController.GetCorrectedRootRotation(timelineTime, driftCorrectionData, rotationOffset);
+    //     BvhPlaybackCorrectionKeyframes driftCorrectionData = GetDriftCorrectionData();
+    //             // Vector3 correctedPos = BvhPlaybackTransformCorrector.GetCorrectedRootPosition(timelineTime, driftCorrectionData, positionOffset);
+    //     // Quaternion correctedRot = BvhPlaybackTransformCorrector.GetCorrectedRootRotation(timelineTime, driftCorrectionData, rotationOffset);
     //     // Step 5: Get drift correction for current frame time
     //     if (driftCorrectionData == null)
     //     {
@@ -307,8 +307,8 @@ public class SceneFlowCalculator : MonoBehaviour
     //         return basePositionOffset;
     //     }
 
-    //     // Apply drift correction using BvhDriftCorrectionController
-    //     Vector3 correctedPos = BvhDriftCorrectionController.GetCorrectedRootPosition(frameTime, driftCorrectionData, basePositionOffset);
+    //     // Apply drift correction using BvhPlaybackTransformCorrector
+    //     Vector3 correctedPos = BvhPlaybackTransformCorrector.GetCorrectedRootPosition(frameTime, driftCorrectionData, basePositionOffset);
 
     //     Debug.Log($"[SceneFlowCalculator] Drift correction: {basePositionOffset} -> {correctedPos}");
 
@@ -365,9 +365,9 @@ public class SceneFlowCalculator : MonoBehaviour
 
 
     /// <summary>
-    /// Get BvhDriftCorrectionData from Timeline asset
+    /// Get BvhPlaybackCorrectionKeyframes from Timeline asset
     /// </summary>
-    private BvhDriftCorrectionData GetDriftCorrectionData()
+    private BvhPlaybackCorrectionKeyframes GetDriftCorrectionData()
     {
         // Try to find from Timeline first (for active playback)
         var timelineController = FindFirstObjectByType<TimelineController>();
@@ -397,15 +397,15 @@ public class SceneFlowCalculator : MonoBehaviour
         var config = DatasetConfig.GetInstance();
         if (config != null)
         {
-            return config.BvhDriftCorrectionData;
+            return config.BvhPlaybackCorrectionKeyframes;
         }
 
-        Debug.LogWarning("[SceneFlowCalculator] Could not find BvhDriftCorrectionData from Timeline or DatasetConfig");
+        Debug.LogWarning("[SceneFlowCalculator] Could not find BvhPlaybackCorrectionKeyframes from Timeline or DatasetConfig");
         return null;
     }
 
     /// <summary>
-    /// Get BVH frame index from current Timeline time using BvhFrameMapper.
+    /// Get BVH frame index from current Timeline time using BvhPlaybackFrameMapper.
     /// If Timeline is not available or stopped, falls back to frame 0.
     /// </summary>
     /// <returns>BVH frame index calculated from Timeline time</returns>
@@ -414,7 +414,7 @@ public class SceneFlowCalculator : MonoBehaviour
         float timelineTime = (float)TimelineUtil.GetCurrentTimelineTime();
 
         // Get drift correction data
-        BvhDriftCorrectionData driftCorrectionData = GetDriftCorrectionData();
+        BvhPlaybackCorrectionKeyframes driftCorrectionData = GetDriftCorrectionData();
 
         // Get frame offset from config if available
         int frameOffset = 0;
@@ -424,7 +424,7 @@ public class SceneFlowCalculator : MonoBehaviour
             frameOffset = config.BvhFrameOffset;
         }
 
-        // Use BvhFrameMapper to calculate frame index from timeline time
+        // Use BvhPlaybackFrameMapper to calculate frame index from timeline time
         int frameIndex = frameMapper.GetTargetFrameForTime(timelineTime, bvhData, driftCorrectionData, frameOffset);
         Debug.Log($"[OnShowSceneFlow] Calculated frame index from Timeline time {timelineTime}s: {frameIndex}");
         // SetFrameInfo(frameIndex, timelineTime);
@@ -567,7 +567,7 @@ public class SceneFlowCalculator : MonoBehaviour
     /// <summary>
     /// Custom frame applier for SceneFlowCalculator with scale applied (same as BvhPlayableBehaviour)
     /// </summary>
-    private class SceneFlowFrameApplier : BvhFrameApplier
+    private class SceneFlowFrameApplier : BvhMotionApplier
     {
         private Vector3 scale;
 

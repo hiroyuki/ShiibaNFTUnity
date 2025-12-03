@@ -7,7 +7,7 @@ namespace ShiibaNFT.BVH
     /// 
     /// Provides static methods to create GameObject hierarchies from BvhData structures.
     /// The hierarchy creation is frame-agnostic - the same hierarchy can serve all animation frames,
-    /// with frame-specific data applied separately via BvhFrameApplier.
+    /// with frame-specific data applied separately via BvhMotionApplier.
     /// 
     /// Key Features:
     /// - Idempotent: Safe to call multiple times without duplicating GameObjects

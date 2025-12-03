@@ -34,7 +34,7 @@ public class DatasetConfig : ScriptableObject
     [Tooltip("Path to binary dataset root (can be external path, not in Assets)")]
 
     [Header("BVH Drift Correction")]
-    [SerializeField] private BvhDriftCorrectionData bvhDriftCorrectionData;
+    [SerializeField] private BvhPlaybackCorrectionKeyframes bvhDriftCorrectionData;
     [Tooltip("Reference to BVH drift correction data (contains keyframes for manual drift correction)")]
 
     // Properties
@@ -68,7 +68,7 @@ public class DatasetConfig : ScriptableObject
     public ProcessingType ProcessingType => processingType;
     public bool EnablePlyExport => enablePlyExport;
     public string BinaryDataRootPath => binaryDataRootPath;
-    public BvhDriftCorrectionData BvhDriftCorrectionData => bvhDriftCorrectionData;
+    public BvhPlaybackCorrectionKeyframes BvhPlaybackCorrectionKeyframes => bvhDriftCorrectionData;
 
     /// <summary>
     /// Get the BVH folder path (relative to project)

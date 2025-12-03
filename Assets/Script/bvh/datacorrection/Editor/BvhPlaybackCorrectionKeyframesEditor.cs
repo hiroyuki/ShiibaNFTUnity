@@ -6,13 +6,13 @@ using System.Collections.Generic;
 using System.Linq;
 
 /// <summary>
-/// BvhDriftCorrectionData のカスタムインスペクター
+/// BvhPlaybackCorrectionKeyframes のカスタムインスペクター
 /// キーフレーム一覧をボタン化し、クリックでタイムラインをジャンプ
 /// </summary>
-[CustomEditor(typeof(BvhDriftCorrectionData))]
-public class BvhDriftCorrectionDataEditor : Editor
+[CustomEditor(typeof(BvhPlaybackCorrectionKeyframes))]
+public class BvhPlaybackCorrectionKeyframesEditor : Editor
 {
-    private BvhDriftCorrectionData driftCorrectionData;
+    private BvhPlaybackCorrectionKeyframes driftCorrectionData;
     private SerializedProperty keyframesProperty;
     private SerializedProperty interpolationTypeProperty;
     private SerializedProperty isEnabledProperty;
@@ -26,7 +26,7 @@ public class BvhDriftCorrectionDataEditor : Editor
 
     private void OnEnable()
     {
-        driftCorrectionData = (BvhDriftCorrectionData)target;
+        driftCorrectionData = (BvhPlaybackCorrectionKeyframes)target;
         keyframesProperty = serializedObject.FindProperty("keyframes");
         interpolationTypeProperty = serializedObject.FindProperty("interpolationType");
         isEnabledProperty = serializedObject.FindProperty("isEnabled");
@@ -273,7 +273,7 @@ public class BvhDriftCorrectionDataEditor : Editor
         GameObject bvhCharacter = GameObject.Find("BVH_Character");
         if (bvhCharacter == null)
         {
-            Debug.LogWarning("[BvhDriftCorrectionDataEditor] BVH_Character not found in scene");
+            Debug.LogWarning("[BvhPlaybackCorrectionKeyframesEditor] BVH_Character not found in scene");
             return;
         }
 
@@ -281,14 +281,14 @@ public class BvhDriftCorrectionDataEditor : Editor
         var manager = FindFirstObjectByType<MultiCameraPointCloudManager>();
         if (manager == null)
         {
-            Debug.LogWarning("[BvhDriftCorrectionDataEditor] MultiCameraPointCloudManager not found in scene");
+            Debug.LogWarning("[BvhPlaybackCorrectionKeyframesEditor] MultiCameraPointCloudManager not found in scene");
             return;
         }
 
         DatasetConfig datasetConfig = manager.GetDatasetConfig();
         if (datasetConfig == null)
         {
-            Debug.LogWarning("[BvhDriftCorrectionDataEditor] DatasetConfig not configured in MultiCameraPointCloudManager");
+            Debug.LogWarning("[BvhPlaybackCorrectionKeyframesEditor] DatasetConfig not configured in MultiCameraPointCloudManager");
             return;
         }
 
@@ -320,7 +320,7 @@ public class BvhDriftCorrectionDataEditor : Editor
         GameObject bvhCharacter = GameObject.Find("BVH_Character");
         if (bvhCharacter == null)
         {
-            Debug.LogWarning("[BvhDriftCorrectionDataEditor] BVH_Character not found in scene");
+            Debug.LogWarning("[BvhPlaybackCorrectionKeyframesEditor] BVH_Character not found in scene");
             return;
         }
 
@@ -328,14 +328,14 @@ public class BvhDriftCorrectionDataEditor : Editor
         var manager = FindFirstObjectByType<MultiCameraPointCloudManager>();
         if (manager == null)
         {
-            Debug.LogWarning("[BvhDriftCorrectionDataEditor] MultiCameraPointCloudManager not found in scene");
+            Debug.LogWarning("[BvhPlaybackCorrectionKeyframesEditor] MultiCameraPointCloudManager not found in scene");
             return;
         }
 
         DatasetConfig datasetConfig = manager.GetDatasetConfig();
         if (datasetConfig == null)
         {
-            Debug.LogWarning("[BvhDriftCorrectionDataEditor] DatasetConfig not configured in MultiCameraPointCloudManager");
+            Debug.LogWarning("[BvhPlaybackCorrectionKeyframesEditor] DatasetConfig not configured in MultiCameraPointCloudManager");
             return;
         }
 
@@ -381,7 +381,7 @@ public class BvhDriftCorrectionDataEditor : Editor
         // Scene ビューを再描画
         UnityEditor.SceneView.RepaintAll();
 
-        Debug.Log($"[BvhDriftCorrectionDataEditor] Jumped to keyframe at time={keyframe.timelineTime}s");
+        Debug.Log($"[BvhPlaybackCorrectionKeyframesEditor] Jumped to keyframe at time={keyframe.timelineTime}s");
     }
 }
 #endif

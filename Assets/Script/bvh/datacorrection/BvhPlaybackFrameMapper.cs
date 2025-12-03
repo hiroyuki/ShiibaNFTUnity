@@ -1,39 +1,37 @@
 using UnityEngine;
 
 /// <summary>
-/// Pure utility class for mapping Timeline time to BVH frame indices with keyframe interpolation.
+/// Maps Timeline playback time to BVH frame indices with playback correction support.
 ///
-/// This class provides Timeline-agnostic frame mapping that can be used by any component needing
-/// to convert Timeline playback time into BVH frame indices. It handles four interpolation cases
-/// for robustness and flexibility.
+/// This utility class converts Timeline time into BVH frame indices using correction keyframes
+/// from BvhPlaybackCorrectionKeyframes. It enables timeline speed adjustment and frame offset
+/// synchronization through keyframe interpolation.
 ///
-/// Timeline-Independent Design:
-/// - Completely decoupled from Timeline system (no dependencies on PlayableBehaviour or PlayableDirector)
-/// - All parameters passed explicitly (stateless)
-/// - Can be instantiated fresh for each call or cached and reused
-/// - Works in offline processing, Scene Flow calculations, or other contexts
+/// Key Features:
+/// - Maps Timeline time → BVH frame index with correction keyframes
+/// - Falls back to linear mapping if no correction keyframes provided
+/// - Handles four interpolation cases for robust frame calculation
+/// - Supports frame offset for multi-camera synchronization
+/// - Timeline-independent design (works offline or in any context)
 ///
-/// Features:
-/// - Maps Timeline time → BVH frame index using keyframe interpolation when available
-/// - Falls back to linear time-based mapping if no keyframes
-/// - Handles four interpolation cases covering all time ranges
-/// - Supports frame offset for synchronization with multi-camera data
-/// - Clamping prevents out-of-bounds frame access
+/// How It Works:
+/// When correction keyframes are provided, each keyframe specifies:
+/// - timelineTime: Position on the Timeline
+/// - bvhFrameNumber: Which BVH frame to use at that time
+/// - Interpolates frame numbers between keyframes for smooth transitions
 ///
-/// Interpolation Cases:
-/// 1. Between keyframes: Interpolates frame number linearly between surrounding keyframes
-///    Enables timeline speed adjustment by setting bvhFrameNumber in keyframes
-/// 2. Before first keyframe: Interpolates from implicit (time=0s, frame=0) to first keyframe
-/// 3. After last keyframe: Extrapolates using BVH file's native frame rate
-/// 4. No keyframes: Falls back to linear time-based mapping (timelineTime * frameRate)
+/// This enables:
+/// - Timeline speed adjustment (slow down or speed up playback)
+/// - Frame skipping (jump over frames without playing them)
+/// - Synchronization with other data sources
 ///
 /// Example Usage:
 /// ```csharp
-/// var mapper = new BvhFrameMapper();
-/// int frameIndex = mapper.GetTargetFrameForTime(2.5f, bvhData, driftData, frameOffset: 0);
+/// var mapper = new BvhPlaybackFrameMapper();
+/// int frameIndex = mapper.GetFrameIndexForTime(2.5f, bvhData, correctionKeyframes, frameOffset: 0);
 /// ```
 /// </summary>
-public class BvhFrameMapper
+public class BvhPlaybackFrameMapper
 {
     /// <summary>
     /// Get the target BVH frame for the given timeline time, handling both keyframe-based and linear mapping.
@@ -53,7 +51,7 @@ public class BvhFrameMapper
     /// <param name="driftCorrectionData">Optional drift correction keyframes (can be null for simple linear mapping)</param>
     /// <param name="frameOffset">Frame offset for synchronization with other systems (default: 0)</param>
     /// <returns>Clamped BVH frame index guaranteed to be in range [0, FrameCount-1]</returns>
-    public int GetTargetFrameForTime(float timelineTime, BvhData bvhData, BvhDriftCorrectionData driftCorrectionData, int frameOffset)
+    public int GetTargetFrameForTime(float timelineTime, BvhData bvhData, BvhPlaybackCorrectionKeyframes driftCorrectionData, int frameOffset)
     {
         if (bvhData == null)
             return 0;
@@ -79,7 +77,7 @@ public class BvhFrameMapper
     /// - No drift correction data is provided
     /// - Drift correction data has no keyframes
     /// </summary>
-    private int CalculateTargetFrame(float currentTime, float bvhFrameRate, BvhDriftCorrectionData driftCorrectionData)
+    private int CalculateTargetFrame(float currentTime, float bvhFrameRate, BvhPlaybackCorrectionKeyframes driftCorrectionData)
     {
         if (driftCorrectionData == null || driftCorrectionData.GetKeyframeCount() == 0)
         {
@@ -95,7 +93,7 @@ public class BvhFrameMapper
     /// <summary>
     /// Find keyframes that surround the given time
     /// </summary>
-    private void FindSurroundingKeyframes(float currentTime, BvhDriftCorrectionData driftCorrectionData, out BvhKeyframe prevKeyframe, out BvhKeyframe nextKeyframe)
+    private void FindSurroundingKeyframes(float currentTime, BvhPlaybackCorrectionKeyframes driftCorrectionData, out BvhKeyframe prevKeyframe, out BvhKeyframe nextKeyframe)
     {
         prevKeyframe = null;
         nextKeyframe = null;
