@@ -141,6 +141,9 @@ public class SceneFlowCalculator : MonoBehaviour
     /// <summary>Reference to PreviousFrameBVH container for Gizmo visualization (yellow)</summary>
     private Transform previousFrameContainer;
 
+    /// <summary>Joint motion data for all joints in current frame for visualization</summary>
+    private readonly List<JointMotionData> jointMotionDataList = new();
+
     /// <summary>All bone transforms gathered from BVH hierarchy in depth-first order</summary>
     private readonly List<Transform> boneTransforms = new();
 
@@ -151,7 +154,6 @@ public class SceneFlowCalculator : MonoBehaviour
     private readonly List<PointSceneFlow> pointFlows = new();
 
     // Frame tracking
-    private int currentBvhFrameIndex = 0;
     private double currentFrameTime = 0f;
 
     /// <summary>
@@ -243,6 +245,9 @@ public class SceneFlowCalculator : MonoBehaviour
             DisplayBvhFrame("PreviousFrameBVH", previousFrameIndex, previousFrameTime,
                            positionOffset, rotationOffset, bvhScale, driftCorrectionData, Color.yellow);
             previousFrameContainer = transform.Find("PreviousFrameBVH");
+
+            // Calculate motion vectors for visualization
+            CalculateJointMotionVectors();
         }
         else
         {
@@ -817,6 +822,7 @@ public class SceneFlowCalculator : MonoBehaviour
     /// Draw skeleton visualization in Scene view using Gizmos
     /// - Current frame (blue)
     /// - Previous frame (yellow)
+    /// - Motion vectors (red arrows)
     /// </summary>
     private void OnDrawGizmos()
     {
@@ -831,6 +837,9 @@ public class SceneFlowCalculator : MonoBehaviour
         {
             DrawBvhContainerStructure(previousFrameContainer, Color.yellow, 0.015f);
         }
+
+        // Draw motion vectors (red arrows)
+        DrawMotionVectors();
     }
 
     /// <summary>
@@ -882,6 +891,98 @@ public class SceneFlowCalculator : MonoBehaviour
 
             // Recursively draw child
             DrawBvhJointRecursive(child, boneColor, sphereSize);
+        }
+    }
+
+    /// <summary>
+    /// Calculate motion vectors for all joints by comparing current and previous frame positions
+    /// </summary>
+    private void CalculateJointMotionVectors()
+    {
+        jointMotionDataList.Clear();
+
+        if (currentFrameContainer == null || previousFrameContainer == null)
+            return;
+
+        // Get root transforms of actual BVH skeletons (skip TempBvhSkeleton containers)
+        Transform currentRoot = GetBvhRootTransform(currentFrameContainer);
+        Transform previousRoot = GetBvhRootTransform(previousFrameContainer);
+
+        if (currentRoot == null || previousRoot == null)
+            return;
+
+        // Recursively calculate motion vectors for all joints
+        CalculateJointMotionVectorsRecursive(currentRoot, previousRoot);
+    }
+
+    /// <summary>
+    /// Recursively calculate motion vectors for joint hierarchy
+    /// </summary>
+    private void CalculateJointMotionVectorsRecursive(Transform currentJoint, Transform previousJoint)
+    {
+        if (currentJoint == null || previousJoint == null)
+            return;
+
+        // Get world positions
+        Vector3 currentPos = currentJoint.position;
+        Vector3 previousPos = previousJoint.position;
+
+        // Create motion data
+        var motionData = new JointMotionData(currentJoint.name, currentJoint, currentPos, previousPos);
+        jointMotionDataList.Add(motionData);
+
+        // Recurse to children
+        int childCount = currentJoint.childCount;
+        for (int i = 0; i < childCount; i++)
+        {
+            Transform currentChild = currentJoint.GetChild(i);
+            Transform previousChild = previousJoint.Find(currentChild.name);
+
+            if (previousChild != null)
+            {
+                CalculateJointMotionVectorsRecursive(currentChild, previousChild);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Get the actual BVH root transform from a container (skips TempBvhSkeleton)
+    /// </summary>
+    private Transform GetBvhRootTransform(Transform container)
+    {
+        if (container == null || container.childCount == 0)
+            return null;
+
+        Transform tempSkeleton = container.GetChild(0);  // TempBvhSkeleton_XXX
+        if (tempSkeleton.childCount == 0)
+            return null;
+
+        return tempSkeleton.GetChild(0);  // Actual root joint (e.g., Hips)
+    }
+
+    /// <summary>
+    /// Draw motion vectors as red arrows from current frame (blue) pointing toward previous frame (yellow)
+    /// Data stored as (current - previous), but visualized in opposite direction for clarity
+    /// </summary>
+    private void DrawMotionVectors()
+    {
+        const float motionThreshold = 0.001f;
+        const float arrowHeadSize = 0.01f;  // Smaller than yellow skeleton joints (0.015f)
+
+        foreach (var motionData in jointMotionDataList)
+        {
+            if (motionData.motionMagnitude > motionThreshold)
+            {
+                // Draw line from current position in opposite direction (visualize: blue → yellow)
+                // Data is stored as (current - previous), so negate it for visualization
+                Gizmos.color = Color.red;
+                Vector3 startPoint = motionData.currentPosition;
+                Vector3 endPoint = motionData.currentPosition - motionData.motionVector;  // Negate for visualization
+                Gizmos.DrawLine(startPoint, endPoint);
+
+                // Draw sphere at end point (toward previous position)
+                Gizmos.DrawSphere(endPoint, arrowHeadSize);
+            }
         }
     }
 }
