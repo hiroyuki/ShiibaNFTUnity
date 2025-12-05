@@ -17,6 +17,21 @@ using System.Linq;
 public class SceneFlowCalculator : MonoBehaviour
 {
     /// <summary>
+    /// Represents a bone in the BVH skeleton as a parent-child joint pair.
+    /// Used for segment position calculation and visualization.
+    /// Implemented as a class (reference type) to ensure transform references persist
+    /// when updated in LinkBoneDefinitionsToFrame().
+    /// </summary>
+    private class BoneDefinition
+    {
+        public int index;
+        public BvhJoint parentJoint;
+        public BvhJoint childJoint;
+        public Transform parentTransform;
+        public Transform childTransform;
+    }
+
+    /// <summary>
     /// Represents a point on a bone with its motion vector across frames.
     /// Uses linked-list structure to maintain history chain backward through frames.
     /// </summary>
@@ -132,6 +147,15 @@ public class SceneFlowCalculator : MonoBehaviour
     /// <summary>BVH joint hierarchy gathered from BvhData (not Scene GameObjects)</summary>
     private List<BvhJoint> bvhJoints = new();
 
+    /// <summary>Bone definitions for current frame (parent-child joint pairs linked to current BVH transforms)</summary>
+    private List<BoneDefinition> currentFrameBones = new();
+
+    /// <summary>Bone definitions for previous frame (parent-child joint pairs linked to previous BVH transforms)</summary>
+    private List<BoneDefinition> previousFrameBones = new();
+
+    /// <summary>Template bone definitions from BVH hierarchy (BvhJoint pairs, not Transform references)</summary>
+    private List<BoneDefinition> templateBones = new();
+
     /// <summary>Cached bone positions for visualization via Gizmos</summary>
     private Vector3[] visualizationBonePositions;
 
@@ -142,7 +166,7 @@ public class SceneFlowCalculator : MonoBehaviour
     private Transform previousFrameContainer;
 
     /// <summary>Joint motion data for all joints in current frame for visualization</summary>
-    private readonly List<JointMotionData> jointMotionDataList = new();
+    private readonly List<SegmentedBoneMotionData> jointMotionDataList = new();
 
     /// <summary>All bone transforms gathered from BVH hierarchy in depth-first order</summary>
     private readonly List<Transform> boneTransforms = new();
@@ -236,6 +260,12 @@ public class SceneFlowCalculator : MonoBehaviour
                        positionOffset, rotationOffset, bvhScale, driftCorrectionData, Color.blue);
         currentFrameContainer = transform.Find("CurrentFrameBVH");
 
+        // Gather bone definitions from BVH data (template only)
+        GatherBoneDefinitionsFromBvhData();
+
+        // Link bone definitions to current frame transforms
+        currentFrameBones = LinkBoneDefinitionsToFrame(currentFrameContainer);
+
         // Display previous frame (yellow) if available
         if (currentFrameIndex > 0)
         {
@@ -246,12 +276,16 @@ public class SceneFlowCalculator : MonoBehaviour
                            positionOffset, rotationOffset, bvhScale, driftCorrectionData, Color.yellow);
             previousFrameContainer = transform.Find("PreviousFrameBVH");
 
+            // Link bone definitions to previous frame transforms (for segmentation)
+            previousFrameBones = LinkBoneDefinitionsToFrame(previousFrameContainer);
+
             // Calculate motion vectors for visualization
             CalculateJointMotionVectors();
         }
         else
         {
             Debug.Log("[SceneFlowCalculator] No previous frame available (already at frame 0)");
+            previousFrameBones.Clear();
         }
     }
 
@@ -527,7 +561,117 @@ public class SceneFlowCalculator : MonoBehaviour
             Debug.Log($"[SceneFlowCalculator] Loaded {bvhJoints.Count} bones from BVH data");
     }
 
+    /// <summary>
+    /// Gather bone definitions from BVH data (parent-child joint pairs)
+    /// Creates a list of template BoneDefinition objects with BvhJoint references (no Transform refs)
+    /// This template is used to create frame-specific bone lists
+    /// </summary>
+    private void GatherBoneDefinitionsFromBvhData()
+    {
+        if (bvhData == null || bvhJoints.Count == 0)
+        {
+            Debug.LogError("[SceneFlowCalculator] Cannot gather bone definitions - BvhData or bvhJoints is empty");
+            templateBones.Clear();
+            return;
+        }
 
+        templateBones.Clear();
+        int boneIndex = 0;
+
+        // Iterate through all joints and create bone definitions for parent-child pairs
+        foreach (BvhJoint joint in bvhJoints)
+        {
+            if (joint.Children.Count == 0)
+                continue;  // Skip leaf joints with no children
+
+            // For each child, create a bone definition
+            foreach (BvhJoint childJoint in joint.Children)
+            {
+                // Create bone definition for all children, including EndSite nodes
+                BoneDefinition boneDef = new BoneDefinition
+                {
+                    index = boneIndex,
+                    parentJoint = joint,
+                    childJoint = childJoint
+                    // parentTransform and childTransform will be set per-frame
+                };
+
+                templateBones.Add(boneDef);
+                boneIndex++;
+            }
+        }
+
+        if (debugMode)
+            Debug.Log($"[SceneFlowCalculator] Created {templateBones.Count} template bone definitions from BVH hierarchy");
+    }
+
+    /// <summary>
+    /// Find a joint transform by name in the skeleton hierarchy
+    /// </summary>
+    private Transform FindJointTransformByName(Transform root, string jointName)
+    {
+        if (root == null)
+            return null;
+
+        if (root.name == jointName)
+            return root;
+
+        foreach (Transform child in root)
+        {
+            Transform found = FindJointTransformByName(child, jointName);
+            if (found != null)
+                return found;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Calculate segment positions for a single bone using linear interpolation
+    /// </summary>
+    /// <param name="bones">Bone definitions list for the frame</param>
+    /// <param name="boneIndex">Index of the bone to calculate segments for</param>
+    /// <returns>Array of SegmentedBoneMotionData representing positions along the bone</returns>
+    private SegmentedBoneMotionData[] CalculateSegmentPositionsForBone(List<BoneDefinition> bones, int boneIndex)
+    {
+        if (boneIndex < 0 || boneIndex >= bones.Count)
+        {
+            Debug.LogError($"[SceneFlowCalculator] Invalid bone index: {boneIndex}");
+            return new SegmentedBoneMotionData[0];
+        }
+
+        BoneDefinition boneDef = bones[boneIndex];
+
+        // Get parent and child positions in world space
+        Vector3 parentPos = boneDef.parentTransform.position;
+        Vector3 childPos = boneDef.childTransform.position;
+
+        // Create array for segment positions
+        SegmentedBoneMotionData[] segments = new SegmentedBoneMotionData[segmentsPerBone];
+
+        // Calculate segment positions using linear interpolation
+        for (int i = 0; i < segmentsPerBone; i++)
+        {
+            // Calculate interpolation parameter (0.0 at parent, 1.0 at child)
+            float t = segmentsPerBone > 1 ? (float)i / (segmentsPerBone - 1) : 0f;
+
+            // Interpolate position
+            Vector3 segmentPos = Vector3.Lerp(parentPos, childPos, t);
+
+            // Create bone segment data
+            SegmentedBoneMotionData segmentData = new SegmentedBoneMotionData(
+                boneIndex,
+                i,
+                segmentPos,
+                t,
+                $"{boneDef.parentJoint.Name}->{boneDef.childJoint.Name}"
+            );
+
+            segments[i] = segmentData;
+        }
+
+        return segments;
+    }
 
     /// <summary>
     /// Create temporary BVH skeleton with frame data applied and scale transform
@@ -838,8 +982,180 @@ public class SceneFlowCalculator : MonoBehaviour
             DrawBvhContainerStructure(previousFrameContainer, Color.yellow, 0.015f);
         }
 
-        // Draw motion vectors (red arrows)
+        // Draw bone segment positions (white/gray spheres)
+        DrawBoneSegmentPositions();
+
+        // Draw bone segment motion vectors (blue→red arrows)
+        DrawBoneSegmentMotionVectors();
+
+        // Draw joint motion vectors (red arrows)
         DrawMotionVectors();
+    }
+
+    /// <summary>
+    /// Draw bone segment positions as small white spheres in Scene view
+    /// Draws segments for both current and previous frames
+    /// </summary>
+    private void DrawBoneSegmentPositions()
+    {
+        if (currentFrameBones.Count == 0 && previousFrameBones.Count == 0)
+            return;
+
+        const float segmentSphereRadius = 0.003f;
+
+        // Draw segments for current frame (white)
+        if (currentFrameBones.Count > 0)
+        {
+            for (int boneIdx = 0; boneIdx < currentFrameBones.Count; boneIdx++)
+            {
+                SegmentedBoneMotionData[] segments = CalculateSegmentPositionsForBone(currentFrameBones, boneIdx);
+
+                foreach (SegmentedBoneMotionData segment in segments)
+                {
+                    Gizmos.color = Color.white;
+                    Gizmos.DrawSphere(segment.position, segmentSphereRadius);
+                }
+            }
+
+            if (debugMode && currentFrameBones.Count > 0)
+            {
+                BoneDefinition firstBone = currentFrameBones[0];
+                if (firstBone.parentTransform == null || firstBone.childTransform == null)
+                {
+                    Debug.LogWarning("[SceneFlowCalculator] DrawBoneSegmentPositions: Current frame bone transforms not set.");
+                }
+            }
+        }
+
+        // Draw segments for previous frame (light gray)
+        if (previousFrameBones.Count > 0)
+        {
+            for (int boneIdx = 0; boneIdx < previousFrameBones.Count; boneIdx++)
+            {
+                SegmentedBoneMotionData[] segments = CalculateSegmentPositionsForBone(previousFrameBones, boneIdx);
+
+                foreach (SegmentedBoneMotionData segment in segments)
+                {
+                    Gizmos.color = new Color(0.7f, 0.7f, 0.7f, 1f);  // Light gray for previous frame
+                    Gizmos.DrawSphere(segment.position, segmentSphereRadius);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Calculate motion vectors for all bone segments by comparing current and previous frame positions
+    /// </summary>
+    /// <returns>List of SegmentedBoneMotionData with motion information</returns>
+    private List<SegmentedBoneMotionData> CalculateBoneSegmentMotionVectors()
+    {
+        var segmentMotionDataList = new List<SegmentedBoneMotionData>();
+
+        if (currentFrameBones.Count == 0 || previousFrameBones.Count == 0)
+            return segmentMotionDataList;
+
+        // For each bone, calculate segment positions in both frames and compute motion vectors
+        for (int boneIdx = 0; boneIdx < currentFrameBones.Count && boneIdx < previousFrameBones.Count; boneIdx++)
+        {
+            // Get segments from current frame
+            SegmentedBoneMotionData[] currentSegments = CalculateSegmentPositionsForBone(currentFrameBones, boneIdx);
+
+            // Get segments from previous frame
+            SegmentedBoneMotionData[] previousSegments = CalculateSegmentPositionsForBone(previousFrameBones, boneIdx);
+
+            // Match segments and compute motion vectors
+            for (int segIdx = 0; segIdx < currentSegments.Length && segIdx < previousSegments.Length; segIdx++)
+            {
+                SegmentedBoneMotionData currentSeg = currentSegments[segIdx];
+                SegmentedBoneMotionData previousSeg = previousSegments[segIdx];
+
+                // Create new segment data with motion information
+                var segmentWithMotion = new SegmentedBoneMotionData(
+                    currentSeg.boneIndex,
+                    currentSeg.segmentIndex,
+                    currentSeg.position,
+                    previousSeg.position,
+                    currentSeg.interpolationT,
+                    currentSeg.boneName
+                );
+
+                segmentMotionDataList.Add(segmentWithMotion);
+            }
+        }
+
+        if (debugMode)
+            Debug.Log($"[SceneFlowCalculator] Calculated motion vectors for {segmentMotionDataList.Count} bone segments");
+
+        return segmentMotionDataList;
+    }
+
+    /// <summary>
+    /// Link bone definitions to a specific frame skeleton transforms
+    /// Creates a new list of BoneDefinition objects with transforms linked to the given frame
+    /// </summary>
+    /// <param name="frameContainer">The frame container (CurrentFrameBVH or PreviousFrameBVH)</param>
+    /// <returns>New list of BoneDefinition objects with transforms linked to the frame</returns>
+    private List<BoneDefinition> LinkBoneDefinitionsToFrame(Transform frameContainer)
+    {
+        var linkedBones = new List<BoneDefinition>();
+
+        if (frameContainer == null || templateBones.Count == 0)
+        {
+            if (debugMode)
+                Debug.LogWarning($"[SceneFlowCalculator] LinkBoneDefinitionsToFrame: frameContainer={frameContainer}, templateBones.Count={templateBones.Count}");
+            return linkedBones;
+        }
+
+        // Get the actual BVH root (skip TempBvhSkeleton container)
+        if (frameContainer.childCount == 0)
+        {
+            if (debugMode)
+                Debug.LogWarning("[SceneFlowCalculator] LinkBoneDefinitionsToFrame: frameContainer has no children");
+            return linkedBones;
+        }
+
+        Transform tempSkeleton = frameContainer.GetChild(0);
+        if (tempSkeleton.childCount == 0)
+        {
+            if (debugMode)
+                Debug.LogWarning("[SceneFlowCalculator] LinkBoneDefinitionsToFrame: TempBvhSkeleton has no children");
+            return linkedBones;
+        }
+
+        Transform bvhRoot = tempSkeleton.GetChild(0);
+
+        // Create new bone definitions with transforms from this frame
+        int linkedCount = 0;
+        foreach (var templateBone in templateBones)
+        {
+            // Create new BoneDefinition object for this frame
+            var boneDef = new BoneDefinition
+            {
+                index = templateBone.index,
+                parentJoint = templateBone.parentJoint,
+                childJoint = templateBone.childJoint
+            };
+
+            // Find parent transform
+            Transform parentTransform = FindJointTransformByName(bvhRoot, boneDef.parentJoint.Name);
+            if (parentTransform != null)
+            {
+                boneDef.parentTransform = parentTransform;
+                linkedCount++;
+            }
+
+            // Find child transform
+            Transform childTransform = FindJointTransformByName(bvhRoot, boneDef.childJoint.Name);
+            if (childTransform != null)
+                boneDef.childTransform = childTransform;
+
+            linkedBones.Add(boneDef);
+        }
+
+        if (debugMode)
+            Debug.Log($"[SceneFlowCalculator] Linked {linkedCount}/{templateBones.Count} bone transforms to {frameContainer.name}");
+
+        return linkedBones;
     }
 
     /// <summary>
@@ -927,8 +1243,15 @@ public class SceneFlowCalculator : MonoBehaviour
         Vector3 currentPos = currentJoint.position;
         Vector3 previousPos = previousJoint.position;
 
-        // Create motion data
-        var motionData = new JointMotionData(currentJoint.name, currentJoint, currentPos, previousPos);
+        // Create motion data (bone index = -1 for joints, segment index as hash of joint name)
+        var motionData = new SegmentedBoneMotionData(
+            -1,  // boneIndex: -1 indicates this is a joint, not a segment
+            currentJoint.name.GetHashCode(),  // segmentIndex: unique ID for joint
+            currentPos,  // current position
+            previousPos,  // previous position
+            0f,  // interpolationT: not applicable for joints
+            currentJoint.name
+        );
         jointMotionDataList.Add(motionData);
 
         // Recurse to children
@@ -961,6 +1284,53 @@ public class SceneFlowCalculator : MonoBehaviour
     }
 
     /// <summary>
+    /// Draw bone segment motion vectors as colored arrows
+    /// Color gradient: blue (no motion) → red (high motion)
+    /// </summary>
+    private void DrawBoneSegmentMotionVectors()
+    {
+        const float motionThreshold = 0.001f;
+        const float arrowHeadSize = 0.002f;
+
+        var segmentMotions = CalculateBoneSegmentMotionVectors();
+
+        if (segmentMotions.Count == 0)
+            return;
+
+        // Find max motion magnitude for color gradient
+        float maxMagnitude = 0f;
+        foreach (var segment in segmentMotions)
+        {
+            if (segment.motionMagnitude > maxMagnitude)
+                maxMagnitude = segment.motionMagnitude;
+        }
+
+        if (maxMagnitude < motionThreshold)
+            return;  // No significant motion
+
+        // Draw arrows for each segment
+        foreach (var segment in segmentMotions)
+        {
+            if (segment.motionMagnitude > motionThreshold)
+            {
+                // Calculate color based on motion magnitude (blue → red gradient)
+                float colorFactor = segment.motionMagnitude / maxMagnitude;
+                Color arrowColor = Color.Lerp(Color.blue, Color.red, colorFactor);
+
+                // Draw line from previous position to current position
+                // motionVector = current - previous, so: previous + motionVector = current
+                Gizmos.color = arrowColor;
+                Vector3 startPoint = segment.previousPosition;  // Start from previous frame position
+                Vector3 endPoint = segment.position;  // End at current frame position
+                Gizmos.DrawLine(startPoint, endPoint);
+
+                // Draw arrowhead at current position
+                Gizmos.DrawSphere(endPoint, arrowHeadSize);
+            }
+        }
+    }
+
+    /// <summary>
     /// Draw motion vectors as red arrows from current frame (blue) pointing toward previous frame (yellow)
     /// Data stored as (current - previous), but visualized in opposite direction for clarity
     /// </summary>
@@ -976,8 +1346,8 @@ public class SceneFlowCalculator : MonoBehaviour
                 // Draw line from current position in opposite direction (visualize: blue → yellow)
                 // Data is stored as (current - previous), so negate it for visualization
                 Gizmos.color = Color.red;
-                Vector3 startPoint = motionData.currentPosition;
-                Vector3 endPoint = motionData.currentPosition - motionData.motionVector;  // Negate for visualization
+                Vector3 startPoint = motionData.position;
+                Vector3 endPoint = motionData.position - motionData.motionVector;  // Negate for visualization
                 Gizmos.DrawLine(startPoint, endPoint);
 
                 // Draw sphere at end point (toward previous position)
