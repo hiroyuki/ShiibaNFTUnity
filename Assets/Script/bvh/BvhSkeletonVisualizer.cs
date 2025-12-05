@@ -91,8 +91,11 @@ public class BvhSkeletonVisualizer : MonoBehaviour
         jointSpheres.Add(sphere);
 
         // Create lines to all children
+        bool hasChildren = false;
         foreach (Transform child in joint)
         {
+            hasChildren = true;
+
             GameObject lineObj = new($"Bone_{joint.name}_to_{child.name}");
             lineObj.transform.SetParent(renderRoot.transform);
 
@@ -119,6 +122,84 @@ public class BvhSkeletonVisualizer : MonoBehaviour
 
             // Recurse to children
             CreateVisualsRecursive(child);
+        }
+
+        // If this joint has no children, check for End Site children
+        if (!hasChildren)
+        {
+            // Try to get BVH joint data to find End Site
+            BvhData bvhData = BvhDataCache.GetBvhData();
+            if (bvhData != null)
+            {
+                BvhJoint bvhJoint = FindBvhJointByName(bvhData.RootJoint, joint.name);
+                if (bvhJoint != null)
+                {
+                    // Check if this joint has EndSite children
+                    foreach (var child in bvhJoint.Children)
+                    {
+                        if (child.IsEndSite)
+                        {
+                            // Calculate endpoint in world space using EndSite offset
+                            Vector3 endpointPosition = joint.position + joint.TransformDirection(child.Offset);
+
+                            // Create sphere at endpoint
+                            GameObject endSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                            endSphere.name = $"EndPoint_{joint.name}";
+                            endSphere.transform.SetParent(renderRoot.transform);
+                            endSphere.transform.position = endpointPosition;
+                            endSphere.transform.localScale = Vector3.one * jointRadius * 1.5f;
+
+                            // Remove collider
+                            if (endSphere.TryGetComponent<Collider>(out var endCollider))
+                            {
+                                Destroy(endCollider);
+                            }
+
+                            // Set material
+                            Renderer endRenderer = endSphere.GetComponent<Renderer>();
+                            if (renderMaterial != null)
+                            {
+                                endRenderer.material = renderMaterial;
+                            }
+                            else
+                            {
+                                endRenderer.material = new Material(Shader.Find("Standard"))
+                                {
+                                    color = skeletonColor
+                                };
+                            }
+
+                            jointSpheres.Add(endSphere);
+
+                            // Create line to endpoint
+                            GameObject endLineObj = new($"Bone_{joint.name}_to_End");
+                            endLineObj.transform.SetParent(renderRoot.transform);
+
+                            LineRenderer endLr = endLineObj.AddComponent<LineRenderer>();
+                            endLr.startWidth = boneWidth;
+                            endLr.endWidth = boneWidth;
+                            endLr.positionCount = 2;
+                            endLr.useWorldSpace = true;
+                            endLr.SetPosition(0, joint.position);
+                            endLr.SetPosition(1, endpointPosition);
+
+                            if (renderMaterial != null)
+                            {
+                                endLr.material = renderMaterial;
+                            }
+                            else
+                            {
+                                endLr.material = new Material(Shader.Find("Sprites/Default"));
+                                endLr.startColor = skeletonColor;
+                                endLr.endColor = skeletonColor;
+                            }
+
+                            boneRenderers.Add(endLr);
+                            break;  // Each joint has at most one EndSite
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -155,8 +236,11 @@ public class BvhSkeletonVisualizer : MonoBehaviour
         }
 
         // Update bone lines to children
+        bool hasChildren = false;
         foreach (Transform child in joint)
         {
+            hasChildren = true;
+
             if (boneIndex < boneRenderers.Count)
             {
                 LineRenderer lr = boneRenderers[boneIndex];
@@ -169,6 +253,48 @@ public class BvhSkeletonVisualizer : MonoBehaviour
 
             UpdateVisualsRecursive(child, ref sphereIndex, ref boneIndex);
         }
+
+        // Update EndSite visualizations if applicable
+        if (!hasChildren)
+        {
+            BvhData bvhData = BvhDataCache.GetBvhData();
+            if (bvhData != null)
+            {
+                BvhJoint bvhJoint = FindBvhJointByName(bvhData.RootJoint, joint.name);
+                if (bvhJoint != null)
+                {
+                    foreach (var child in bvhJoint.Children)
+                    {
+                        if (child.IsEndSite)
+                        {
+                            // Update EndSite sphere and line
+                            Vector3 endpointPosition = joint.position + joint.TransformDirection(child.Offset);
+
+                            // Update endpoint sphere
+                            if (sphereIndex < jointSpheres.Count)
+                            {
+                                jointSpheres[sphereIndex].transform.position = endpointPosition;
+                                jointSpheres[sphereIndex].transform.localScale = Vector3.one * jointRadius * 1.5f;
+                                sphereIndex++;
+                            }
+
+                            // Update endpoint line
+                            if (boneIndex < boneRenderers.Count)
+                            {
+                                LineRenderer lr = boneRenderers[boneIndex];
+                                lr.SetPosition(0, joint.position);
+                                lr.SetPosition(1, endpointPosition);
+                                lr.startWidth = boneWidth;
+                                lr.endWidth = boneWidth;
+                                boneIndex++;
+                            }
+
+                            break;  // Each joint has at most one EndSite
+                        }
+                    }
+                }
+            }
+        }
     }
 
     void OnDestroy()
@@ -177,5 +303,26 @@ public class BvhSkeletonVisualizer : MonoBehaviour
         {
             Destroy(renderRoot);
         }
+    }
+
+    /// <summary>
+    /// Find a BVH joint by name in the hierarchy
+    /// </summary>
+    private BvhJoint FindBvhJointByName(BvhJoint joint, string name)
+    {
+        if (joint == null)
+            return null;
+
+        if (joint.Name == name)
+            return joint;
+
+        foreach (var child in joint.Children)
+        {
+            BvhJoint found = FindBvhJointByName(child, name);
+            if (found != null)
+                return found;
+        }
+
+        return null;
     }
 }

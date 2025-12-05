@@ -135,6 +135,11 @@ public class SceneFlowCalculator : MonoBehaviour
     /// <summary>Cached bone positions for visualization via Gizmos</summary>
     private Vector3[] visualizationBonePositions;
 
+    /// <summary>Reference to CurrentFrameBVH container for Gizmo visualization (blue)</summary>
+    private Transform currentFrameContainer;
+
+    /// <summary>Reference to PreviousFrameBVH container for Gizmo visualization (yellow)</summary>
+    private Transform previousFrameContainer;
 
     /// <summary>All bone transforms gathered from BVH hierarchy in depth-first order</summary>
     private readonly List<Transform> boneTransforms = new();
@@ -195,7 +200,7 @@ public class SceneFlowCalculator : MonoBehaviour
     /// </summary>
     public void OnShowSceneFlow()
     {
-        // Step 1: Validate BVH data
+        // Validate BVH data
         if (bvhData == null)
         {
             TryAutoInitializeBvhData();
@@ -206,7 +211,7 @@ public class SceneFlowCalculator : MonoBehaviour
             }
         }
 
-        // Step 2: Get BVH hierarchy
+        // Get BVH hierarchy and validate
         GatherBoneHierarchyFromBvhData();
         if (bvhJoints.Count == 0)
         {
@@ -214,80 +219,35 @@ public class SceneFlowCalculator : MonoBehaviour
             return;
         }
 
-        Debug.Log("[OnShowSceneFlow] === Root Node Info ===");
-
-        // Step 3: Get root joint
-        BvhJoint rootJoint = bvhData.RootJoint;
-        if (rootJoint == null)
-        {
-            Debug.LogError("[OnShowSceneFlow] Root joint is null");
-            return;
-        }
-
-        // Log root joint information
-        Debug.Log($"[OnShowSceneFlow] Root joint name: {rootJoint.Name}");
-        Debug.Log($"[OnShowSceneFlow] Root joint offset: {rootJoint.Offset}");
-        Debug.Log($"[OnShowSceneFlow] Root joint channels: {string.Join(", ", rootJoint.Channels)}");
-
-        // Get BVH frame index from Timeline time using BvhPlaybackFrameMapper
-        int frameIndex = GetBvhFrameIndexFromTimelineTime();
-        Debug.Log($"[OnShowSceneFlow] Calculated BVH frame index from Timeline time: {frameIndex}");
-
-        // Log frame data
-        float[] frameData = bvhData.GetFrame(frameIndex);
-        if (frameData != null)
-        {
-            Debug.Log($"[OnShowSceneFlow] Frame {frameIndex} data length: {frameData.Length}");
-            Debug.Log($"[OnShowSceneFlow] Frame {frameIndex} values: {string.Join(", ", frameData.Take(10).Select(f => f.ToString("F2")))}");
-        }
-
-        Debug.Log("[OnShowSceneFlow] === Testing frame " + frameIndex + " ===");
-
-        // Step 4: Get base position offset and BVH scale
+        // Get configuration data
         Vector3 positionOffset = GetBvhPositionOffset();
         Vector3 rotationOffset = GetBvhRotationOffset();
         Vector3 bvhScale = GetBvhScale();
-        Debug.Log($"[SceneFlowCalculator] Base position offset: {positionOffset}");
-        Debug.Log($"[SceneFlowCalculator] BVH scale: {bvhScale}");
-
-        // Step 5: Get drift correction for current frame time
-
         BvhPlaybackCorrectionKeyframes driftCorrectionData = GetDriftCorrectionData();
+
+        // Get current frame index and time
+        int currentFrameIndex = GetBvhFrameIndexFromTimelineTime();
         currentFrameTime = TimelineUtil.GetCurrentTimelineTime();
-        Vector3 correctedPos = BvhPlaybackTransformCorrector.GetCorrectedRootPosition(currentFrameTime, driftCorrectionData, positionOffset);
-        Quaternion correctedRot = BvhPlaybackTransformCorrector.GetCorrectedRootRotation(currentFrameTime, driftCorrectionData, rotationOffset);
-        transform.SetLocalPositionAndRotation(correctedPos, correctedRot);
-    
-        Debug.Log($"[SceneFlowCalculator] Drift-corrected position for frame time {currentFrameTime}: {correctedPos}");
 
-        // Step 6: Calculate root position using Method A (mathematical calculation with scale)
-        Vector3 rootPosMath = CalculateRootPositionMath(rootJoint, frameIndex, bvhScale);
-        Debug.Log($"[SceneFlowCalculator] Method A (Math - with scale): {rootPosMath}");
+        // Display current frame (blue)
+        DisplayBvhFrame("CurrentFrameBVH", currentFrameIndex, (float)currentFrameTime,
+                       positionOffset, rotationOffset, bvhScale, driftCorrectionData, Color.blue);
+        currentFrameContainer = transform.Find("CurrentFrameBVH");
 
-        // Step 7: Calculate root position using Method B (GameObject Transform with scale)
-        Vector3 rootPosGameObject = CalculateRootPositionGameObject(frameIndex, bvhScale);
-        Debug.Log($"[SceneFlowCalculator] Method B (GameObject - with scale): {rootPosGameObject}");
-
-        // Step 8: Compare results (BVH frame data only, before adding offset)
-        float difference = Vector3.Distance(rootPosMath, rootPosGameObject);
-        Debug.Log($"[SceneFlowCalculator] Position difference (BVH frame data): {difference:F6}");
-
-        if (difference < 0.001f)
+        // Display previous frame (yellow) if available
+        if (currentFrameIndex > 0)
         {
-            Debug.Log("[SceneFlowCalculator] ✓ PASS: Both methods produce identical results!");
+            int previousFrameIndex = currentFrameIndex - 1;
+            float previousFrameTime = Mathf.Max(0f, (float)currentFrameTime - (1f / bvhData.FrameRate));
+
+            DisplayBvhFrame("PreviousFrameBVH", previousFrameIndex, previousFrameTime,
+                           positionOffset, rotationOffset, bvhScale, driftCorrectionData, Color.yellow);
+            previousFrameContainer = transform.Find("PreviousFrameBVH");
         }
         else
         {
-            Debug.LogWarning($"[SceneFlowCalculator] ⚠ FAIL: Methods differ by {difference:F6}m");
+            Debug.Log("[SceneFlowCalculator] No previous frame available (already at frame 0)");
         }
-
-
-        // Step 11: Prepare visualization data (only root node at local origin, since we moved the parent)
-        visualizationBonePositions = new Vector3[1];
-        visualizationBonePositions[0] = Vector3.zero;  // Root is at origin since we moved the container
-
-
-        Debug.Log("[SceneFlowCalculator] Visualization enabled. Root node should appear in Scene view at same position as BVH_Visuals.");
     }
 
     // /// <summary>
@@ -402,6 +362,46 @@ public class SceneFlowCalculator : MonoBehaviour
 
         Debug.LogWarning("[SceneFlowCalculator] Could not find BvhPlaybackCorrectionKeyframes from Timeline or DatasetConfig");
         return null;
+    }
+
+    /// <summary>
+    /// Display a BVH frame with specified container name, time, and visual color
+    /// Handles creation/destruction of container and attachment of BVH skeleton
+    /// </summary>
+    private void DisplayBvhFrame(string containerName, int frameIndex, float frameTime,
+                                 Vector3 positionOffset, Vector3 rotationOffset, Vector3 bvhScale,
+                                 BvhPlaybackCorrectionKeyframes driftCorrectionData, Color gizmoColor)
+    {
+        // Remove existing container if present
+        Transform existingContainer = transform.Find(containerName);
+        if (existingContainer != null)
+        {
+            Destroy(existingContainer.gameObject);
+        }
+
+        // Create new container
+        GameObject containerGO = new GameObject(containerName);
+        Transform container = containerGO.transform;
+        container.SetParent(transform, false);
+
+        // Apply drift correction
+        Vector3 correctedPos = BvhPlaybackTransformCorrector.GetCorrectedRootPosition(frameTime, driftCorrectionData, positionOffset);
+        Quaternion correctedRot = BvhPlaybackTransformCorrector.GetCorrectedRootRotation(frameTime, driftCorrectionData, rotationOffset);
+        container.localPosition = correctedPos;
+        container.localRotation = correctedRot;
+
+        // Create BVH skeleton
+        Transform skeleton = CreateTemporaryBvhSkeletonWithScale(frameIndex, bvhScale);
+        if (skeleton != null)
+        {
+            skeleton.SetParent(container, false);
+            Debug.Log($"[SceneFlowCalculator] {containerName} (frame {frameIndex}) created");
+        }
+        else
+        {
+            Debug.LogError($"[SceneFlowCalculator] Failed to create skeleton for {containerName}");
+            Destroy(containerGO);
+        }
     }
 
     /// <summary>
@@ -530,22 +530,30 @@ public class SceneFlowCalculator : MonoBehaviour
     /// </summary>
     private Transform CreateTemporaryBvhSkeletonWithScale(int frameIndex, Vector3 bvhScale)
     {
-        // Create root GameObject
-        GameObject tempSkeletonGO = new GameObject($"TempBvhSkeleton_{frameIndex}");
-        Transform tempSkeletonRoot = tempSkeletonGO.transform;
-
         if (bvhData == null || bvhData.RootJoint == null)
         {
             Debug.LogError("[SceneFlowCalculator] Cannot create temp skeleton - BvhData is null");
+            return null;
+        }
+
+        // Create root GameObject as container (this will hold the BVH root joint)
+        GameObject tempSkeletonGO = new GameObject($"TempBvhSkeleton_{frameIndex}");
+        Transform tempSkeletonRoot = tempSkeletonGO.transform;
+
+        // Recursively create bone hierarchy (RootJoint becomes a child of tempSkeletonRoot)
+        CreateBoneHierarchy(bvhData.RootJoint, tempSkeletonRoot);
+
+        // Get the actual RootJoint transform that was just created
+        Transform rootJointTransform = tempSkeletonRoot.Find(bvhData.RootJoint.Name);
+        if (rootJointTransform == null)
+        {
+            Debug.LogError("[SceneFlowCalculator] Failed to find root joint transform after creating hierarchy");
             GameObject.Destroy(tempSkeletonGO);
             return null;
         }
 
-        // Recursively create bone hierarchy
-        CreateBoneHierarchy(bvhData.RootJoint, tempSkeletonRoot);
-
         // Apply frame data with scale using BvhData
-        bvhData.SetRootTransform(tempSkeletonRoot.Find(bvhData.RootJoint.Name));
+        bvhData.SetRootTransform(rootJointTransform);
         bvhData.UpdateTransforms(frameIndex, bvhScale, DatasetConfig.GetInstance().BvhRotationOffset, DatasetConfig.GetInstance().BvhPositionOffset);
 
         if (debugMode)
@@ -803,5 +811,77 @@ public class SceneFlowCalculator : MonoBehaviour
         // Cycle through distinct colors based on bone index
         float hue = (boneIndex * 0.33f) % 1.0f;
         return Color.HSVToRGB(hue, 0.8f, 0.9f);
+    }
+
+    /// <summary>
+    /// Draw skeleton visualization in Scene view using Gizmos
+    /// - Current frame (blue)
+    /// - Previous frame (yellow)
+    /// </summary>
+    private void OnDrawGizmos()
+    {
+        // Draw current frame BVH (blue)
+        if (currentFrameContainer != null)
+        {
+            DrawBvhContainerStructure(currentFrameContainer, Color.blue, 0.02f);
+        }
+
+        // Draw previous frame BVH (yellow)
+        if (previousFrameContainer != null)
+        {
+            DrawBvhContainerStructure(previousFrameContainer, Color.yellow, 0.015f);
+        }
+    }
+
+    /// <summary>
+    /// Draw bone structure for a BVH container in Scene view
+    /// </summary>
+    /// <param name="containerTransform">Root transform of the BVH container</param>
+    /// <param name="boneColor">Color for drawing</param>
+    /// <param name="sphereSize">Radius of joint spheres</param>
+    private void DrawBvhContainerStructure(Transform containerTransform, Color boneColor, float sphereSize)
+    {
+        if (containerTransform == null)
+            return;
+
+        // Find the actual BVH root (first child of container, which is the TempBvhSkeleton)
+        if (containerTransform.childCount == 0)
+            return;
+
+        Transform tempSkeletonRoot = containerTransform.GetChild(0);  // TempBvhSkeleton_XXX
+
+        // Skip the empty TempBvhSkeleton and draw from its children (the actual BVH joints)
+        if (tempSkeletonRoot.childCount == 0)
+            return;
+
+        // Draw all joint hierarchies under TempBvhSkeleton
+        foreach (Transform joint in tempSkeletonRoot)
+        {
+            DrawBvhJointRecursive(joint, boneColor, sphereSize);
+        }
+    }
+
+    /// <summary>
+    /// Recursively draw joints and bones in the BVH hierarchy
+    /// </summary>
+    private void DrawBvhJointRecursive(Transform jointTransform, Color boneColor, float sphereSize)
+    {
+        if (jointTransform == null)
+            return;
+
+        // Draw joint as sphere
+        Gizmos.color = boneColor;
+        Gizmos.DrawSphere(jointTransform.position, sphereSize);
+
+        // Draw bones to children
+        foreach (Transform child in jointTransform)
+        {
+            // Draw line from this joint to child
+            Gizmos.color = boneColor;
+            Gizmos.DrawLine(jointTransform.position, child.position);
+
+            // Recursively draw child
+            DrawBvhJointRecursive(child, boneColor, sphereSize);
+        }
     }
 }
