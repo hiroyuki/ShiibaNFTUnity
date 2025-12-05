@@ -18,7 +18,6 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     private Vector3 positionOffset = Vector3.zero;
     private Vector3 rotationOffset = Vector3.zero;
     public Vector3 scale = Vector3.one;
-    public bool applyRootMotion = true;
     public int frameOffset = 0;
 
     // BVH Drift Correction
@@ -101,61 +100,7 @@ public class BvhPlayableBehaviour : PlayableBehaviour
             return;
         }
 
-        var applier = new PlayableFrameApplier(scale, rotationOffset, applyRootMotion);
+        var applier = new BvhMotionApplier(scale, rotationOffset, positionOffset);
         applier.ApplyFrameToJointHierarchy(bvhData.RootJoint, rootJointTransform, frameData);
     }
-
-    /// <summary>
-    /// Custom frame applier for BvhPlayableBehaviour with position/rotation adjustments
-    /// </summary>
-    private class PlayableFrameApplier : BvhMotionApplier
-    {
-        private Vector3 scale;
-        private Vector3 rotationOffset;
-        private bool applyRootMotion;
-        private bool hasPositionChannels;
-
-        public PlayableFrameApplier(Vector3 scale, Vector3 rotationOffset, bool applyRootMotion)
-        {
-            this.scale = scale;
-            this.rotationOffset = rotationOffset;
-            this.applyRootMotion = applyRootMotion;
-        }
-
-        protected override Vector3 AdjustPosition(Vector3 basePosition, BvhJoint joint, bool isRoot)
-        {
-            if (!isRoot)
-            {
-                // Non-root joints: scale position
-                return Vector3.Scale(basePosition, scale);
-            }
-
-            // Root joint adjustments
-            hasPositionChannels = BvhDataReader.HasPositionChannels(joint.Channels);
-
-            if (applyRootMotion && hasPositionChannels)
-            {
-                // Apply position with scale
-                return Vector3.Scale(basePosition, scale);
-            }
-            else if (!hasPositionChannels)
-            {
-                // Use offset position only
-                return joint.Offset;
-            }
-
-            return basePosition;
-        }
-
-        protected override Vector3 AdjustRotation(Vector3 baseRotation, BvhJoint joint, bool isRoot)
-        {
-            // Apply rotation offset for root joint only
-            if (isRoot)
-            {
-                return baseRotation + rotationOffset;
-            }
-            return baseRotation;
-        }
-    }
-
 }

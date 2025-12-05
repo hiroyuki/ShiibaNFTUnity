@@ -19,7 +19,6 @@ public class DatasetConfig : ScriptableObject
     [SerializeField] private Vector3 bvhPositionOffset = Vector3.zero;
     [SerializeField] private Vector3 bvhRotationOffset = Vector3.zero;
     [SerializeField] private Vector3 bvhScale = Vector3.one;
-    [SerializeField] private bool bvhApplyRootMotion = true;
     [SerializeField] private float bvhOverrideFrameRate = 0f;
     [SerializeField] private int bvhFrameOffset = 0;
 
@@ -62,7 +61,6 @@ public class DatasetConfig : ScriptableObject
     public Vector3 BvhPositionOffset => bvhPositionOffset;
     public Vector3 BvhRotationOffset => bvhRotationOffset;
     public Vector3 BvhScale => bvhScale;
-    public bool BvhApplyRootMotion => bvhApplyRootMotion;
     public float BvhOverrideFrameRate => bvhOverrideFrameRate;
     public int BvhFrameOffset => bvhFrameOffset;
     public ProcessingType ProcessingType => processingType;

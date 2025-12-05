@@ -201,7 +201,7 @@ public class BvhData
     /// <param name="frameData">Frame data array (channel values)</param>
     public static void ApplyFrameToTransforms(BvhJoint rootJoint, Transform rootTransform, float[] frameData)
     {
-        var applier = new BvhMotionApplier();
-        applier.ApplyFrameToJointHierarchy(rootJoint, rootTransform, frameData);
+        // var applier = new BvhMotionApplier();
+        // applier.ApplyFrameToJointHierarchy(rootJoint, rootTransform, frameData);
     }
 }

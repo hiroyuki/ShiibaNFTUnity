@@ -481,7 +481,7 @@ public class SceneFlowCalculator : MonoBehaviour
 
     /// <summary>
     /// Calculate root node position using GameObject method (Method B)
-    /// Applies BVH scale via PlayableFrameApplier
+    /// Applies BVH scale via PlayableMotionApplier
     /// </summary>
     private Vector3 CalculateRootPositionGameObject(int frameIndex, Vector3 bvhScale)
     {
@@ -526,7 +526,7 @@ public class SceneFlowCalculator : MonoBehaviour
 
     /// <summary>
     /// Create temporary BVH skeleton with frame data applied and scale transform
-    /// Uses PlayableFrameApplier to apply scale same as BvhPlayableBehaviour
+    /// Uses PlayableMotionApplier to apply scale same as BvhPlayableBehaviour
     /// </summary>
     private Transform CreateTemporaryBvhSkeletonWithScale(int frameIndex, Vector3 bvhScale)
     {
@@ -544,7 +544,7 @@ public class SceneFlowCalculator : MonoBehaviour
         // Recursively create bone hierarchy
         CreateBoneHierarchy(bvhData.RootJoint, tempSkeletonRoot);
 
-        // Apply frame data with scale using PlayableFrameApplier
+        // Apply frame data with scale using BvhMotionApplier
         float[] frameData = bvhData.GetFrame(frameIndex);
         if (frameData != null)
         {
@@ -553,7 +553,7 @@ public class SceneFlowCalculator : MonoBehaviour
             if (rootJointTransform != null)
             {
                 // Create a custom applier with scale
-                var applier = new SceneFlowFrameApplier(bvhScale);
+                var applier = new BvhMotionApplier(bvhScale, DatasetConfig.GetInstance().BvhRotationOffset, DatasetConfig.GetInstance().BvhPositionOffset );
                 applier.ApplyFrameToJointHierarchy(bvhData.RootJoint, rootJointTransform, frameData);
             }
         }
@@ -562,25 +562,6 @@ public class SceneFlowCalculator : MonoBehaviour
             Debug.Log($"[SceneFlowCalculator] Created temporary skeleton with scale {bvhScale}");
 
         return tempSkeletonRoot;
-    }
-
-    /// <summary>
-    /// Custom frame applier for SceneFlowCalculator with scale applied (same as BvhPlayableBehaviour)
-    /// </summary>
-    private class SceneFlowFrameApplier : BvhMotionApplier
-    {
-        private Vector3 scale;
-
-        public SceneFlowFrameApplier(Vector3 scale)
-        {
-            this.scale = scale;
-        }
-
-        protected override Vector3 AdjustPosition(Vector3 basePosition, BvhJoint joint, bool isRoot)
-        {
-            // Apply scale to all joints (including root)
-            return Vector3.Scale(basePosition, scale);
-        }
     }
 
     /// <summary>

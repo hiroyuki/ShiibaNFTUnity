@@ -17,10 +17,11 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     [Tooltip("Leave empty to use settings from DatasetConfig. Only fill if you want to override.")]
     [SerializeField] private bool overrideTransformSettings = false;
 
+
+    //dataset config からの値をオーバーライドする
     [SerializeField] private Vector3 positionOffset = Vector3.zero;
     [SerializeField] private Vector3 rotationOffset = Vector3.zero;
     [SerializeField] private Vector3 scale = Vector3.one;
-    [SerializeField] private bool applyRootMotion = true;
     [SerializeField] private float overrideFrameRate = 0f;
     [SerializeField] private int frameOffset = 0;
 
@@ -48,7 +49,7 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     /// <summary>
     /// Get transform settings from DatasetConfig or override values
     /// </summary>
-    private void GetTransformSettings(out Vector3 position, out Vector3 rotation, out Vector3 scaleVal, out bool applyRoot, out float frameRate, out int frameOff)
+    private void GetTransformSettings(out Vector3 position, out Vector3 rotation, out Vector3 scaleVal, out float frameRate, out int frameOff)
     {
         DatasetConfig config = DatasetConfig.GetInstance();
 
@@ -57,7 +58,6 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
             position = config.BvhPositionOffset;
             rotation = config.BvhRotationOffset;
             scaleVal = config.BvhScale;
-            applyRoot = config.BvhApplyRootMotion;
             frameRate = config.BvhOverrideFrameRate;
             frameOff = config.BvhFrameOffset;
         }
@@ -66,7 +66,6 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
             position = positionOffset;
             rotation = rotationOffset;
             scaleVal = scale;
-            applyRoot = applyRootMotion;
             frameRate = overrideFrameRate;
             frameOff = frameOffset;
         }
@@ -109,7 +108,7 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
 
         // Get transform settings from DatasetConfig or overrides
         GetTransformSettings(out Vector3 position, out Vector3 rotation, out Vector3 scaleVal,
-                           out bool applyRoot, out float frameRate, out int frameOff);
+                           out float frameRate, out int frameOff);
 
         // Set frame rate
         if (behaviour.bvhData != null)
@@ -125,7 +124,6 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
         behaviour.PositionOffset = position;
         behaviour.RotationOffset = rotation;
         behaviour.scale = scaleVal;
-        behaviour.applyRootMotion = applyRoot;
         behaviour.frameOffset = frameOff;
 
         // Set drift correction data from DatasetConfig

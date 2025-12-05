@@ -32,6 +32,17 @@ using UnityEngine;
 /// </summary>
 public class BvhMotionApplier
 {
+
+    private Vector3 scale = Vector3.one;
+    private Vector3 rotationOffset;
+    private Vector3 positionOffset;
+
+    public BvhMotionApplier(Vector3 scale, Vector3 rotationOffset, Vector3 positionOffset)
+    {
+        this.scale = scale;
+        this.rotationOffset = rotationOffset;
+        this.positionOffset = positionOffset;
+    }
     /// <summary>
     /// Apply BVH frame data to a joint hierarchy by recursively updating transforms.
     ///
@@ -68,7 +79,7 @@ public class BvhMotionApplier
         BvhDataReader.ReadChannelData(joint.Channels, frameData, ref channelIndex, ref position, ref rotation);
 
         // Allow subclasses to customize adjustments
-        position = AdjustPosition(position, joint, isRoot);
+        position = AdjustPosition(position, joint);
         rotation = AdjustRotation(rotation, joint, isRoot);
 
         // Apply position and rotation to this transform
@@ -107,9 +118,9 @@ public class BvhMotionApplier
     /// <param name="joint">The BVH joint being processed</param>
     /// <param name="isRoot">True if this is the root joint</param>
     /// <returns>Adjusted position to apply</returns>
-    protected virtual Vector3 AdjustPosition(Vector3 basePosition, BvhJoint joint, bool isRoot)
+    protected virtual Vector3 AdjustPosition(Vector3 basePosition, BvhJoint joint)
     {
-        return basePosition;
+        return Vector3.Scale(basePosition, scale);
     }
 
     /// <summary>
@@ -122,6 +133,10 @@ public class BvhMotionApplier
     /// <returns>Adjusted rotation to apply</returns>
     protected virtual Vector3 AdjustRotation(Vector3 baseRotation, BvhJoint joint, bool isRoot)
     {
-        return baseRotation;
+            if (isRoot)
+            {
+                return baseRotation + rotationOffset;
+            }
+            return baseRotation;
     }
 }
