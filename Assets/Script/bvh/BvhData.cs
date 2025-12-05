@@ -167,11 +167,17 @@ public class BvhData
     }
 
     /// <summary>
-    /// Update the Scene transforms for a specific frame
+    /// Update the Scene transforms for a specific frame with optional adjustments
     /// Applies BVH frame data to the stored rootTransform
     /// </summary>
     /// <param name="frameNumber">Frame index to apply (0-based)</param>
-    public void UpdateTransforms(int frameNumber)
+    /// <param name="scale">Scale to apply to all joint positions (default: Vector3.one)</param>
+    /// <param name="rotationOffset">Rotation offset to apply to root joint (default: Vector3.zero)</param>
+    /// <param name="positionOffset">Position offset to apply to root joint (default: Vector3.zero)</param>
+    public void UpdateTransforms(int frameNumber,
+                                 Vector3 scale = default,
+                                 Vector3 rotationOffset = default,
+                                 Vector3 positionOffset = default)
     {
         if (rootTransform == null)
         {
@@ -189,19 +195,105 @@ public class BvhData
         if (frameData == null)
             return;
 
-        ApplyFrameToTransforms(RootJoint, rootTransform, frameData);
+        // Apply frame with adjustments
+        Vector3 actualScale = scale == default ? Vector3.one : scale;
+        ApplyFrameToTransforms(RootJoint, rootTransform, frameData, actualScale, rotationOffset, positionOffset);
     }
 
     /// <summary>
-    /// Apply BVH frame data to a Transform hierarchy
-    /// Uses BvhMotionApplier to apply motion capture data to bones
+    /// Apply BVH frame data to a Transform hierarchy (no adjustments)
     /// </summary>
     /// <param name="rootJoint">Root joint of the BVH skeleton</param>
     /// <param name="rootTransform">Root transform to apply motion to</param>
     /// <param name="frameData">Frame data array (channel values)</param>
     public static void ApplyFrameToTransforms(BvhJoint rootJoint, Transform rootTransform, float[] frameData)
     {
-        // var applier = new BvhMotionApplier();
-        // applier.ApplyFrameToJointHierarchy(rootJoint, rootTransform, frameData);
+        ApplyFrameToTransforms(rootJoint, rootTransform, frameData, Vector3.one, Vector3.zero, Vector3.zero);
+    }
+
+    /// <summary>
+    /// Apply BVH frame data to a Transform hierarchy with optional adjustments
+    /// </summary>
+    /// <param name="rootJoint">Root joint of the BVH skeleton</param>
+    /// <param name="rootTransform">Root transform to apply motion to</param>
+    /// <param name="frameData">Frame data array (channel values)</param>
+    /// <param name="scale">Scale to apply to joint positions</param>
+    /// <param name="rotationOffset">Rotation offset for root joint</param>
+    /// <param name="positionOffset">Position offset for root joint</param>
+    public static void ApplyFrameToTransforms(BvhJoint rootJoint, Transform rootTransform, float[] frameData,
+                                               Vector3 scale, Vector3 rotationOffset, Vector3 positionOffset)
+    {
+        int channelIndex = 0;
+        ApplyJointRecursive(rootJoint, rootTransform, frameData, ref channelIndex, scale, rotationOffset, positionOffset, true);
+    }
+
+    /// <summary>
+    /// Recursively apply motion data to joint hierarchy
+    /// </summary>
+    private static void ApplyJointRecursive(BvhJoint joint, Transform targetTransform, float[] frameData,
+                                           ref int channelIndex, Vector3 scale, Vector3 rotationOffset, Vector3 positionOffset,
+                                           bool isRoot)
+    {
+        if (joint.IsEndSite)
+            return;
+
+        Vector3 position = joint.Offset;
+        Vector3 rotation = Vector3.zero;
+
+        // Read channel data for this joint
+        BvhDataReader.ReadChannelData(joint.Channels, frameData, ref channelIndex, ref position, ref rotation);
+
+        // Apply adjustments
+        position = AdjustPosition(position, joint, scale, isRoot);
+        rotation = AdjustRotation(rotation, joint, rotationOffset, isRoot);
+
+        // Apply position and rotation to this transform
+        targetTransform.localPosition = position;
+        targetTransform.localRotation = BvhDataReader.GetRotationQuaternion(rotation);
+
+        // Recursively apply to children
+        foreach (var childJoint in joint.Children)
+        {
+            if (childJoint.IsEndSite)
+                continue;
+
+            Transform childTransform = targetTransform.Find(childJoint.Name);
+            if (childTransform != null)
+            {
+                ApplyJointRecursive(childJoint, childTransform, frameData, ref channelIndex, scale, rotationOffset, positionOffset, false);
+            }
+            else
+            {
+                // Create child transform if it doesn't exist
+                GameObject childObj = new GameObject(childJoint.Name);
+                childObj.transform.SetParent(targetTransform);
+                childObj.transform.localPosition = childJoint.Offset;
+                childObj.transform.localRotation = Quaternion.identity;
+
+                ApplyJointRecursive(childJoint, childObj.transform, frameData, ref channelIndex, scale, rotationOffset, positionOffset, false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Adjust position value before applying to transform
+    /// </summary>
+    private static Vector3 AdjustPosition(Vector3 basePosition, BvhJoint joint, Vector3 scale, bool isRoot)
+    {
+        // Apply scale to all joints
+        return Vector3.Scale(basePosition, scale);
+    }
+
+    /// <summary>
+    /// Adjust rotation value before applying to transform
+    /// </summary>
+    private static Vector3 AdjustRotation(Vector3 baseRotation, BvhJoint joint, Vector3 rotationOffset, bool isRoot)
+    {
+        // Apply rotation offset for root joint only
+        if (isRoot)
+        {
+            return baseRotation + rotationOffset;
+        }
+        return baseRotation;
     }
 }

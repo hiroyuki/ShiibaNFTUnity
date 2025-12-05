@@ -544,19 +544,9 @@ public class SceneFlowCalculator : MonoBehaviour
         // Recursively create bone hierarchy
         CreateBoneHierarchy(bvhData.RootJoint, tempSkeletonRoot);
 
-        // Apply frame data with scale using BvhMotionApplier
-        float[] frameData = bvhData.GetFrame(frameIndex);
-        if (frameData != null)
-        {
-            // Find the root joint transform
-            Transform rootJointTransform = tempSkeletonRoot.Find(bvhData.RootJoint.Name);
-            if (rootJointTransform != null)
-            {
-                // Create a custom applier with scale
-                var applier = new BvhMotionApplier(bvhScale, DatasetConfig.GetInstance().BvhRotationOffset, DatasetConfig.GetInstance().BvhPositionOffset );
-                applier.ApplyFrameToJointHierarchy(bvhData.RootJoint, rootJointTransform, frameData);
-            }
-        }
+        // Apply frame data with scale using BvhData
+        bvhData.SetRootTransform(tempSkeletonRoot.Find(bvhData.RootJoint.Name));
+        bvhData.UpdateTransforms(frameIndex, bvhScale, DatasetConfig.GetInstance().BvhRotationOffset, DatasetConfig.GetInstance().BvhPositionOffset);
 
         if (debugMode)
             Debug.Log($"[SceneFlowCalculator] Created temporary skeleton with scale {bvhScale}");

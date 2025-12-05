@@ -89,18 +89,8 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     {
         if (frameIndex < 0 || frameIndex >= bvhData.FrameCount) return;
 
-        float[] frameData = bvhData.GetFrame(frameIndex);
-        if (frameData == null) return;
-
-        // Find the root joint transform (child of targetTransform)
-        Transform rootJointTransform = BvhCharacterTransform.Find(bvhData.RootJoint.Name);
-        if (rootJointTransform == null)
-        {
-            Debug.LogWarning($"Root joint '{bvhData.RootJoint.Name}' not found under '{BvhCharacterTransform.name}'");
-            return;
-        }
-
-        var applier = new BvhMotionApplier(scale, rotationOffset, positionOffset);
-        applier.ApplyFrameToJointHierarchy(bvhData.RootJoint, rootJointTransform, frameData);
+        // Set root transform on BvhData and apply frame with adjustments
+        bvhData.SetRootTransform(BvhCharacterTransform.Find(bvhData.RootJoint.Name));
+        bvhData.UpdateTransforms(frameIndex, scale, rotationOffset, positionOffset);
     }
 }
