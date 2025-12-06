@@ -206,14 +206,14 @@ public class BvhData
     public static void ApplyFrameToTransforms(BvhJoint rootJoint, Transform rootTransform, float[] frameData)
     {
         int channelIndex = 0;
-        ApplyJointRecursive(rootJoint, rootTransform, frameData, ref channelIndex, true);
+        ApplyJointRecursive(rootJoint, rootTransform, frameData, ref channelIndex);
     }
 
     /// <summary>
     /// Recursively apply motion data to joint hierarchy
     /// </summary>
     private static void ApplyJointRecursive(BvhJoint joint, Transform targetTransform, float[] frameData,
-                                           ref int channelIndex,bool isRoot)
+                                           ref int channelIndex)
     {
         if (joint.IsEndSite)
             return;
@@ -238,7 +238,7 @@ public class BvhData
             Transform childTransform = targetTransform.Find(childJoint.Name);
             if (childTransform != null)
             {
-                ApplyJointRecursive(childJoint, childTransform, frameData, ref channelIndex, false);
+                ApplyJointRecursive(childJoint, childTransform, frameData, ref channelIndex);
             }
             else
             {
@@ -248,7 +248,7 @@ public class BvhData
                 childObj.transform.localPosition = childJoint.Offset;
                 childObj.transform.localRotation = Quaternion.identity;
 
-                ApplyJointRecursive(childJoint, childObj.transform, frameData, ref channelIndex, false);
+                ApplyJointRecursive(childJoint, childObj.transform, frameData, ref channelIndex);
             }
         }
     }
