@@ -29,6 +29,7 @@ public class SceneFlowCalculator : MonoBehaviour
         public BvhJoint childJoint;
         public Transform parentTransform;
         public Transform childTransform;
+        public bool isEndSiteChild;  // True if childJoint is an EndSite
     }
 
     /// <summary>
@@ -518,6 +519,7 @@ public class SceneFlowCalculator : MonoBehaviour
     /// Gather bone definitions from BVH data (parent-child joint pairs)
     /// Creates a list of template BoneDefinition objects with BvhJoint references (no Transform refs)
     /// This template is used to create frame-specific bone lists
+    /// Includes EndSite children to support complete bone segmentation
     /// </summary>
     private void GatherBoneDefinitionsFromBvhData()
     {
@@ -534,10 +536,8 @@ public class SceneFlowCalculator : MonoBehaviour
         // Iterate through all joints and create bone definitions for parent-child pairs
         foreach (BvhJoint joint in bvhJoints)
         {
-            if (joint.Children.Count == 0)
-                continue;  // Skip leaf joints with no children
-
-            // For each child, create a bone definition
+            // Process ALL children including EndSites (removed skip condition)
+            // This ensures leaf bones with only EndSite children are included
             foreach (BvhJoint childJoint in joint.Children)
             {
                 // Create bone definition for all children, including EndSite nodes
@@ -545,7 +545,8 @@ public class SceneFlowCalculator : MonoBehaviour
                 {
                     index = boneIndex,
                     parentJoint = joint,
-                    childJoint = childJoint
+                    childJoint = childJoint,
+                    isEndSiteChild = childJoint.IsEndSite  // Mark if this is an EndSite child
                     // parentTransform and childTransform will be set per-frame
                 };
 
@@ -555,7 +556,7 @@ public class SceneFlowCalculator : MonoBehaviour
         }
 
         if (debugMode)
-            Debug.Log($"[SceneFlowCalculator] Created {templateBones.Count} template bone definitions from BVH hierarchy");
+            Debug.Log($"[SceneFlowCalculator] Created {templateBones.Count} template bone definitions from BVH hierarchy (including EndSite children)");
     }
 
     /// <summary>
@@ -595,9 +596,37 @@ public class SceneFlowCalculator : MonoBehaviour
 
         BoneDefinition boneDef = bones[boneIndex];
 
-        // Get parent and child positions in world space
+        if (boneDef.parentTransform == null)
+        {
+            Debug.LogWarning($"[SceneFlowCalculator] CalculateSegmentPositionsForBone: Parent transform is null for bone {boneIndex}");
+            return new SegmentedBoneMotionData[0];
+        }
+
+        // Get parent position in world space
         Vector3 parentPos = boneDef.parentTransform.position;
-        Vector3 childPos = boneDef.childTransform.position;
+
+        // Calculate child position
+        // For EndSite children, childTransform is null, so we calculate the virtual position
+        Vector3 childPos;
+        if (boneDef.isEndSiteChild && boneDef.childTransform == null)
+        {
+            // EndSite: calculate position from parent + offset
+            // Use TransformDirection to apply parent's rotation to the offset
+            childPos = boneDef.parentTransform.position + boneDef.parentTransform.TransformDirection(boneDef.childJoint.Offset);
+
+            if (debugMode)
+                Debug.Log($"[SceneFlowCalculator] EndSite child: {boneDef.childJoint.Name}, calculated pos: {childPos}");
+        }
+        else if (boneDef.childTransform != null)
+        {
+            // Regular bone: use actual transform position
+            childPos = boneDef.childTransform.position;
+        }
+        else
+        {
+            Debug.LogWarning($"[SceneFlowCalculator] CalculateSegmentPositionsForBone: Child transform not available for bone {boneIndex} (not EndSite)");
+            return new SegmentedBoneMotionData[0];
+        }
 
         // Create array for segment positions
         SegmentedBoneMotionData[] segments = new SegmentedBoneMotionData[segmentsPerBone];
@@ -1099,7 +1128,8 @@ public class SceneFlowCalculator : MonoBehaviour
                 //初期化子でコピー
                 index = templateBone.index,
                 parentJoint = templateBone.parentJoint,
-                childJoint = templateBone.childJoint
+                childJoint = templateBone.childJoint,
+                isEndSiteChild = templateBone.isEndSiteChild
             };
 
             // Find parent transform
@@ -1111,9 +1141,14 @@ public class SceneFlowCalculator : MonoBehaviour
             }
 
             // Find child transform
-            Transform childTransform = FindJointTransformByName(bvhRoot, boneDef.childJoint.Name);
-            if (childTransform != null)
-                boneDef.childTransform = childTransform;
+            // For EndSite children, childTransform will remain null (handled in CalculateSegmentPositionsForBone)
+            if (!boneDef.isEndSiteChild)
+            {
+                Transform childTransform = FindJointTransformByName(bvhRoot, boneDef.childJoint.Name);
+                if (childTransform != null)
+                    boneDef.childTransform = childTransform;
+            }
+            // else: isEndSiteChild = true, leave childTransform = null
 
             linkedBones.Add(boneDef);
         }
