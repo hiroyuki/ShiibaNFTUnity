@@ -16,12 +16,12 @@ public static class PointCloudSettings
     /// <summary>
     /// Point size for rendering (affects all processors)
     /// </summary>
-    public static float pointSize = 3.0f;
+    public static float pointSize = 8.0f;
 
     /// <summary>
     /// Opacity/transparency of point cloud (0.0 = fully transparent, 1.0 = fully opaque)
     /// </summary>
-    public static float pointCloudOpacity = 0.1f;
+    public static float pointCloudOpacity = 1.0f;
 
     /// <summary>
     /// Enable/disable bounding volume culling across all processors

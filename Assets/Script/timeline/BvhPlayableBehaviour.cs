@@ -80,6 +80,7 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         Vector3 correctedPos = BvhPlaybackTransformCorrector.GetCorrectedRootPosition(timelineTime, driftCorrectionData, positionOffset);
         Quaternion correctedRot = BvhPlaybackTransformCorrector.GetCorrectedRootRotation(timelineTime, driftCorrectionData, rotationOffset);
         BvhCharacterTransform.SetLocalPositionAndRotation(correctedPos, correctedRot);
+        BvhCharacterTransform.localScale = scale;
     }
 
     /// <summary>
@@ -89,8 +90,8 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     {
         if (frameIndex < 0 || frameIndex >= bvhData.FrameCount) return;
 
-        // Set root transform on BvhData and apply frame with adjustments
+        // Set root transform on BvhData and apply frame (scale/offset applied in PrepareFrame)
         bvhData.SetRootTransform(BvhCharacterTransform.Find(bvhData.RootJoint.Name));
-        bvhData.UpdateTransforms(frameIndex, scale, rotationOffset, positionOffset);
+        bvhData.UpdateTransforms(frameIndex);
     }
 }

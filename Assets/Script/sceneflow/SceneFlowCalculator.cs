@@ -207,18 +207,6 @@ public class SceneFlowCalculator : MonoBehaviour
     }
 
     /// <summary>
-    /// Set the BVH data source for this calculator.
-    /// Can be called by components that have access to BvhData.
-    /// </summary>
-    public void SetBvhData(BvhData data)
-    {
-        bvhData = data;
-
-        if (debugMode)
-            Debug.Log($"[SceneFlowCalculator] BvhData set: {(data != null ? "Valid" : "Null")}");
-    }
-
-    /// <summary>
     /// Show scene flow for the current BVH frame.
     /// Called when "Show Scene Flow" button is pressed in the Inspector.
     /// Tests root node position calculation using two methods.
@@ -226,6 +214,12 @@ public class SceneFlowCalculator : MonoBehaviour
     /// </summary>
     public void OnShowSceneFlow()
     {
+        // 前回の実行時のコンテナをクリア
+        currentFrameContainer = null;
+        previousFrameContainer = null;
+        currentFrameBones.Clear();
+        previousFrameBones.Clear();
+
         // Validate BVH data
         if (bvhData == null)
         {
@@ -252,7 +246,7 @@ public class SceneFlowCalculator : MonoBehaviour
         BvhPlaybackCorrectionKeyframes driftCorrectionData = GetDriftCorrectionData();
 
         // Get current frame index and time
-        int currentFrameIndex = GetBvhFrameIndexFromTimelineTime();
+        int currentFrameIndex = GetBvhFrameIndexMapped();
         currentFrameTime = TimelineUtil.GetCurrentTimelineTime();
 
         // Display current frame (blue)
@@ -313,7 +307,6 @@ public class SceneFlowCalculator : MonoBehaviour
 
     //     return correctedPos;
     // }
-
 
     /// <summary>
     /// Get BVH position offset from DatasetConfig
@@ -416,6 +409,11 @@ public class SceneFlowCalculator : MonoBehaviour
         if (existingContainer != null)
         {
             Destroy(existingContainer.gameObject);
+            // 参照をnullにして、OnDrawGizmosで破棄前のGameObjectを使わないようにする
+            if (containerName == "CurrentFrameBVH")
+                currentFrameContainer = null;
+            else if (containerName == "PreviousFrameBVH")
+                previousFrameContainer = null;
         }
 
         // Create new container
@@ -428,6 +426,7 @@ public class SceneFlowCalculator : MonoBehaviour
         Quaternion correctedRot = BvhPlaybackTransformCorrector.GetCorrectedRootRotation(frameTime, driftCorrectionData, rotationOffset);
         container.localPosition = correctedPos;
         container.localRotation = correctedRot;
+        container.localScale = bvhScale;
 
         // Create BVH skeleton
         Transform skeleton = CreateTemporaryBvhSkeletonWithScale(frameIndex, bvhScale);
@@ -448,7 +447,7 @@ public class SceneFlowCalculator : MonoBehaviour
     /// If Timeline is not available or stopped, falls back to frame 0.
     /// </summary>
     /// <returns>BVH frame index calculated from Timeline time</returns>
-    private int GetBvhFrameIndexFromTimelineTime()
+    private int GetBvhFrameIndexMapped()
     {
         float timelineTime = (float)TimelineUtil.GetCurrentTimelineTime();
 
@@ -470,53 +469,7 @@ public class SceneFlowCalculator : MonoBehaviour
         return frameIndex;
     }
 
-    /// <summary>
-    /// Calculate root node position using mathematical method (Method A)
-    /// Applies BVH scale to frame data positions
-    /// </summary>
-    private Vector3 CalculateRootPositionMath(BvhJoint rootJoint, int frameIndex, Vector3 bvhScale)
-    {
-        if (rootJoint == null)
-            return Vector3.zero;
 
-        float[] frameData = bvhData.GetFrame(frameIndex);
-        if (frameData == null)
-            return Vector3.zero;
-
-        // Debug: Log root joint info
-        Debug.Log("[CalculateRootPositionMath] Root Joint Info:");
-        Debug.Log($"  Name: {rootJoint.Name}");
-        Debug.Log($"  Offset: {rootJoint.Offset}");
-        Debug.Log($"  Channels: {string.Join(", ", rootJoint.Channels)}");
-        Debug.Log($"  Channel count: {rootJoint.Channels.Count}");
-
-        // Debug: Log frame data
-        Debug.Log($"[CalculateRootPositionMath] Frame {frameIndex} data (first 20 values):");
-        for (int i = 0; i < Mathf.Min(20, frameData.Length); i++)
-        {
-            Debug.Log($"  frameData[{i}] = {frameData[i]}");
-        }
-
-        Vector3 localPos = Vector3.zero;
-        Vector3 localRot = Vector3.zero;
-
-        // Read channel data for root joint (frame data only, no offset)
-        int channelIndex = 0;
-        BvhDataReader.ReadChannelData(rootJoint.Channels, frameData, ref channelIndex, ref localPos, ref localRot);
-
-        Debug.Log($"[CalculateRootPositionMath] After reading channels (before scale):");
-        Debug.Log($"  localPos (from frame data): {localPos}");
-        Debug.Log($"  localRot: {localRot}");
-
-        // Apply BVH scale to position (same as BvhPlayableBehaviour does)
-        Vector3 scaledPos = Vector3.Scale(localPos, bvhScale);
-
-        Debug.Log($"[CalculateRootPositionMath] Final calculation:");
-        Debug.Log($"  bvhScale: {bvhScale}");
-        Debug.Log($"  scaledPos: {scaledPos}");
-
-        return scaledPos;
-    }
 
     /// <summary>
     /// Calculate root node position using GameObject method (Method B)
@@ -701,9 +654,19 @@ public class SceneFlowCalculator : MonoBehaviour
             return null;
         }
 
-        // Apply frame data with scale using BvhData
-        bvhData.SetRootTransform(rootJointTransform);
-        bvhData.UpdateTransforms(frameIndex, bvhScale, DatasetConfig.GetInstance().BvhRotationOffset, DatasetConfig.GetInstance().BvhPositionOffset);
+        // Apply frame data directly without modifying bvhData state
+        // NOTE: スケール・オフセットは適用しない
+        // (ドリフト補正・スケール・オフセット補正は後で container で適用される)
+        float[] frameData = bvhData.GetFrame(frameIndex);
+        if (frameData != null)
+        {
+            // 生データのみを適用（スケール・オフセットなし）
+            BvhData.ApplyFrameToTransforms(
+                bvhData.RootJoint,
+                rootJointTransform,
+                frameData
+            );
+        }
 
         if (debugMode)
             Debug.Log($"[SceneFlowCalculator] Created temporary skeleton with scale {bvhScale}");
@@ -971,13 +934,15 @@ public class SceneFlowCalculator : MonoBehaviour
     private void OnDrawGizmos()
     {
         // Draw current frame BVH (blue)
-        if (currentFrameContainer != null)
+        // 参照がnullまたは破棄されていないかチェック
+        if (currentFrameContainer != null && currentFrameContainer.gameObject != null)
         {
             DrawBvhContainerStructure(currentFrameContainer, Color.blue, 0.02f);
         }
 
         // Draw previous frame BVH (yellow)
-        if (previousFrameContainer != null)
+        // 参照がnullまたは破棄されていないかチェック
+        if (previousFrameContainer != null && previousFrameContainer.gameObject != null)
         {
             DrawBvhContainerStructure(previousFrameContainer, Color.yellow, 0.015f);
         }
@@ -1131,6 +1096,7 @@ public class SceneFlowCalculator : MonoBehaviour
             // Create new BoneDefinition object for this frame
             var boneDef = new BoneDefinition
             {
+                //初期化子でコピー
                 index = templateBone.index,
                 parentJoint = templateBone.parentJoint,
                 childJoint = templateBone.childJoint
