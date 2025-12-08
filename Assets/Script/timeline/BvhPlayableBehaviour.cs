@@ -91,7 +91,7 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         if (frameIndex < 0 || frameIndex >= bvhData.FrameCount) return;
 
         // Set root transform on BvhData and apply frame (scale/offset applied in PrepareFrame)
-        bvhData.SetRootTransform(BvhCharacterTransform.Find(bvhData.RootJoint.Name));
-        bvhData.UpdateTransforms(frameIndex);
+        Transform rootTransform = BvhCharacterTransform.Find(bvhData.RootJoint.Name);
+        bvhData.ApplyFrameToTransforms(frameIndex, rootTransform);
     }
 }

@@ -304,10 +304,7 @@ public static class BvhImporter
         if (bvhData == null || rootTransform == null) return;
         if (frameIndex < 0 || frameIndex >= bvhData.FrameCount) return;
 
-        float[] frameData = bvhData.GetFrame(frameIndex);
-        if (frameData == null) return;
-
         // Delegate to BvhData's unified implementation
-        BvhData.ApplyFrameToTransforms(bvhData.RootJoint, rootTransform, frameData);
+        bvhData.ApplyFrameToTransforms(frameIndex, rootTransform);
     }
 }

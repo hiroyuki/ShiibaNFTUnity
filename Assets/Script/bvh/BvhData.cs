@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Unity.VisualScripting;
 using UnityEngine;
 
 /// <summary>
@@ -61,9 +62,6 @@ public class BvhData
     public float FrameTime { get; set; }
     public float[][] Frames { get; set; }
 
-    /// <summary>Root transform in the Scene hierarchy (optional, set via SetRootTransform)</summary>
-    private Transform rootTransform;
-
     /// <summary>
     /// Get frames per second
     /// </summary>
@@ -73,24 +71,6 @@ public class BvhData
     /// Get total duration in seconds
     /// </summary>
     public float Duration => FrameCount * FrameTime;
-
-    /// <summary>
-    /// Set the root transform in the Scene hierarchy
-    /// Required for UpdateTransforms() to work
-    /// </summary>
-    /// <param name="root">Root transform of the character in the scene</param>
-    public void SetRootTransform(Transform root)
-    {
-        this.rootTransform = root;
-    }
-
-    /// <summary>
-    /// Get the root transform (if set)
-    /// </summary>
-    public Transform GetRootTransform()
-    {
-        return rootTransform;
-    }
 
     /// <summary>
     /// Get all joints in the hierarchy (excluding end sites)
@@ -166,47 +146,24 @@ public class BvhData
                $"  Duration: {Duration:F2}s";
     }
 
-    /// <summary>
-    /// Update the Scene transforms for a specific frame with optional adjustments
-    /// Applies BVH frame data to the stored rootTransform
-    /// </summary>
-    /// <param name="frameNumber">Frame index to apply (0-based)</param>
-    /// <param name="scale">Scale to apply to all joint positions (default: Vector3.one)</param>
-    /// <param name="rotationOffset">Rotation offset to apply to root joint (default: Vector3.zero)</param>
-    /// <param name="positionOffset">Position offset to apply to root joint (default: Vector3.zero)</param>
-    public void UpdateTransforms(int frameNumber)
-    {
-        if (rootTransform == null)
-        {
-            Debug.LogError("[BvhData] rootTransform not set. Call SetRootTransform() first.");
-            return;
-        }
-
-        if (frameNumber < 0 || frameNumber >= FrameCount)
-        {
-            Debug.LogWarning($"[BvhData] Frame index {frameNumber} out of range [0, {FrameCount - 1}]");
-            return;
-        }
-
-        float[] frameData = GetFrame(frameNumber);
-        if (frameData == null)
-            return;
-        ApplyFrameToTransforms(RootJoint, rootTransform, frameData);
-    }
 
     /// <summary>
     /// Apply BVH frame data to a Transform hierarchy with optional adjustments
     /// </summary>
-    /// <param name="rootJoint">Root joint of the BVH skeleton</param>
+    /// <param name="frameId">Frame index to apply</param>
     /// <param name="rootTransform">Root transform to apply motion to</param>
-    /// <param name="frameData">Frame data array (channel values)</param>
-    /// <param name="scale">Scale to apply to joint positions</param>
-    /// <param name="rotationOffset">Rotation offset for root joint</param>
-    /// <param name="positionOffset">Position offset for root joint</param>
-    public static void ApplyFrameToTransforms(BvhJoint rootJoint, Transform rootTransform, float[] frameData)
+    public void ApplyFrameToTransforms(int frameId, Transform rootTransform)
     {
         int channelIndex = 0;
-        ApplyJointRecursive(rootJoint, rootTransform, frameData, ref channelIndex);
+
+        float[] frameData = GetFrame(frameId);
+        if (frameData == null)
+        {
+            Debug.LogWarning($"Frame data for frame {frameId} is null");
+            return;   
+        }
+        
+        ApplyJointRecursive(RootJoint, rootTransform, frameData, ref channelIndex);
     }
 
     /// <summary>

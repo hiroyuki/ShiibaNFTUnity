@@ -430,7 +430,7 @@ public class SceneFlowCalculator : MonoBehaviour
         container.localScale = bvhScale;
 
         // Create BVH skeleton
-        Transform skeleton = CreateTemporaryBvhSkeletonWithScale(frameIndex, bvhScale);
+        Transform skeleton = CreateTemporaryBvhSkeletonWithScale(frameIndex);
         if (skeleton != null)
         {
             skeleton.SetParent(container, false);
@@ -468,34 +468,6 @@ public class SceneFlowCalculator : MonoBehaviour
         Debug.Log($"[OnShowSceneFlow] Calculated frame index from Timeline time {timelineTime}s: {frameIndex}");
         // SetFrameInfo(frameIndex, timelineTime);
         return frameIndex;
-    }
-
-
-
-    /// <summary>
-    /// Calculate root node position using GameObject method (Method B)
-    /// Applies BVH scale via PlayableMotionApplier
-    /// </summary>
-    private Vector3 CalculateRootPositionGameObject(int frameIndex, Vector3 bvhScale)
-    {
-        // Create temporary skeleton with scale applied
-        Transform tempSkeleton = CreateTemporaryBvhSkeletonWithScale(frameIndex, bvhScale);
-        if (tempSkeleton == null)
-        {
-            Debug.LogError("[SceneFlowCalculator] Failed to create temporary skeleton");
-            return Vector3.zero;
-        }
-
-        Debug.Log($"[CalculateRootPositionGameObject] Created temp skeleton: {tempSkeleton.name}");
-        Debug.Log($"[CalculateRootPositionGameObject] After applying frame data with scale - position: {tempSkeleton.position}");
-
-        // Get root position from temporary skeleton
-        Vector3 rootPos = tempSkeleton.position;
-
-        // Clean up
-        GameObject.Destroy(tempSkeleton.gameObject);
-
-        return rootPos;
     }
 
 
@@ -659,7 +631,7 @@ public class SceneFlowCalculator : MonoBehaviour
     /// Create temporary BVH skeleton with frame data applied and scale transform
     /// Uses PlayableMotionApplier to apply scale same as BvhPlayableBehaviour
     /// </summary>
-    private Transform CreateTemporaryBvhSkeletonWithScale(int frameIndex, Vector3 bvhScale)
+    private Transform CreateTemporaryBvhSkeletonWithScale(int frameIndex)
     {
         if (bvhData == null || bvhData.RootJoint == null)
         {
@@ -684,21 +656,7 @@ public class SceneFlowCalculator : MonoBehaviour
         }
 
         // Apply frame data directly without modifying bvhData state
-        // NOTE: スケール・オフセットは適用しない
-        // (ドリフト補正・スケール・オフセット補正は後で container で適用される)
-        float[] frameData = bvhData.GetFrame(frameIndex);
-        if (frameData != null)
-        {
-            // 生データのみを適用（スケール・オフセットなし）
-            BvhData.ApplyFrameToTransforms(
-                bvhData.RootJoint,
-                rootJointTransform,
-                frameData
-            );
-        }
-
-        if (debugMode)
-            Debug.Log($"[SceneFlowCalculator] Created temporary skeleton with scale {bvhScale}");
+        bvhData.ApplyFrameToTransforms(frameIndex, rootJointTransform);
 
         return tempSkeletonRoot;
     }
@@ -723,78 +681,6 @@ public class SceneFlowCalculator : MonoBehaviour
         {
             CreateBoneHierarchy(child, jointTransform);
         }
-    }
-
-
-    /// <summary>
-    /// Build frame history by backtracking from current BVH frame through historyFrameCount frames.
-    /// For each frame, calculates segment points and links them via previousPoint references.
-    /// </summary>
-    /// <param name="currentBvhFrame">Current BVH frame number to start backtracking from</param>
-    private void BuildFrameHistoryBacktrack(int currentBvhFrame)
-    {
-        frameHistory.Clear();
-
-        // Calculate the oldest frame to include in history
-        int oldestBvhFrame = Mathf.Max(0, currentBvhFrame - historyFrameCount + 1);
-
-        // Build segment points for each frame in history range
-        for (int bvhFrame = oldestBvhFrame; bvhFrame <= currentBvhFrame; bvhFrame++)
-        {
-            // Create bone segment array for this frame
-            var segmentsForFrame = new BoneSegmentPoint[boneTransforms.Count][];
-
-            // Generate 100 segment points for each bone
-            for (int boneIdx = 0; boneIdx < boneTransforms.Count; boneIdx++)
-            {
-                var segments = new BoneSegmentPoint[segmentsPerBone];
-                for (int segIdx = 0; segIdx < segmentsPerBone; segIdx++)
-                {
-                    segments[segIdx] = new BoneSegmentPoint(boneIdx, segIdx);
-                    segments[segIdx].frameIndex = bvhFrame;
-                }
-                segmentsForFrame[boneIdx] = segments;
-            }
-
-            // Calculate segment positions for this BVH frame
-            // Apply BVH frame data to bone transforms
-            ApplyBvhFrame(bvhFrame);
-
-            // Update segment positions from current bone transform positions
-            for (int boneIdx = 0; boneIdx < boneTransforms.Count; boneIdx++)
-            {
-                UpdateSegmentPositions(boneIdx, segmentsForFrame[boneIdx]);
-            }
-
-            // Create history entry
-            var entry = new FrameHistoryEntry
-            {
-                bvhFrameNumber = bvhFrame,
-                timelineTime = 0f,  // Will be calculated if needed
-                segments = segmentsForFrame
-            };
-            frameHistory.Add(entry);
-        }
-
-        // Link segments across frames via previousPoint references
-        LinkSegmentHistory();
-
-        if (debugMode)
-            Debug.Log($"[SceneFlowCalculator] Frame history built: {frameHistory.Count} frames ({oldestBvhFrame} to {currentBvhFrame})");
-    }
-
-    /// <summary>
-    /// Apply BVH frame data to bone transforms to prepare for segment point calculation.
-    /// Delegates to BvhData.UpdateTransforms() for proper BVH handling.
-    /// </summary>
-    /// <param name="bvhFrame">BVH frame number to apply</param>
-    private void ApplyBvhFrame(int bvhFrame)
-    {
-        if (bvhData == null)
-            return;
-
-        // Delegate BVH frame application to BvhData
-        bvhData.UpdateTransforms(bvhFrame);
     }
 
     /// <summary>
