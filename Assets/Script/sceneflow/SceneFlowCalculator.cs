@@ -70,6 +70,15 @@ public class SceneFlowCalculator : MonoBehaviour
     /// <summary>Joint motion data for all joints in current frame for visualization</summary>
     private readonly List<SegmentedBoneMotionData> jointMotionDataList = new();
 
+    /// <summary>Cached segment positions for current frame (per-bone arrays)</summary>
+    private SegmentedBoneMotionData[][] cachedCurrentFrameSegments;
+
+    /// <summary>Cached segment positions for previous frame (per-bone arrays)</summary>
+    private SegmentedBoneMotionData[][] cachedPreviousFrameSegments;
+
+    /// <summary>Cached motion vector data for bone segments</summary>
+    private List<SegmentedBoneMotionData> cachedSegmentMotionVectors;
+
     // Frame tracking
     private double currentFrameTime = 0f;
 
@@ -112,6 +121,9 @@ public class SceneFlowCalculator : MonoBehaviour
         previousFrameContainer = null;
         currentFrameBones.Clear();
         previousFrameBones.Clear();
+        cachedCurrentFrameSegments = null;
+        cachedPreviousFrameSegments = null;
+        cachedSegmentMotionVectors = null;
 
         // Validate BVH data
         if (bvhData == null)
@@ -174,6 +186,9 @@ public class SceneFlowCalculator : MonoBehaviour
             Debug.Log("[SceneFlowCalculator] No previous frame available (already at frame 0)");
             previousFrameBones.Clear();
         }
+
+        // Calculate and cache bone segment data for visualization
+        CacheSegmentDataForVisualization();
     }
 
     /// <summary>
@@ -558,6 +573,7 @@ public class SceneFlowCalculator : MonoBehaviour
     /// </summary>
     private void OnDrawGizmos()
     {
+        Debug.Log("[SceneFlowCalculator] OnDrawGizmos called");
         // Draw current frame BVH (blue)
         // 参照がnullまたは破棄されていないかチェック
         if (currentFrameContainer != null && currentFrameContainer.gameObject != null)
@@ -579,104 +595,42 @@ public class SceneFlowCalculator : MonoBehaviour
         DrawBoneSegmentMotionVectors();
 
         // Draw joint motion vectors (red arrows)
-        DrawMotionVectors();
+        // DrawMotionVectors();
     }
 
     /// <summary>
     /// Draw bone segment positions as small white spheres in Scene view
-    /// Draws segments for both current and previous frames
+    /// Uses pre-cached segment data for performance
     /// </summary>
     private void DrawBoneSegmentPositions()
     {
-        if (currentFrameBones.Count == 0 && previousFrameBones.Count == 0)
-            return;
-
         const float segmentSphereRadius = 0.003f;
 
         // Draw segments for current frame (white)
-        if (currentFrameBones.Count > 0)
+        if (cachedCurrentFrameSegments != null)
         {
-            for (int boneIdx = 0; boneIdx < currentFrameBones.Count; boneIdx++)
+            foreach (var boneSegments in cachedCurrentFrameSegments)
             {
-                SegmentedBoneMotionData[] segments = CalculateSegmentPositionsForBone(currentFrameBones, boneIdx);
-
-                foreach (SegmentedBoneMotionData segment in segments)
+                foreach (var segment in boneSegments)
                 {
                     Gizmos.color = Color.white;
                     Gizmos.DrawSphere(segment.position, segmentSphereRadius);
                 }
             }
-
-            if (debugMode && currentFrameBones.Count > 0)
-            {
-                BoneDefinition firstBone = currentFrameBones[0];
-                if (firstBone.parentTransform == null || firstBone.childTransform == null)
-                {
-                    Debug.LogWarning("[SceneFlowCalculator] DrawBoneSegmentPositions: Current frame bone transforms not set.");
-                }
-            }
         }
 
         // Draw segments for previous frame (light gray)
-        if (previousFrameBones.Count > 0)
+        if (cachedPreviousFrameSegments != null)
         {
-            for (int boneIdx = 0; boneIdx < previousFrameBones.Count; boneIdx++)
+            foreach (var boneSegments in cachedPreviousFrameSegments)
             {
-                SegmentedBoneMotionData[] segments = CalculateSegmentPositionsForBone(previousFrameBones, boneIdx);
-
-                foreach (SegmentedBoneMotionData segment in segments)
+                foreach (var segment in boneSegments)
                 {
-                    Gizmos.color = new Color(0.7f, 0.7f, 0.7f, 1f);  // Light gray for previous frame
+                    Gizmos.color = new Color(0.7f, 0.7f, 0.7f, 1f);
                     Gizmos.DrawSphere(segment.position, segmentSphereRadius);
                 }
             }
         }
-    }
-
-    /// <summary>
-    /// Calculate motion vectors for all bone segments by comparing current and previous frame positions
-    /// </summary>
-    /// <returns>List of SegmentedBoneMotionData with motion information</returns>
-    private List<SegmentedBoneMotionData> CalculateBoneSegmentMotionVectors()
-    {
-        var segmentMotionDataList = new List<SegmentedBoneMotionData>();
-
-        if (currentFrameBones.Count == 0 || previousFrameBones.Count == 0)
-            return segmentMotionDataList;
-
-        // For each bone, calculate segment positions in both frames and compute motion vectors
-        for (int boneIdx = 0; boneIdx < currentFrameBones.Count && boneIdx < previousFrameBones.Count; boneIdx++)
-        {
-            // Get segments from current frame
-            SegmentedBoneMotionData[] currentSegments = CalculateSegmentPositionsForBone(currentFrameBones, boneIdx);
-
-            // Get segments from previous frame
-            SegmentedBoneMotionData[] previousSegments = CalculateSegmentPositionsForBone(previousFrameBones, boneIdx);
-
-            // Match segments and compute motion vectors
-            for (int segIdx = 0; segIdx < currentSegments.Length && segIdx < previousSegments.Length; segIdx++)
-            {
-                SegmentedBoneMotionData currentSeg = currentSegments[segIdx];
-                SegmentedBoneMotionData previousSeg = previousSegments[segIdx];
-
-                // Create new segment data with motion information
-                var segmentWithMotion = new SegmentedBoneMotionData(
-                    currentSeg.boneIndex,
-                    currentSeg.segmentIndex,
-                    currentSeg.position,
-                    previousSeg.position,
-                    currentSeg.interpolationT,
-                    currentSeg.boneName
-                );
-
-                segmentMotionDataList.Add(segmentWithMotion);
-            }
-        }
-
-        if (debugMode)
-            Debug.Log($"[SceneFlowCalculator] Calculated motion vectors for {segmentMotionDataList.Count} bone segments");
-
-        return segmentMotionDataList;
     }
 
     /// <summary>
@@ -866,6 +820,85 @@ public class SceneFlowCalculator : MonoBehaviour
     }
 
     /// <summary>
+    /// Pre-calculate and cache all segment data for efficient rendering in OnDrawGizmos
+    /// Called once per frame update from OnShowSceneFlow
+    /// </summary>
+    private void CacheSegmentDataForVisualization()
+    {
+        // Calculate current frame segments
+        if (currentFrameBones.Count > 0)
+        {
+            cachedCurrentFrameSegments = new SegmentedBoneMotionData[currentFrameBones.Count][];
+            for (int boneIdx = 0; boneIdx < currentFrameBones.Count; boneIdx++)
+            {
+                cachedCurrentFrameSegments[boneIdx] = CalculateSegmentPositionsForBone(currentFrameBones, boneIdx);
+            }
+        }
+        else
+        {
+            cachedCurrentFrameSegments = null;
+        }
+
+        // Calculate previous frame segments
+        if (previousFrameBones.Count > 0)
+        {
+            cachedPreviousFrameSegments = new SegmentedBoneMotionData[previousFrameBones.Count][];
+            for (int boneIdx = 0; boneIdx < previousFrameBones.Count; boneIdx++)
+            {
+                cachedPreviousFrameSegments[boneIdx] = CalculateSegmentPositionsForBone(previousFrameBones, boneIdx);
+            }
+        }
+        else
+        {
+            cachedPreviousFrameSegments = null;
+        }
+
+        // Calculate motion vectors if both frames available
+        if (cachedCurrentFrameSegments != null && cachedPreviousFrameSegments != null)
+        {
+            cachedSegmentMotionVectors = new List<SegmentedBoneMotionData>();
+
+            for (int boneIdx = 0; boneIdx < cachedCurrentFrameSegments.Length && boneIdx < cachedPreviousFrameSegments.Length; boneIdx++)
+            {
+                var currentSegments = cachedCurrentFrameSegments[boneIdx];
+                var previousSegments = cachedPreviousFrameSegments[boneIdx];
+
+                for (int segIdx = 0; segIdx < currentSegments.Length && segIdx < previousSegments.Length; segIdx++)
+                {
+                    var currentSeg = currentSegments[segIdx];
+                    var previousSeg = previousSegments[segIdx];
+
+                    var segmentWithMotion = new SegmentedBoneMotionData(
+                        currentSeg.boneIndex,
+                        currentSeg.segmentIndex,
+                        currentSeg.position,
+                        previousSeg.position,
+                        currentSeg.interpolationT,
+                        currentSeg.boneName
+                    );
+
+                    cachedSegmentMotionVectors.Add(segmentWithMotion);
+                }
+            }
+        }
+        else
+        {
+            cachedSegmentMotionVectors = null;
+        }
+
+        if (debugMode)
+        {
+            int totalSegments = 0;
+            if (cachedCurrentFrameSegments != null)
+            {
+                foreach (var arr in cachedCurrentFrameSegments)
+                    totalSegments += arr.Length;
+            }
+            Debug.Log($"[SceneFlowCalculator] Cached {totalSegments} segments for visualization");
+        }
+    }
+
+    /// <summary>
     /// Get the actual BVH root transform from a container (skips TempBvhSkeleton)
     /// </summary>
     private Transform GetBvhRootTransform(Transform container)
@@ -882,74 +915,42 @@ public class SceneFlowCalculator : MonoBehaviour
 
     /// <summary>
     /// Draw bone segment motion vectors as colored arrows
-    /// Color gradient: blue (no motion) → red (high motion)
+    /// Uses pre-cached motion vector data for performance
     /// </summary>
     private void DrawBoneSegmentMotionVectors()
     {
+        if (cachedSegmentMotionVectors == null || cachedSegmentMotionVectors.Count == 0)
+            return;
+
         const float motionThreshold = 0.001f;
         const float arrowHeadSize = 0.002f;
 
-        var segmentMotions = CalculateBoneSegmentMotionVectors();
-
-        if (segmentMotions.Count == 0)
-            return;
-
         // Find max motion magnitude for color gradient
         float maxMagnitude = 0f;
-        foreach (var segment in segmentMotions)
+        foreach (var segment in cachedSegmentMotionVectors)
         {
             if (segment.motionMagnitude > maxMagnitude)
                 maxMagnitude = segment.motionMagnitude;
         }
 
         if (maxMagnitude < motionThreshold)
-            return;  // No significant motion
+            return;
 
         // Draw arrows for each segment
-        foreach (var segment in segmentMotions)
+        foreach (var segment in cachedSegmentMotionVectors)
         {
             if (segment.motionMagnitude > motionThreshold)
             {
-                // Calculate color based on motion magnitude (blue → red gradient)
                 float colorFactor = segment.motionMagnitude / maxMagnitude;
                 Color arrowColor = Color.Lerp(Color.blue, Color.red, colorFactor);
 
-                // Draw line from previous position to current position
-                // motionVector = current - previous, so: previous + motionVector = current
                 Gizmos.color = arrowColor;
-                Vector3 startPoint = segment.previousPosition;  // Start from previous frame position
-                Vector3 endPoint = segment.position;  // End at current frame position
+                Vector3 startPoint = segment.previousPosition;
+                Vector3 endPoint = segment.position;
                 Gizmos.DrawLine(startPoint, endPoint);
-
-                // Draw arrowhead at current position
                 Gizmos.DrawSphere(endPoint, arrowHeadSize);
             }
         }
     }
 
-    /// <summary>
-    /// Draw motion vectors as red arrows from current frame (blue) pointing toward previous frame (yellow)
-    /// Data stored as (current - previous), but visualized in opposite direction for clarity
-    /// </summary>
-    private void DrawMotionVectors()
-    {
-        const float motionThreshold = 0.001f;
-        const float arrowHeadSize = 0.01f;  // Smaller than yellow skeleton joints (0.015f)
-
-        foreach (var motionData in jointMotionDataList)
-        {
-            if (motionData.motionMagnitude > motionThreshold)
-            {
-                // Draw line from current position in opposite direction (visualize: blue → yellow)
-                // Data is stored as (current - previous), so negate it for visualization
-                Gizmos.color = Color.red;
-                Vector3 startPoint = motionData.position;
-                Vector3 endPoint = motionData.position - motionData.motionVector;  // Negate for visualization
-                Gizmos.DrawLine(startPoint, endPoint);
-
-                // Draw sphere at end point (toward previous position)
-                Gizmos.DrawSphere(endPoint, arrowHeadSize);
-            }
-        }
-    }
 }
