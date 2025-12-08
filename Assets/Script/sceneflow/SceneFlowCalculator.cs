@@ -3,7 +3,6 @@ using UnityEngine.Playables;
 using UnityEngine.Timeline;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 /// <summary>
 /// Calculates scene flow (3D velocity vectors) for point cloud points based on BVH bone motion.
@@ -32,95 +31,6 @@ public class SceneFlowCalculator : MonoBehaviour
         public bool isEndSiteChild;  // True if childJoint is an EndSite
     }
 
-    /// <summary>
-    /// Represents a point on a bone with its motion vector across frames.
-    /// Uses linked-list structure to maintain history chain backward through frames.
-    /// </summary>
-    [System.Serializable]
-    public class BoneSegmentPoint
-    {
-        /// <summary>Index of the bone this segment belongs to</summary>
-        public int boneIndex;
-
-        /// <summary>Index within the bone (0-99)</summary>
-        public int segmentIndex;
-
-        /// <summary>Frame number this segment point belongs to</summary>
-        public int frameIndex;
-
-        /// <summary>Current frame position in world space</summary>
-        public Vector3 position;
-
-        /// <summary>Reference to the previous frame's segment point (linked-list structure)</summary>
-        public BoneSegmentPoint previousPoint;
-
-        /// <summary>Motion vector (current position - previous position)</summary>
-        public Vector3 motionVector;
-
-        /// <summary>
-        /// Constructor for BoneSegmentPoint
-        /// </summary>
-        public BoneSegmentPoint(int boneIdx, int segIdx)
-        {
-            boneIndex = boneIdx;
-            segmentIndex = segIdx;
-            frameIndex = 0;
-            position = Vector3.zero;
-            previousPoint = null;
-            motionVector = Vector3.zero;
-        }
-    }
-
-    /// <summary>
-    /// Stores scene flow information for a single point cloud point
-    /// </summary>
-    [System.Serializable]
-    public class PointSceneFlow
-    {
-        /// <summary>Point cloud position</summary>
-        public Vector3 position;
-
-        /// <summary>Index of nearest segment point</summary>
-        public int nearestSegmentIndex;
-
-        /// <summary>Distance to nearest segment</summary>
-        public float distanceToSegment;
-
-        /// <summary>Motion vector from nearest segment (this frame)</summary>
-        public Vector3 currentMotionVector;
-
-        /// <summary>Accumulated motion over period</summary>
-        public Vector3 cumulativeMotionVector;
-
-        /// <summary>
-        /// Constructor for PointSceneFlow
-        /// </summary>
-        public PointSceneFlow()
-        {
-            position = Vector3.zero;
-            nearestSegmentIndex = -1;
-            distanceToSegment = float.MaxValue;
-            currentMotionVector = Vector3.zero;
-            cumulativeMotionVector = Vector3.zero;
-        }
-    }
-
-    /// <summary>
-    /// Represents a historical frame entry containing BVH frame number and segment points
-    /// </summary>
-    public struct FrameHistoryEntry
-    {
-        /// <summary>BVH frame number for this history entry</summary>
-        public int bvhFrameNumber;
-
-        /// <summary>Timeline time corresponding to this BVH frame</summary>
-        public float timelineTime;
-
-        /// <summary>Bone segment points for this frame (boneIndex -> array of 100 segments)</summary>
-        public BoneSegmentPoint[][] segments;
-    }
-
-
     [Header("Configuration")]
 
     /// <summary>Number of uniformly distributed points per bone (default: 100)</summary>
@@ -132,12 +42,6 @@ public class SceneFlowCalculator : MonoBehaviour
     [SerializeField]
     [Tooltip("Enable debug mode for logging and visualization")]
     private bool debugMode = true;
-
-    /// <summary>Maximum history depth for frame chain (default: 100 frames)</summary>
-    [SerializeField]
-    [Range(0, 1000)]
-    [Tooltip("Number of historical frames to maintain in the linked-list chain")]
-    private int historyFrameCount = 30;
 
     /// <summary>Cached BVH data obtained from BvhDataCache</summary>
     private BvhData bvhData;
@@ -157,9 +61,6 @@ public class SceneFlowCalculator : MonoBehaviour
     /// <summary>Template bone definitions from BVH hierarchy (BvhJoint pairs, not Transform references)</summary>
     private List<BoneDefinition> templateBones = new();
 
-    /// <summary>Cached bone positions for visualization via Gizmos</summary>
-    private Vector3[] visualizationBonePositions;
-
     /// <summary>Reference to CurrentFrameBVH container for Gizmo visualization (blue)</summary>
     private Transform currentFrameContainer;
 
@@ -168,15 +69,6 @@ public class SceneFlowCalculator : MonoBehaviour
 
     /// <summary>Joint motion data for all joints in current frame for visualization</summary>
     private readonly List<SegmentedBoneMotionData> jointMotionDataList = new();
-
-    /// <summary>All bone transforms gathered from BVH hierarchy in depth-first order</summary>
-    private readonly List<Transform> boneTransforms = new();
-
-    /// <summary>Historical frame entries built during CalculateSceneFlowForCurrentFrame()</summary>
-    private readonly List<FrameHistoryEntry> frameHistory = new();
-
-    /// <summary>Scene flow data for all points in current point cloud</summary>
-    private readonly List<PointSceneFlow> pointFlows = new();
 
     // Frame tracking
     private double currentFrameTime = 0f;
@@ -252,7 +144,7 @@ public class SceneFlowCalculator : MonoBehaviour
 
         // Display current frame (blue)
         DisplayBvhFrame("CurrentFrameBVH", currentFrameIndex, (float)currentFrameTime,
-                       positionOffset, rotationOffset, bvhScale, driftCorrectionData, Color.blue);
+                       positionOffset, rotationOffset, bvhScale, driftCorrectionData);
         currentFrameContainer = transform.Find("CurrentFrameBVH");
 
         // Gather bone definitions from BVH data (template only)
@@ -268,7 +160,7 @@ public class SceneFlowCalculator : MonoBehaviour
             float previousFrameTime = Mathf.Max(0f, (float)currentFrameTime - (1f / bvhData.FrameRate));
 
             DisplayBvhFrame("PreviousFrameBVH", previousFrameIndex, previousFrameTime,
-                           positionOffset, rotationOffset, bvhScale, driftCorrectionData, Color.yellow);
+                           positionOffset, rotationOffset, bvhScale, driftCorrectionData);
             previousFrameContainer = transform.Find("PreviousFrameBVH");
 
             // Link bone definitions to previous frame transforms (for segmentation)
@@ -283,31 +175,6 @@ public class SceneFlowCalculator : MonoBehaviour
             previousFrameBones.Clear();
         }
     }
-
-    // /// <summary>
-    // /// Get drift-corrected position for current frame time
-    // /// Uses BvhPlaybackCorrectionKeyframes directly based on currentFrameTime
-    // /// </summary>
-    // private Vector3 GetDriftCorrectedPositionForCurrentFrame(float frameTime, Vector3 basePositionOffset)
-    // {
-    //     // Get drift correction data
-    //     BvhPlaybackCorrectionKeyframes driftCorrectionData = GetDriftCorrectionData();
-    //             // Vector3 correctedPos = BvhPlaybackTransformCorrector.GetCorrectedRootPosition(timelineTime, driftCorrectionData, positionOffset);
-    //     // Quaternion correctedRot = BvhPlaybackTransformCorrector.GetCorrectedRootRotation(timelineTime, driftCorrectionData, rotationOffset);
-    //     // Step 5: Get drift correction for current frame time
-    //     if (driftCorrectionData == null)
-    //     {
-    //         Debug.Log("[SceneFlowCalculator] No drift correction data, using base offset only");
-    //         return basePositionOffset;
-    //     }
-
-    //     // Apply drift correction using BvhPlaybackTransformCorrector
-    //     Vector3 correctedPos = BvhPlaybackTransformCorrector.GetCorrectedRootPosition(frameTime, driftCorrectionData, basePositionOffset);
-
-    //     Debug.Log($"[SceneFlowCalculator] Drift correction: {basePositionOffset} -> {correctedPos}");
-
-    //     return correctedPos;
-    // }
 
     /// <summary>
     /// Get BVH position offset from DatasetConfig
@@ -398,12 +265,12 @@ public class SceneFlowCalculator : MonoBehaviour
     }
 
     /// <summary>
-    /// Display a BVH frame with specified container name, time, and visual color
+    /// Display a BVH frame with specified container name and time
     /// Handles creation/destruction of container and attachment of BVH skeleton
     /// </summary>
     private void DisplayBvhFrame(string containerName, int frameIndex, float frameTime,
                                  Vector3 positionOffset, Vector3 rotationOffset, Vector3 bvhScale,
-                                 BvhPlaybackCorrectionKeyframes driftCorrectionData, Color gizmoColor)
+                                 BvhPlaybackCorrectionKeyframes driftCorrectionData)
     {
         // Remove existing container if present
         Transform existingContainer = transform.Find(containerName);
@@ -681,163 +548,6 @@ public class SceneFlowCalculator : MonoBehaviour
         {
             CreateBoneHierarchy(child, jointTransform);
         }
-    }
-
-    /// <summary>
-    /// Update segment positions for a given bone based on current transform positions
-    /// </summary>
-    /// <param name="boneIndex">Index of the bone</param>
-    /// <param name="segments">Segment array to update</param>
-    private void UpdateSegmentPositions(int boneIndex, BoneSegmentPoint[] segments)
-    {
-        Transform boneTransform = boneTransforms[boneIndex];
-
-        // Get bone endpoints in world space
-        Vector3 boneStart = boneTransform.parent != null ? boneTransform.parent.position : boneTransform.position;
-        Vector3 boneEnd = boneTransform.position;
-
-        // Generate 100 uniformly distributed points along the bone
-        for (int segIdx = 0; segIdx < segments.Length; segIdx++)
-        {
-            float t = segments.Length > 1 ? (float)segIdx / (segments.Length - 1) : 0f;
-            segments[segIdx].position = Vector3.Lerp(boneStart, boneEnd, t);
-        }
-    }
-
-    /// <summary>
-    /// Link segment points across frames via previousPoint references
-    /// Calculates motion vectors from position differences
-    /// </summary>
-    private void LinkSegmentHistory()
-    {
-        for (int frameIdx = 1; frameIdx < frameHistory.Count; frameIdx++)
-        {
-            var currentEntry = frameHistory[frameIdx];
-            var previousEntry = frameHistory[frameIdx - 1];
-
-            // Link segments from each bone
-            for (int boneIdx = 0; boneIdx < boneTransforms.Count; boneIdx++)
-            {
-                var currentSegments = currentEntry.segments[boneIdx];
-                var previousSegments = previousEntry.segments[boneIdx];
-
-                for (int segIdx = 0; segIdx < currentSegments.Length; segIdx++)
-                {
-                    // Link to previous frame's segment
-                    currentSegments[segIdx].previousPoint = previousSegments[segIdx];
-
-                    // Calculate motion vector
-                    currentSegments[segIdx].motionVector = currentSegments[segIdx].position - previousSegments[segIdx].position;
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Draw debug visualization of segment points and motion vectors
-    /// Call from OnDrawGizmos() or similar
-    /// </summary>
-    public void DrawDebugVisualization()
-    {
-        if (frameHistory.Count == 0)
-            return;
-
-        var currentFrame = frameHistory[frameHistory.Count - 1];
-
-        // Draw bone structure (joints and connections)
-        DrawBoneStructure();
-
-        // Draw segment points for each bone
-        for (int boneIdx = 0; boneIdx < currentFrame.segments.Length; boneIdx++)
-        {
-            var segments = currentFrame.segments[boneIdx];
-            var boneColor = GetBoneColor(boneIdx);
-
-            for (int segIdx = 0; segIdx < segments.Length; segIdx++)
-            {
-                var segment = segments[segIdx];
-
-                // Draw segment point
-                Gizmos.color = boneColor;
-                Gizmos.DrawSphere(segment.position, 0.01f);
-
-                // Draw motion vector
-                if (segment.motionVector.magnitude > 0.001f)
-                {
-                    Gizmos.color = Color.cyan;
-                    Gizmos.DrawLine(segment.position, segment.position + segment.motionVector);
-                }
-            }
-        }
-
-        // Draw point flows if calculated
-        if (pointFlows.Count > 0)
-        {
-            for (int pointIdx = 0; pointIdx < pointFlows.Count; pointIdx++)
-            {
-                var flow = pointFlows[pointIdx];
-
-                // Draw point
-                Gizmos.color = Color.white;
-                Gizmos.DrawSphere(flow.position, 0.015f);
-
-                // Draw motion vector
-                if (flow.currentMotionVector.magnitude > 0.001f)
-                {
-                    Gizmos.color = Color.green;
-                    Gizmos.DrawLine(flow.position, flow.position + flow.currentMotionVector);
-                }
-
-                // Draw cumulative motion vector (if significant)
-                if (flow.cumulativeMotionVector.magnitude > 0.001f)
-                {
-                    Gizmos.color = Color.yellow;
-                    Gizmos.DrawLine(flow.position, flow.position + flow.cumulativeMotionVector * 0.1f);
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Draw bone structure: joints as spheres and bones as lines
-    /// Helps verify that bone positions are correctly loaded
-    /// </summary>
-    private void DrawBoneStructure()
-    {
-        if (boneTransforms.Count == 0)
-            return;
-
-        // Draw each bone's endpoints (joint positions)
-        for (int boneIdx = 0; boneIdx < boneTransforms.Count; boneIdx++)
-        {
-            Transform boneTransform = boneTransforms[boneIdx];
-
-            // Draw bone start (parent position)
-            Vector3 boneStart = boneTransform.parent != null ? boneTransform.parent.position : boneTransform.position;
-            Gizmos.color = Color.white;
-            Gizmos.DrawSphere(boneStart, 0.02f);
-
-            // Draw bone end (bone position)
-            Vector3 boneEnd = boneTransform.position;
-            Gizmos.color = Color.white;
-            Gizmos.DrawSphere(boneEnd, 0.02f);
-
-            // Draw line connecting bone start to end
-            Gizmos.color = new Color(1.0f, 1.0f, 1.0f, 0.5f);  // Semi-transparent white
-            Gizmos.DrawLine(boneStart, boneEnd);
-        }
-    }
-
-    /// <summary>
-    /// Get a distinct color for a bone based on its index
-    /// </summary>
-    /// <param name="boneIndex">Index of the bone</param>
-    /// <returns>Color for visualization</returns>
-    private Color GetBoneColor(int boneIndex)
-    {
-        // Cycle through distinct colors based on bone index
-        float hue = (boneIndex * 0.33f) % 1.0f;
-        return Color.HSVToRGB(hue, 0.8f, 0.9f);
     }
 
     /// <summary>
