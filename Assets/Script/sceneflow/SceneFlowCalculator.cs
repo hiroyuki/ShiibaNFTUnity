@@ -43,6 +43,27 @@ public class SceneFlowCalculator : MonoBehaviour
     [Tooltip("Enable debug mode for logging and visualization")]
     private bool debugMode = true;
 
+    [Header("Point Cloud Motion Vector Visualization")]
+    [SerializeField]
+    [Tooltip("Show motion vectors for point cloud points")]
+    private bool showPointCloudMotionVectors = true;
+
+    [SerializeField]
+    [Tooltip("Scale factor for motion vector arrows")]
+    private float pointCloudArrowScale = 0.01f;
+
+    [SerializeField]
+    [Tooltip("Maximum number of points to visualize (subsampling for performance)")]
+    private int maxPointsToVisualize = 10000;
+
+    [SerializeField]
+    [Tooltip("Only draw motion vectors for points visible in Scene view viewport")]
+    private bool useFrustumCulling = true;
+
+    [SerializeField]
+    [Tooltip("Draw lines from points to their matched bone segments")]
+    private bool showMatchingLines = false;
+
     /// <summary>Cached BVH data obtained from BvhDataCache</summary>
     private BvhData bvhData;
 
@@ -78,6 +99,15 @@ public class SceneFlowCalculator : MonoBehaviour
 
     /// <summary>Cached motion vector data for bone segments</summary>
     private List<SegmentedBoneMotionData> cachedSegmentMotionVectors;
+
+    /// <summary>Motion vectors for point cloud visualization</summary>
+    private Vector3[] pointCloudMotionVectors = null;
+
+    /// <summary>Point cloud positions for visualization</summary>
+    private Vector3[] pointCloudPositions = null;
+
+    /// <summary>Matched bone segment positions for each point</summary>
+    private Vector3[] matchedSegmentPositions = null;
 
     // Frame tracking
     private double currentFrameTime = 0f;
@@ -189,6 +219,125 @@ public class SceneFlowCalculator : MonoBehaviour
 
         // Calculate and cache bone segment data for visualization
         CacheSegmentDataForVisualization();
+
+        // NEW: Calculate point cloud motion vectors
+        CalculatePointCloudMotionVectors();
+    }
+
+    /// <summary>
+    /// Get bone segment data in GPU-compatible format
+    /// Converts cached SegmentedBoneMotionData to BoneSegmentGPUData array
+    /// </summary>
+    public BoneSegmentGPUData[] GetBoneSegmentGPUData()
+    {
+        if (cachedSegmentMotionVectors == null || cachedSegmentMotionVectors.Count == 0)
+        {
+            Debug.LogWarning("[SceneFlowCalculator] No cached segment motion vectors available");
+            return new BoneSegmentGPUData[0];
+        }
+
+        BoneSegmentGPUData[] gpuData = new BoneSegmentGPUData[cachedSegmentMotionVectors.Count];
+        for (int i = 0; i < cachedSegmentMotionVectors.Count; i++)
+        {
+            var seg = cachedSegmentMotionVectors[i];
+            gpuData[i] = new BoneSegmentGPUData
+            {
+                currentPosition = seg.position,
+                previousPosition = seg.previousPosition,
+                motionVector = seg.motionVector,
+                boneIndex = seg.boneIndex,
+                segmentIndex = seg.segmentIndex,
+                interpolationT = seg.interpolationT,
+                motionMagnitude = seg.motionMagnitude
+            };
+        }
+
+        return gpuData;
+    }
+
+    /// <summary>
+    /// Calculate motion vectors for point cloud points by finding nearest bone segment
+    /// Called after bone segment data is cached in OnShowSceneFlow()
+    /// </summary>
+    private void CalculatePointCloudMotionVectors()
+    {
+        // Get current frame point cloud mesh
+        MultiPointCloudView view = FindFirstObjectByType<MultiPointCloudView>();
+        if (view == null)
+        {
+            if (debugMode)
+                Debug.LogWarning("[SceneFlowCalculator] No MultiPointCloudView found in scene");
+            return;
+        }
+
+        // Get unified mesh from child GameObject "UnifiedPointCloudViewer"
+        Transform unifiedViewerTransform = view.transform.Find("UnifiedPointCloudViewer");
+        if (unifiedViewerTransform == null)
+        {
+            if (debugMode)
+                Debug.LogWarning("[SceneFlowCalculator] UnifiedPointCloudViewer child not found");
+            return;
+        }
+
+        MeshFilter meshFilter = unifiedViewerTransform.GetComponent<MeshFilter>();
+        if (meshFilter == null || meshFilter.sharedMesh == null)
+        {
+            if (debugMode)
+                Debug.LogWarning("[SceneFlowCalculator] No point cloud mesh found on UnifiedPointCloudViewer");
+            return;
+        }
+
+        Mesh mesh = meshFilter.sharedMesh;
+        Vector3[] vertices = mesh.vertices;
+
+        if (vertices.Length == 0)
+        {
+            if (debugMode)
+                Debug.LogWarning("[SceneFlowCalculator] Point cloud mesh has no vertices");
+            return;
+        }
+
+        // Get bone segment data
+        BoneSegmentGPUData[] segments = GetBoneSegmentGPUData();
+        if (segments.Length == 0)
+        {
+            if (debugMode)
+                Debug.LogWarning("[SceneFlowCalculator] No bone segment data available");
+            return;
+        }
+
+        // Calculate motion vectors (CPU nearest-neighbor search)
+        pointCloudPositions = vertices;
+        pointCloudMotionVectors = new Vector3[vertices.Length];
+        matchedSegmentPositions = new Vector3[vertices.Length];
+
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            Vector3 point = vertices[i];
+            float minDistSq = float.MaxValue;
+            int nearestIdx = -1;
+
+            // Brute-force nearest neighbor search
+            for (int s = 0; s < segments.Length; s++)
+            {
+                float distSq = (point - segments[s].currentPosition).sqrMagnitude;
+                if (distSq < minDistSq)
+                {
+                    minDistSq = distSq;
+                    nearestIdx = s;
+                }
+            }
+
+            // Assign motion vector and segment position from nearest segment
+            if (nearestIdx >= 0)
+            {
+                pointCloudMotionVectors[i] = segments[nearestIdx].motionVector;
+                matchedSegmentPositions[i] = segments[nearestIdx].currentPosition;
+            }
+        }
+
+        if (debugMode)
+            Debug.Log($"[SceneFlowCalculator] Calculated motion vectors for {vertices.Length} points using {segments.Length} bone segments");
     }
 
     /// <summary>
@@ -594,6 +743,12 @@ public class SceneFlowCalculator : MonoBehaviour
         // Draw bone segment motion vectors (blue→red arrows)
         DrawBoneSegmentMotionVectors();
 
+        // NEW: Draw point cloud motion vectors (with frustum culling)
+        if (showPointCloudMotionVectors && pointCloudMotionVectors != null)
+        {
+            DrawPointCloudMotionVectors();
+        }
+
         // Draw joint motion vectors (red arrows)
         // DrawMotionVectors();
     }
@@ -951,6 +1106,102 @@ public class SceneFlowCalculator : MonoBehaviour
                 Gizmos.DrawSphere(endPoint, arrowHeadSize);
             }
         }
+    }
+
+    /// <summary>
+    /// Draw motion vectors for point cloud points with frustum culling
+    /// Only draws vectors for points visible in Scene view viewport
+    /// </summary>
+    private void DrawPointCloudMotionVectors()
+    {
+        if (pointCloudPositions == null || pointCloudMotionVectors == null)
+            return;
+
+        // Get Scene view camera for frustum culling
+        Camera sceneCamera = null;
+#if UNITY_EDITOR
+        if (UnityEditor.SceneView.lastActiveSceneView != null)
+        {
+            sceneCamera = UnityEditor.SceneView.lastActiveSceneView.camera;
+        }
+#endif
+
+        // Build frustum planes for culling (only show points in viewport)
+        Plane[] frustumPlanes = null;
+        if (useFrustumCulling && sceneCamera != null)
+        {
+            frustumPlanes = GeometryUtility.CalculateFrustumPlanes(sceneCamera);
+        }
+
+        // Find max magnitude for color gradient
+        float maxMagnitude = 0f;
+        foreach (var mv in pointCloudMotionVectors)
+        {
+            if (mv.magnitude > maxMagnitude)
+                maxMagnitude = mv.magnitude;
+        }
+
+        // Subsample for performance (draw every Nth point)
+        int step = Mathf.Max(1, pointCloudPositions.Length / maxPointsToVisualize);
+        int visibleCount = 0;
+
+        for (int i = 0; i < pointCloudPositions.Length; i += step)
+        {
+            Vector3 motion = pointCloudMotionVectors[i];
+            if (motion.magnitude < 0.001f)
+                continue; // Skip near-zero motion
+
+            Vector3 start = pointCloudPositions[i];
+
+            // Frustum culling: only draw if point is in Scene view viewport
+            if (frustumPlanes != null)
+            {
+                Bounds pointBounds = new Bounds(start, Vector3.one * 0.01f);
+                if (!GeometryUtility.TestPlanesAABB(frustumPlanes, pointBounds))
+                {
+                    continue; // Skip points outside viewport
+                }
+            }
+
+            Vector3 end = start + motion * pointCloudArrowScale;
+
+            // Also check if endpoint is visible (where sphere will be drawn)
+            if (frustumPlanes != null)
+            {
+                Bounds endBounds = new Bounds(end, Vector3.one * 0.01f);
+                if (!GeometryUtility.TestPlanesAABB(frustumPlanes, endBounds))
+                {
+                    continue; // Skip if endpoint is outside viewport
+                }
+            }
+
+            // Color gradient: blue (slow) → red (fast)
+            float t = maxMagnitude > 0 ? motion.magnitude / maxMagnitude : 0;
+            Gizmos.color = Color.Lerp(Color.blue, Color.red, t);
+
+            Gizmos.DrawLine(start, end);
+            Gizmos.DrawSphere(end, 0.005f);
+
+            // Draw line to matched bone segment
+            if (showMatchingLines && matchedSegmentPositions != null && i < matchedSegmentPositions.Length)
+            {
+                Vector3 segmentPos = matchedSegmentPositions[i];
+                Gizmos.color = Color.yellow;
+                Gizmos.DrawLine(start, segmentPos);
+            }
+
+            visibleCount++;
+        }
+
+        // Debug info (only in editor)
+#if UNITY_EDITOR
+        if (visibleCount > 0 && sceneCamera != null)
+        {
+            UnityEditor.Handles.Label(
+                sceneCamera.transform.position + sceneCamera.transform.forward * 2f,
+                $"Visible motion vectors: {visibleCount}");
+        }
+#endif
     }
 
 }

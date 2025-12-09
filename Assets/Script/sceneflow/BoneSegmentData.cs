@@ -62,3 +62,20 @@ public class SegmentedBoneMotionData
         motionMagnitude = motionVector.magnitude;
     }
 }
+
+/// <summary>
+/// GPU-compatible bone segment data structure for motion vector assignment
+/// Matches memory layout for ComputeBuffer upload (StructLayout.Sequential)
+/// Used for passing bone segment data to compute shaders or offline processing
+/// </summary>
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+public struct BoneSegmentGPUData
+{
+    public Vector3 currentPosition;
+    public Vector3 previousPosition;
+    public Vector3 motionVector;
+    public int boneIndex;
+    public int segmentIndex;
+    public float interpolationT;
+    public float motionMagnitude;
+}
