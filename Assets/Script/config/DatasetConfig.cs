@@ -20,7 +20,6 @@ public class DatasetConfig : ScriptableObject
     [SerializeField] private Vector3 bvhRotationOffset = Vector3.zero;
     [SerializeField] private Vector3 bvhScale = Vector3.one;
     [SerializeField] private float bvhOverrideFrameRate = 0f;
-    [SerializeField] private int bvhFrameOffset = 0;
 
     [Header("Processing Mode")]
     [SerializeField] private ProcessingType processingType = ProcessingType.PLY;
@@ -62,7 +61,6 @@ public class DatasetConfig : ScriptableObject
     public Vector3 BvhRotationOffset => bvhRotationOffset;
     public Vector3 BvhScale => bvhScale;
     public float BvhOverrideFrameRate => bvhOverrideFrameRate;
-    public int BvhFrameOffset => bvhFrameOffset;
     public ProcessingType ProcessingType => processingType;
     public bool EnablePlyExport => enablePlyExport;
     public string BinaryDataRootPath => binaryDataRootPath;

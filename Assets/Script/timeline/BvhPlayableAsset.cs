@@ -22,8 +22,6 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     [SerializeField] private Vector3 positionOffset = Vector3.zero;
     [SerializeField] private Vector3 rotationOffset = Vector3.zero;
     [SerializeField] private Vector3 scale = Vector3.one;
-    [SerializeField] private float overrideFrameRate = 0f;
-    [SerializeField] private int frameOffset = 0;
 
     // Cached BVH data
     private BvhData cachedBvhData;
@@ -49,7 +47,7 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     /// <summary>
     /// Get transform settings from DatasetConfig or override values
     /// </summary>
-    private void GetTransformSettings(out Vector3 position, out Vector3 rotation, out Vector3 scaleVal, out float frameRate, out int frameOff)
+    private void GetTransformSettings(out Vector3 position, out Vector3 rotation, out Vector3 scaleVal)
     {
         DatasetConfig config = DatasetConfig.GetInstance();
 
@@ -58,16 +56,12 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
             position = config.BvhPositionOffset;
             rotation = config.BvhRotationOffset;
             scaleVal = config.BvhScale;
-            frameRate = config.BvhOverrideFrameRate;
-            frameOff = config.BvhFrameOffset;
         }
         else
         {
             position = positionOffset;
             rotation = rotationOffset;
             scaleVal = scale;
-            frameRate = overrideFrameRate;
-            frameOff = frameOffset;
         }
     }
 
@@ -107,24 +101,16 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
         }
 
         // Get transform settings from DatasetConfig or overrides
-        GetTransformSettings(out Vector3 position, out Vector3 rotation, out Vector3 scaleVal,
-                           out float frameRate, out int frameOff);
+        GetTransformSettings(out Vector3 position, out Vector3 rotation, out Vector3 scaleVal);
 
         // Set frame rate
-        if (behaviour.bvhData != null)
-        {
-            behaviour.frameRate = frameRate > 0 ? frameRate : behaviour.bvhData.FrameRate;
-        }
-        else
-        {
-            behaviour.frameRate = frameRate > 0 ? frameRate : 30f;
-        }
+        behaviour.frameRate = behaviour.bvhData.FrameRate;
+
 
         // Apply transform adjustments
         behaviour.PositionOffset = position;
         behaviour.RotationOffset = rotation;
         behaviour.scale = scaleVal;
-        behaviour.frameOffset = frameOff;
 
         // Set drift correction data from DatasetConfig
         var config = DatasetConfig.GetInstance();
