@@ -51,18 +51,18 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         // Initialize based on configured processing type
         ProcessingType processingType = GetDatasetConfig().ProcessingType;
 
-        if (processingType == ProcessingType.PLY)
+        if (processingType == ProcessingType.PLY || processingType == ProcessingType.PLY_WITH_MOTION)
         {
-            if (TryInitializeHandler(new PlyModeHandler()))
+            if (TryInitializeHandler(new PlyModeHandler(processingType)))
             {
-                Debug.Log("PLY mode initialized successfully");
+                Debug.Log($"{processingType} mode initialized successfully");
                 SetupTimelineDuration();
                 return;
             }
             else
             {
-                Debug.LogWarning("PLY mode initialization failed. No fallback available for PLY mode.");
-                SetupStatusUI.ShowStatus("ERROR: PLY mode initialization failed");
+                Debug.LogWarning($"{processingType} mode initialization failed. No fallback available.");
+                SetupStatusUI.ShowStatus($"ERROR: {processingType} mode initialization failed");
                 return;
             }
         }

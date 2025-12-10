@@ -28,6 +28,7 @@ public static class PlyImporter
                 string line;
                 int vertexCount = 0;
                 bool isBinaryFormat = false;
+                bool hasMotionVectors = false;
                 bool headerComplete = false;
 
                 // Read header line by line
@@ -56,6 +57,14 @@ public static class PlyImporter
                             vertexCount = int.Parse(parts[2]);
                         }
                     }
+                    else if (line.StartsWith("property"))
+                    {
+                        // Detect motion vector properties
+                        if (line.Contains("float vx") || line.Contains("float vy") || line.Contains("float vz"))
+                        {
+                            hasMotionVectors = true;
+                        }
+                    }
                     else if (line.StartsWith("end_header"))
                     {
                         headerComplete = true;
@@ -71,6 +80,7 @@ public static class PlyImporter
                 // Read binary vertex data
                 Vector3[] vertices = new Vector3[vertexCount];
                 Color32[] colors = new Color32[vertexCount];
+                Vector3[] motionVectors = hasMotionVectors ? new Vector3[vertexCount] : null;
 
                 for (int i = 0; i < vertexCount; i++)
                 {
@@ -85,6 +95,15 @@ public static class PlyImporter
                     byte g = br.ReadByte();
                     byte b = br.ReadByte();
                     colors[i] = new Color32(r, g, b, 255);
+
+                    // Read motion vector if present (3 floats)
+                    if (hasMotionVectors)
+                    {
+                        float vx = br.ReadSingle();
+                        float vy = br.ReadSingle();
+                        float vz = br.ReadSingle();
+                        motionVectors[i] = new Vector3(vx, vy, vz);
+                    }
                 }
 
                 // Create mesh
@@ -92,6 +111,12 @@ public static class PlyImporter
                 mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32; // Support large meshes
                 mesh.vertices = vertices;
                 mesh.colors32 = colors;
+
+                // Store motion vectors in UV1 channel if present
+                if (hasMotionVectors && motionVectors != null)
+                {
+                    mesh.SetUVs(1, motionVectors);
+                }
 
                 // Create indices for point topology
                 int[] indices = new int[vertexCount];
@@ -102,7 +127,7 @@ public static class PlyImporter
                 mesh.SetIndices(indices, MeshTopology.Points, 0);
                 mesh.RecalculateBounds();
 
-                Debug.Log($"Successfully imported {vertexCount} points from: {filePath}");
+                Debug.Log($"Successfully imported {vertexCount} points {(hasMotionVectors ? "with motion vectors " : "")}from: {filePath}");
                 return mesh;
             }
         }

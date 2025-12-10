@@ -102,7 +102,7 @@ namespace ShiibaNFT.BVH
             jointTransform.localRotation = Quaternion.identity;
             jointTransform.localScale = Vector3.one;
 
-            Debug.Log($"[BvhJointHierarchyBuilder] Created joint '{joint.Name}' under '{parent.name}'");
+            // Debug.Log($"[BvhJointHierarchyBuilder] Created joint '{joint.Name}' under '{parent.name}'");
 
             return jointTransform;
         }

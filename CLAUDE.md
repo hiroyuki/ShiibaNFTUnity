@@ -150,6 +150,51 @@ Assets/Script/
         └── (empty)
 ```
 
+## Scene Hierarchy Structure
+
+The typical runtime scene hierarchy follows this structure:
+
+```
+SampleScene (or your scene name)
+├── Main Camera
+├── Directional Light
+├── PointCloudTimeline           # Timeline controller
+├── BoundingVolume               # Debug visualization
+├── ConfigManager                # Configuration management
+├── EventSystem
+└── world                        # Root transform for all runtime objects
+    ├── MultiCameraPointCloud    # Multi-camera orchestration
+    │   └── MultiPointCloudView_PLY  # Point cloud view (has MultiPointCloudView component)
+    │       └── UnifiedPointCloudViewer  # Unified mesh (has MeshFilter with combined point cloud)
+    ├── SceneFlow                # Scene flow / motion vector calculation
+    │   ├── CurrentFrameBVH      # Current frame skeleton
+    │   │   └── TempBvhSkeleton_N
+    │   └── PreviousFrameBVH     # Previous frame skeleton
+    │       └── TempBvhSkeleton_N-1
+    └── BVH_Character            # Main BVH character visualization
+        ├── root                 # BVH root joint hierarchy
+        └── BVH_Visuals          # Skeleton visualization (has BvhSkeletonVisualizer)
+```
+
+**Key Hierarchy Notes:**
+
+1. **world GameObject**: Root container positioned at (0.614, -4.747, 4.811) to offset camera space coordinates
+2. **MultiPointCloudView_PLY**: Positioned at (-0.614, 4.747, -4.811) to cancel out world offset, making local space = world space
+3. **UnifiedPointCloudViewer**: Contains the actual combined point cloud mesh from all cameras (MeshFilter.sharedMesh)
+4. **SceneFlow**: Contains scene flow calculation components and temporary skeleton instances for motion vector computation
+5. **BVH_Character**: Main character skeleton created by Timeline playback
+
+**Component Locations:**
+- `MultiCameraPointCloudManager`: On `MultiCameraPointCloud` GameObject
+- `MultiPointCloudView`: On `MultiPointCloudView_PLY` GameObject
+- `SceneFlowCalculator`: On `SceneFlow` GameObject
+- `BvhSkeletonVisualizer`: On `BVH_Visuals` GameObject under `BVH_Character`
+
+**Coordinate Space:**
+- Point cloud vertices are in camera space by default
+- The world/MultiPointCloudView_PLY offset hierarchy ensures local vertex positions align with world space bone positions
+- This allows direct nearest-neighbor search without coordinate transformation
+
 ## Development Commands
 
 ### Opening & Building

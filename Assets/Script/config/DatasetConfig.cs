@@ -24,7 +24,7 @@ public class DatasetConfig : ScriptableObject
 
     [Header("Processing Mode")]
     [SerializeField] private ProcessingType processingType = ProcessingType.PLY;
-    [Tooltip("PLY: Use pre-exported PLY files, CPU/GPU/ONESHADER: Use raw sensor data with specified processor")]
+    [Tooltip("PLY: Use PLY files from PLY/ folder, PLY_WITH_MOTION: Use PLY files with motion vectors from PLY_WithMotion/ folder, CPU/GPU/ONESHADER: Use raw sensor data")]
     [SerializeField] private bool enablePlyExport = false;
     [Tooltip("When using binary mode, export frames as PLY files")]
 

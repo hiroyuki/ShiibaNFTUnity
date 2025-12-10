@@ -440,7 +440,7 @@ public class SceneFlowCalculator : MonoBehaviour
         Transform existingContainer = transform.Find(containerName);
         if (existingContainer != null)
         {
-            Destroy(existingContainer.gameObject);
+            DestroyImmediate(existingContainer.gameObject);
             // 参照をnullにして、OnDrawGizmosで破棄前のGameObjectを使わないようにする
             if (containerName == "CurrentFrameBVH")
                 currentFrameContainer = null;
@@ -1031,7 +1031,7 @@ public class SceneFlowCalculator : MonoBehaviour
                         currentSeg.interpolationT,
                         currentSeg.boneName
                     );
-
+                    // Debug.Log($"[SceneFlowCalculator] Segment Motion: BoneIndex={segmentWithMotion.boneIndex}, SegmentIndex={segmentWithMotion.segmentIndex}, CurrentPos={segmentWithMotion.position}, PreviousPos={segmentWithMotion.previousPosition}, MotionVector={segmentWithMotion.motionVector}, Magnitude={segmentWithMotion.motionMagnitude}");    
                     cachedSegmentMotionVectors.Add(segmentWithMotion);
                 }
             }
@@ -1202,6 +1202,128 @@ public class SceneFlowCalculator : MonoBehaviour
                 $"Visible motion vectors: {visibleCount}");
         }
 #endif
+    }
+
+    // ============================================================================
+    // PUBLIC METHODS FOR BATCH PROCESSING (Phase 3: Offline Pre-computation Tool)
+    // ============================================================================
+
+    /// <summary>
+    /// Calculate bone segments for a specific frame pair
+    /// PUBLIC METHOD for batch processing
+    /// Automatically applies drift correction from DatasetConfig
+    /// </summary>
+    public void CalculateBoneSegmentsForFramePair(int currentFrame, int previousFrame)
+    {
+        // Initialize BVH data from cache if not already loaded
+        if (bvhData == null)
+        {
+            TryAutoInitializeBvhData();
+            if (bvhData == null)
+            {
+                Debug.LogError("[SceneFlowCalculator] Cannot calculate bone segments - BvhData is null. Ensure BvhDataCache is initialized.");
+                return;
+            }
+        }
+
+        // Get config data (includes drift correction keyframes)
+        Vector3 positionOffset = GetBvhPositionOffset();
+        Vector3 rotationOffset = GetBvhRotationOffset();
+        Vector3 bvhScale = GetBvhScale();
+        BvhPlaybackCorrectionKeyframes driftData = GetDriftCorrectionData();
+
+        // Calculate frame times (for drift correction interpolation)
+        float currentFrameTime = currentFrame * bvhData.FrameTime;
+        float previousFrameTime = previousFrame * bvhData.FrameTime;
+
+        Debug.Log($"[SceneFlowCalculator] Calculating bone segments for frame pair ({previousFrame}, {currentFrame}) at times ({previousFrameTime}s, {currentFrameTime}s)");
+
+        // Prepare template bones from BVH hierarchy (if not already done)
+        if (templateBones.Count == 0)
+        {
+            GatherBoneHierarchyFromBvhData();
+            GatherBoneDefinitionsFromBvhData();
+        }
+
+        // Create BVH skeletons using existing DisplayBvhFrame()
+        // IMPORTANT: DisplayBvhFrame() applies drift correction internally
+        //   via BvhPlaybackTransformCorrector (lines 457-458)
+        DisplayBvhFrame("CurrentFrameBVH", currentFrame, currentFrameTime,
+                        positionOffset, rotationOffset, bvhScale, driftData);
+        DisplayBvhFrame("PreviousFrameBVH", previousFrame, previousFrameTime,
+                        positionOffset, rotationOffset, bvhScale, driftData);
+
+        // Get container references
+        currentFrameContainer = transform.Find("CurrentFrameBVH");
+        previousFrameContainer = transform.Find("PreviousFrameBVH");
+
+        // Link bone definitions to frame transforms (CRITICAL STEP - was missing!)
+        currentFrameBones = LinkBoneDefinitionsToFrame(currentFrameContainer);
+        previousFrameBones = LinkBoneDefinitionsToFrame(previousFrameContainer);
+
+        // Calculate bone segments using existing method
+        CacheSegmentDataForVisualization();
+
+        if (debugMode)
+            Debug.Log($"[SceneFlowCalculator] Calculated bone segments for frame pair ({previousFrame}, {currentFrame}) - {currentFrameBones.Count} bones");
+    }
+
+    /// <summary>
+    /// Calculate motion vectors for a given mesh using current bone segment data
+    /// PUBLIC METHOD for batch processing
+    /// Must call CalculateBoneSegmentsForFramePair() first to populate bone segment data
+    /// </summary>
+    public Vector3[] CalculateMotionVectorsForMesh(Mesh mesh)
+    {
+        if (mesh == null || mesh.vertices.Length == 0)
+        {
+            Debug.LogWarning("[SceneFlowCalculator] Invalid mesh provided");
+            return new Vector3[0];
+        }
+
+        Vector3[] vertices = mesh.vertices;
+        BoneSegmentGPUData[] segments = GetBoneSegmentGPUData();
+        // for (int i = 0; i < segments.Length; i++)
+        // {
+        //     Debug.Log($"[SceneFlowCalculator] Segment {i}: BoneIndex={segments[i].boneIndex}, SegmentIndex={segments[i].segmentIndex}, CurrentPos={segments[i].currentPosition}, PreviousPos={segments[i].previousPosition}, MotionVector={segments[i].motionVector}, Magnitude={segments[i].motionMagnitude}");
+        // }
+
+        if (segments.Length == 0)
+        {
+            Debug.LogWarning("[SceneFlowCalculator] No bone segment data available. Call CalculateBoneSegmentsForFramePair() first.");
+            return new Vector3[vertices.Length]; // Return zero vectors
+        }
+
+        Vector3[] motionVectors = new Vector3[vertices.Length];
+        // Reuse existing nearest-neighbor logic from CalculatePointCloudMotionVectors()
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            Vector3 point = vertices[i];
+            float minDistSq = float.MaxValue;
+            int nearestIdx = -1;
+
+            // Brute-force nearest neighbor search
+            for (int s = 0; s < segments.Length; s++)
+            {
+                float distSq = (point - segments[s].currentPosition).sqrMagnitude;
+                if (distSq < minDistSq)
+                {
+                    minDistSq = distSq;
+                    nearestIdx = s;
+                }
+            }
+
+            // Assign motion vector from nearest segment
+            if (nearestIdx >= 0)
+            {
+                motionVectors[i] = segments[nearestIdx].motionVector;
+            }
+        }
+
+        if (debugMode)
+            Debug.Log($"[SceneFlowCalculator] Calculated motion vectors for {vertices.Length} points using {segments.Length} bone segments");
+
+        return motionVectors;
     }
 
 }

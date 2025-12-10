@@ -963,6 +963,7 @@ MonoBehaviour:
   pointCloudArrowScale: 0.01
   maxPointsToVisualize: 10000
   useFrustumCulling: 1
+  showMatchingLines: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

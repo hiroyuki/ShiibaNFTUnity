@@ -84,6 +84,15 @@ public class MultiPointCloudView : MonoBehaviour
             unifiedMesh.Clear();
             unifiedMesh.vertices = newMesh.vertices;
             unifiedMesh.colors32 = newMesh.colors32;
+
+            // Copy UV channels (including UV1 for motion vectors)
+            List<Vector3> uv1Data = new List<Vector3>();
+            newMesh.GetUVs(1, uv1Data);
+            if (uv1Data.Count > 0)
+            {
+                unifiedMesh.SetUVs(1, uv1Data);
+            }
+
             unifiedMesh.SetIndices(newMesh.GetIndices(0), MeshTopology.Points, 0);
             unifiedMesh.RecalculateBounds();
         }
@@ -151,9 +160,15 @@ public class MultiPointCloudView : MonoBehaviour
     /// </summary>
     public void LoadFromPLY(string filePath)
     {
+        Debug.Log($"[MultiPointCloudView] Loading PLY file: {filePath}");
         Mesh loadedMesh = PlyImporter.ImportFromPLY(filePath);
         if (loadedMesh != null)
         {
+            // Check if loaded mesh has motion vectors
+            List<Vector3> uv1Check = new List<Vector3>();
+            loadedMesh.GetUVs(1, uv1Check);
+            Debug.Log($"[MultiPointCloudView] Loaded mesh has {uv1Check.Count} UV1 entries (motion vectors)");
+
             UpdateUnifiedMesh(loadedMesh);
         }
         else

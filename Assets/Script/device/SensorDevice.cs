@@ -22,7 +22,8 @@ public enum ProcessingType
     CPU,
     GPU,
     ONESHADER,
-    PLY
+    PLY,
+    PLY_WITH_MOTION
 }
 
 [Serializable]

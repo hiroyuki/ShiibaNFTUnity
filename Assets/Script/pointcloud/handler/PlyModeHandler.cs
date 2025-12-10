@@ -5,20 +5,28 @@ using UnityEngine.Playables;
 /// <summary>
 /// Handler for PLY mode - loads pre-exported PLY files
 /// Provides simple playback without processing raw sensor data
+/// Supports both regular PLY and PLY with motion vectors
 /// </summary>
 public class PlyModeHandler : BaseProcessingModeHandler
 {
     private PlyFrameController plyFrameController;
+    private ProcessingType processingType;
 
-    public override ProcessingType ProcessingType => ProcessingType.PLY;
+    public override ProcessingType ProcessingType => processingType;
+
+    public PlyModeHandler(ProcessingType type = ProcessingType.PLY)
+    {
+        processingType = type;
+    }
 
     protected override bool InitializeInternal()
     {
         SetupStatusUI.ShowStatus("Initializing PLY mode...");
 
-        // Create PLY frame controller
-        // Check if PLY folder exists (new Assets-based datasets)
-        string plyFolder = System.IO.Path.Combine(rootDirectory, "PLY");
+        // Determine PLY folder based on processing type
+        string plyFolderName = processingType == ProcessingType.PLY_WITH_MOTION ? "PLY_WithMotion" : "PLY";
+        string plyFolder = System.IO.Path.Combine(rootDirectory, plyFolderName);
+
         if (System.IO.Directory.Exists(plyFolder))
         {
             // Use PLY folder as root for the frame controller
