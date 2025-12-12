@@ -958,6 +958,7 @@ GameObject:
   m_Component:
   - component: {fileID: 954508064}
   - component: {fileID: 954508065}
+  - component: {fileID: 954508066}
   m_Layer: 0
   m_Name: MultiCameraPointCloud
   m_TagString: Untagged
@@ -992,6 +993,32 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9039e76ce998ee8438ea22f790141f0e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &954508066
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 954508062}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 18cc6e70f33b7489e9f1e61e4f61aa5d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  targetVertexPercentage: 20
+  enablePreview: 1
+  pointSize: 0.4
+  overrideColors: 0
+  keptVertexColor: {r: 0, g: 1, b: 0, a: 1}
+  showDiscardedVertices: 0
+  discardedVertexColor: {r: 1, g: 0, b: 0, a: 0.2}
+  enablePlyExport: 0
+  plyExportSubdirectory: PLY_Filtered_Motion
+  exportPerFrame: 0
+  showDebugInfo: 1
+  originalVertexCount: 0
+  currentDownsampledCount: 0
+  lastProcessingTimeMs: 0
 --- !u!1 &1010364000
 GameObject:
   m_ObjectHideFlags: 0
