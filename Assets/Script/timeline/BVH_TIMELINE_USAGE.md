@@ -351,7 +351,6 @@ public Vector3 BvhPositionOffset { get; set; }
 public Vector3 BvhRotationOffset { get; set; }
 public Vector3 BvhScale { get; set; }
 public bool BvhApplyRootMotion { get; set; }
-public float BvhOverrideFrameRate { get; set; }  // 0 = use BVH's rate
 public int BvhFrameOffset { get; set; }
 public BvhPlaybackCorrectionKeyframes BvhPlaybackCorrectionKeyframes { get; set; }
 ```

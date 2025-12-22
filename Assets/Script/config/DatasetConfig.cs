@@ -16,10 +16,11 @@ public class DatasetConfig : ScriptableObject
     [Tooltip("Drag the dataset folder here (Assets/Data/Datasets/{DatasetName}/)")]
 
     [Header("BVH Configuration")]
+    [SerializeField] private bool enableBvh = true;
+    [Tooltip("Enable/disable BVH skeleton loading and playback")]
     [SerializeField] private Vector3 bvhPositionOffset = Vector3.zero;
     [SerializeField] private Vector3 bvhRotationOffset = Vector3.zero;
     [SerializeField] private Vector3 bvhScale = Vector3.one;
-    [SerializeField] private float bvhOverrideFrameRate = 0f;
 
     [Header("Processing Mode")]
     [SerializeField] private ProcessingType processingType = ProcessingType.PLY;
@@ -57,10 +58,10 @@ public class DatasetConfig : ScriptableObject
         if (datasetFolder == null) return "";
         return AssetDatabase.GetAssetPath(datasetFolder);
     }
+    public bool EnableBvh => enableBvh;
     public Vector3 BvhPositionOffset => bvhPositionOffset;
     public Vector3 BvhRotationOffset => bvhRotationOffset;
     public Vector3 BvhScale => bvhScale;
-    public float BvhOverrideFrameRate => bvhOverrideFrameRate;
     public ProcessingType ProcessingType => processingType;
     public bool EnablePlyExport => enablePlyExport;
     public string BinaryDataRootPath => binaryDataRootPath;
@@ -80,6 +81,11 @@ public class DatasetConfig : ScriptableObject
     /// </summary>
     public string GetBvhFilePath()
     {
+        if (!enableBvh)
+        {
+            return "";
+        }
+
         string bvhFolder = GetBvhFolderPath();
         if (!Directory.Exists(bvhFolder))
         {
@@ -127,11 +133,15 @@ public class DatasetConfig : ScriptableObject
     /// </summary>
     public bool ValidatePaths()
     {
-        // Check BVH file
-        if (!System.IO.File.Exists(GetBvhFilePath()))
+        // Check BVH file only if BVH is enabled
+        if (enableBvh)
         {
-            Debug.LogWarning($"BVH file not found: {GetBvhFilePath()}");
-            return false;
+            string bvhPath = GetBvhFilePath();
+            if (string.IsNullOrEmpty(bvhPath) || !System.IO.File.Exists(bvhPath))
+            {
+                Debug.LogWarning($"BVH file not found: {bvhPath}");
+                return false;
+            }
         }
 
         // Check PointCloud directory

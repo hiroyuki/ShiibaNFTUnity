@@ -23,6 +23,13 @@ public static class BvhDataCache
             return;
         }
 
+        // Check if BVH is enabled in the config
+        if (!config.EnableBvh)
+        {
+            Debug.Log("[BvhDataCache] BVH is disabled in DatasetConfig. Skipping BVH initialization.");
+            return;
+        }
+
         string bvhFilePath = config.GetBvhFilePath();
         if (string.IsNullOrEmpty(bvhFilePath))
         {
