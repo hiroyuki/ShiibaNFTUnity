@@ -194,6 +194,13 @@ void ProcessMultiCamDepthData(uint3 id : SV_DispatchThreadID)
         1.0 - (colorPixelCoord.y / (float)cam.colorHeight) // Flip Y
     );
 
+    if ( colorUV.y < 0.0 ){
+        colorUV.y = 0.0;
+    }
+    if (colorUV.y > 1.0 ){
+        colorUV.y = 1.0;
+    }
+
     // Sample color from texture array using camera index as array slice
     float4 color = colorTextureArray.SampleLevel(samplercolorTextureArray, float3(colorUV, cameraIndex), 0);
 

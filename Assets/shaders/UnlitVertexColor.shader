@@ -10,7 +10,8 @@ Shader "Unlit/VertexColor"
         Tags { "RenderType"="Transparent" "Queue"="Transparent" }
         LOD 100
         Blend SrcAlpha OneMinusSrcAlpha
-        ZWrite Off
+        ZWrite On
+        ZTest LEqual
 
         Pass
         {

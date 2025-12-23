@@ -21,7 +21,7 @@ public static class PointCloudSettings
     /// <summary>
     /// Opacity/transparency of point cloud (0.0 = fully transparent, 1.0 = fully opaque)
     /// </summary>
-    public static float pointCloudOpacity = 0.3f;
+    public static float pointCloudOpacity = 1.0f;
 
     /// <summary>
     /// Enable/disable bounding volume culling across all processors

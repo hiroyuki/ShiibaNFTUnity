@@ -166,6 +166,38 @@ public class SinglePointCloudView : MonoBehaviour
         return frameController.GetTotalFrameCount();
     }
 
+    /// <summary>
+    /// Export debug images (depth and color) from current frame.
+    /// Useful for debugging sensor data issues.
+    /// </summary>
+    /// <param name="outputDir">Output directory path</param>
+    public void ExportDebugImages(string outputDir = "DebugImages")
+    {
+        if (frameController == null)
+        {
+            Debug.LogWarning("Cannot export images: frame controller not initialized");
+            return;
+        }
+
+        var device = frameController.Device;
+        if (device == null)
+        {
+            Debug.LogWarning("Cannot export images: sensor device not available");
+            return;
+        }
+
+        // Calculate current frame index
+        ulong currentTimestamp = GetCurrentTimestamp();
+        int frameIndex = 0;
+        int fps = GetFps();
+        if (fps > 0 && currentTimestamp > 0)
+        {
+            frameIndex = (int)(currentTimestamp / (1_000_000_000UL / (ulong)fps));
+        }
+
+        DebugImageExporter.ExportSensorImages(device, outputDir, frameIndex);
+    }
+
     void OnDestroy()
     {
         if (depthMesh != null)

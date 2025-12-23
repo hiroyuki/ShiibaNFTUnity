@@ -153,6 +153,13 @@ void ProcessRawDepthData(uint3 id : SV_DispatchThreadID)
         1.0 - (colorPixelCoord.y / (float)meta.colorHeight) // Flip Y
     );
 
+    if ( colorUV.y < 0.0 ){
+        colorUV.y = 0.0;
+    }
+    if (colorUV.y > 1.0 ){
+        colorUV.y = 1.0;
+    }
+
     // Sample color from GPU texture (no CPU conversion needed!)
     float4 color = colorTexture.SampleLevel(samplercolorTexture, colorUV, 0);
 

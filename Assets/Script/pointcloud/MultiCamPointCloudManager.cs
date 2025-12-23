@@ -82,7 +82,17 @@ public class MultiCameraPointCloudManager : MonoBehaviour
 
     private bool TryInitializeHandler(IProcessingModeHandler handler)
     {
-        string rootDirectory = GetDatasetConfig().GetPointCloudRootDirectory();
+        // Use different root directories based on handler type
+        string rootDirectory;
+        if (handler is BinaryModeHandler)
+        {
+            rootDirectory = GetDatasetConfig().GetBinaryDataRootDirectory();
+        }
+        else
+        {
+            rootDirectory = GetDatasetConfig().GetPointCloudRootDirectory();
+        }
+
         if (handler.Initialize(rootDirectory, displayName, transform))
         {
             currentHandler = handler;
