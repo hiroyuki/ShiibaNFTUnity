@@ -12,20 +12,32 @@ public class BvhSkeletonVisualizer : MonoBehaviour
     public Color skeletonColor = Color.green;
 
     [Tooltip("Radius of joint spheres")]
-    [Range(0.001f, 10.0f)]
+    [Range(0.001f, 0.03f)]
     public float jointRadius = 0.05f;
 
     [Tooltip("Width of bone lines")]
-    [Range(0.001f, 0.5f)]
+    [Range(0.001f, 0.02f)]
     public float boneWidth = 0.01f;
 
     [Header("Rendering")]
+    [Tooltip("Render skeleton on top of point clouds")]
+    public bool renderOnTop = true;
+
+    [Tooltip("Render queue offset from Transparent (3000). Default: +100")]
+    [Range(0, 1000)]
+    public int queueOffset = 100;
+
+    [Tooltip("Skeleton opacity for alignment checking")]
+    [Range(0f, 1f)]
+    public float skeletonOpacity = 1f;
+
     [Tooltip("Material for rendering (leave null for default)")]
     public Material renderMaterial;
 
     private GameObject renderRoot;
     private readonly List<LineRenderer> boneRenderers = new();
     private readonly List<GameObject> jointSpheres = new();
+    private Material skeletonMaterial;
 
     void Start()
     {
@@ -82,10 +94,11 @@ public class BvhSkeletonVisualizer : MonoBehaviour
         }
         else
         {
-            renderer.material = new Material(Shader.Find("Standard"))
+            if (skeletonMaterial == null)
             {
-                color = skeletonColor
-            };
+                CreateSkeletonMaterial();
+            }
+            renderer.material = skeletonMaterial;
         }
 
         jointSpheres.Add(sphere);
@@ -113,9 +126,11 @@ public class BvhSkeletonVisualizer : MonoBehaviour
             }
             else
             {
-                lr.material = new Material(Shader.Find("Sprites/Default"));
-                lr.startColor = skeletonColor;
-                lr.endColor = skeletonColor;
+                if (skeletonMaterial == null)
+                {
+                    CreateSkeletonMaterial();
+                }
+                lr.material = skeletonMaterial;
             }
 
             boneRenderers.Add(lr);
@@ -163,10 +178,11 @@ public class BvhSkeletonVisualizer : MonoBehaviour
                             }
                             else
                             {
-                                endRenderer.material = new Material(Shader.Find("Standard"))
+                                if (skeletonMaterial == null)
                                 {
-                                    color = skeletonColor
-                                };
+                                    CreateSkeletonMaterial();
+                                }
+                                endRenderer.material = skeletonMaterial;
                             }
 
                             jointSpheres.Add(endSphere);
@@ -189,9 +205,11 @@ public class BvhSkeletonVisualizer : MonoBehaviour
                             }
                             else
                             {
-                                endLr.material = new Material(Shader.Find("Sprites/Default"));
-                                endLr.startColor = skeletonColor;
-                                endLr.endColor = skeletonColor;
+                                if (skeletonMaterial == null)
+                                {
+                                    CreateSkeletonMaterial();
+                                }
+                                endLr.material = skeletonMaterial;
                             }
 
                             boneRenderers.Add(endLr);
@@ -324,5 +342,56 @@ public class BvhSkeletonVisualizer : MonoBehaviour
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Creates or updates the shared skeleton material
+    /// </summary>
+    private void CreateSkeletonMaterial()
+    {
+        if (renderOnTop)
+        {
+            // Try to load custom foreground shader
+            Shader foregroundShader = Shader.Find("Custom/SkeletonForeground");
+            if (foregroundShader != null)
+            {
+                skeletonMaterial = new Material(foregroundShader);
+                skeletonMaterial.SetColor("_Color", skeletonColor);
+                skeletonMaterial.SetFloat("_Opacity", skeletonOpacity);
+                // Runtime queue adjustment
+                skeletonMaterial.renderQueue = 3000 + queueOffset;
+            }
+            else
+            {
+                Debug.LogWarning("SkeletonForeground shader not found, falling back to Standard");
+                skeletonMaterial = new Material(Shader.Find("Standard"))
+                {
+                    color = skeletonColor
+                };
+                skeletonMaterial.renderQueue = 3000 + queueOffset;
+            }
+        }
+        else
+        {
+            // Default rendering (existing behavior)
+            skeletonMaterial = new Material(Shader.Find("Standard"))
+            {
+                color = skeletonColor
+            };
+        }
+    }
+
+    /// <summary>
+    /// Update material when inspector values change
+    /// </summary>
+    void OnValidate()
+    {
+        // Update material when inspector values change
+        if (skeletonMaterial != null && renderOnTop)
+        {
+            skeletonMaterial.SetColor("_Color", skeletonColor);
+            skeletonMaterial.SetFloat("_Opacity", skeletonOpacity);
+            skeletonMaterial.renderQueue = 3000 + queueOffset;
+        }
     }
 }

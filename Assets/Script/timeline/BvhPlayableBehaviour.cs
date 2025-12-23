@@ -18,7 +18,6 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     private Vector3 positionOffset = Vector3.zero;
     private Vector3 rotationOffset = Vector3.zero;
     public Vector3 scale = Vector3.one;
-    public int frameOffset = 0;
 
     // BVH Drift Correction
     public BvhPlaybackCorrectionKeyframes driftCorrectionData;
@@ -67,7 +66,7 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         float timelineTime = (float)playable.GetTime();
 
         // Use BvhPlaybackFrameMapper to calculate target frame (handles keyframe interpolation)
-        int targetFrame = frameMapper.GetTargetFrameForTime(timelineTime, bvhData, driftCorrectionData, frameOffset);
+        int targetFrame = frameMapper.GetTargetFrameForTime(timelineTime, bvhData, driftCorrectionData);
 
         // Only update if frame changed
         if (targetFrame != currentFrame)

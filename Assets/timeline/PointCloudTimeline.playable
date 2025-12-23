@@ -17,8 +17,6 @@ MonoBehaviour:
   positionOffset: {x: 0, y: 0, z: 0}
   rotationOffset: {x: 0, y: 0, z: 0}
   scale: {x: 1, y: 1, z: 1}
-  overrideFrameRate: 0
-  frameOffset: 0
 --- !u!114 &-130837511230937270
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -255,5 +253,3 @@ MonoBehaviour:
   positionOffset: {x: 0, y: 0, z: 0}
   rotationOffset: {x: 0, y: 0, z: 0}
   scale: {x: 1, y: 1, z: 1}
-  overrideFrameRate: 0
-  frameOffset: 0

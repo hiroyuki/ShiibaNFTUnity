@@ -49,15 +49,13 @@ public class BvhPlaybackFrameMapper
     /// <param name="timelineTime">Time in seconds from the Timeline playhead</param>
     /// <param name="bvhData">BVH data container with frame count and frame rate information</param>
     /// <param name="driftCorrectionData">Optional drift correction keyframes (can be null for simple linear mapping)</param>
-    /// <param name="frameOffset">Frame offset for synchronization with other systems (default: 0)</param>
     /// <returns>Clamped BVH frame index guaranteed to be in range [0, FrameCount-1]</returns>
-    public int GetTargetFrameForTime(float timelineTime, BvhData bvhData, BvhPlaybackCorrectionKeyframes driftCorrectionData, int frameOffset)
+    public int GetTargetFrameForTime(float timelineTime, BvhData bvhData, BvhPlaybackCorrectionKeyframes driftCorrectionData)
     {
         if (bvhData == null)
             return 0;
 
         int targetFrame = CalculateTargetFrame(timelineTime, bvhData.FrameRate, driftCorrectionData);
-        targetFrame += frameOffset;
         return Mathf.Clamp(targetFrame, 0, bvhData.FrameCount - 1);
     }
 

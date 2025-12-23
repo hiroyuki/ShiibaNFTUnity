@@ -18,6 +18,7 @@ public static class TimelineUtil
     {
         if (cachedDirector == null)
         {
+            // PlayableDirector is the Unity component that controls Timeline playback
             cachedDirector = Object.FindFirstObjectByType<PlayableDirector>();
         }
         return cachedDirector;

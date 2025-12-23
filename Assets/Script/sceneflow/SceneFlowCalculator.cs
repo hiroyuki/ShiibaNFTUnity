@@ -486,16 +486,9 @@ public class SceneFlowCalculator : MonoBehaviour
         // Get drift correction data
         BvhPlaybackCorrectionKeyframes driftCorrectionData = GetDriftCorrectionData();
 
-        // Get frame offset from config if available
-        int frameOffset = 0;
         var config = DatasetConfig.GetInstance();
-        if (config != null)
-        {
-            frameOffset = config.BvhFrameOffset;
-        }
-
         // Use BvhPlaybackFrameMapper to calculate frame index from timeline time
-        int frameIndex = frameMapper.GetTargetFrameForTime(timelineTime, bvhData, driftCorrectionData, frameOffset);
+        int frameIndex = frameMapper.GetTargetFrameForTime(timelineTime, bvhData, driftCorrectionData);
         Debug.Log($"[OnShowSceneFlow] Calculated frame index from Timeline time {timelineTime}s: {frameIndex}");
         // SetFrameInfo(frameIndex, timelineTime);
         return frameIndex;
