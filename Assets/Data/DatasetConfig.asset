@@ -12,13 +12,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 06dfa56e5e30e4709b823699238b9701, type: 3}
   m_Name: DatasetConfig
   m_EditorClassIdentifier: 
-  datasetFolder: {fileID: 102900000, guid: a834b556059e742eebc11572302df76b, type: 3}
+  datasetFolder: {fileID: 102900000, guid: d6ba913dee2914d2cbbdf74ba82f1a12, type: 3}
   bvhPositionOffset: {x: 0.21, y: 0.06, z: 0.12}
   bvhRotationOffset: {x: 0, y: 0, z: 0}
   bvhScale: {x: 0.01, y: 0.01, z: 0.01}
   bvhOverrideFrameRate: 0
-  bvhFrameOffset: 10
-  processingType: 5
-  enablePlyExport: 0
-  binaryDataRootPath: /Volumes/horristicSSD2T/Dropbox/projects/shiiba/datas/2025-04-12_20-17-26_video
+  bvhFrameOffset: 0
+  processingType: 3
+  enablePlyExport: 1
+  binaryDataRootPath: /Volumes/horristicSSD2T/Dropbox/projects/shiiba/20251130/Shibahiki_2025-11-30_10-00-33_video
   bvhDriftCorrectionData: {fileID: 11400000, guid: 169e14796eda44c03b6daab8f8bedbd7, type: 2}
