@@ -60,6 +60,7 @@ public class BvhSkeletonVisualizer : MonoBehaviour
         renderRoot = new GameObject("BVH_Visuals");
         renderRoot.transform.SetParent(transform);
         renderRoot.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+        renderRoot.transform.localScale = Vector3.one; // Keep scale at (1,1,1) regardless of parent scale
 
         // Create visuals for all skeleton joints (skip render root itself)
         foreach (Transform child in transform)

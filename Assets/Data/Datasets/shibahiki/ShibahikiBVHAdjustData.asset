@@ -12,6 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0c449915df17d43a280588ba7849e3d9, type: 3}
   m_Name: ShibahikiBVHAdjustData
   m_EditorClassIdentifier: 
-  keyframes: []
+  keyframes:
+  - timelineTime: 1.6333333333333333
+    bvhFrameNumber: 70
+    anchorPositionRelative: {x: 0, y: 0, z: 0}
+    anchorRotationRelative: {x: -0, y: 0, z: 0}
+    note: 
   interpolationType: 0
   isEnabled: 1

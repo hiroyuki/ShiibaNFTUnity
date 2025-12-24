@@ -18,7 +18,7 @@ MonoBehaviour:
   bvhPositionOffset: {x: -0.18, y: 0.01, z: 0.21}
   bvhRotationOffset: {x: 0, y: 180, z: 0}
   bvhScale: {x: 0.0085, y: 0.0085, z: 0.0085}
-  processingType: 3
+  processingType: 4
   binaryDataRootPath: /Volumes/horristicSSD2T/Dropbox/projects/shiiba/20251130/Shibahiki_2025-11-30_10-00-33_video
   bvhDriftCorrectionData: {fileID: 11400000, guid: feba45d7131cb4119b5870894918530f, type: 2}
   showDownsampledPointCloud: 0

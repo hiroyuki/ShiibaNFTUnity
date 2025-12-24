@@ -24,6 +24,9 @@ public class BvhPlaybackCorrectionKeyframesEditor : Editor
     // Track foldout state for each keyframe
     private Dictionary<int, bool> keyframeFoldoutStates = new Dictionary<int, bool>();
 
+    // Track previous keyframe count to detect when new keyframes are added
+    private int previousKeyframeCount = 0;
+
     private void OnEnable()
     {
         driftCorrectionData = (BvhPlaybackCorrectionKeyframes)target;
@@ -34,6 +37,9 @@ public class BvhPlaybackCorrectionKeyframesEditor : Editor
         // Initialize position and rotation tracking
         RefreshKeyframePositionCache();
         RefreshKeyframeRotationCache();
+
+        // Initialize keyframe count tracking
+        previousKeyframeCount = driftCorrectionData.GetKeyframeCount();
     }
 
     private void RefreshKeyframePositionCache()
@@ -59,6 +65,9 @@ public class BvhPlaybackCorrectionKeyframesEditor : Editor
     public override void OnInspectorGUI()
     {
         serializedObject.Update();
+
+        // Check if a new keyframe was added via the "+" button
+        DetectNewKeyframeAdded();
 
         // Check for position and rotation changes before rendering
         DetectKeyframePositionChanges();
@@ -382,6 +391,84 @@ public class BvhPlaybackCorrectionKeyframesEditor : Editor
         UnityEditor.SceneView.RepaintAll();
 
         Debug.Log($"[BvhPlaybackCorrectionKeyframesEditor] Jumped to keyframe at time={keyframe.timelineTime}s");
+    }
+
+    /// <summary>
+    /// Detects when a new keyframe is added via the "+" button in the Inspector
+    /// Automatically fills in current timeline time, BVH frame, position, and rotation
+    /// </summary>
+    private void DetectNewKeyframeAdded()
+    {
+        int currentKeyframeCount = driftCorrectionData.GetKeyframeCount();
+
+        // Check if array size increased (new keyframe added)
+        if (currentKeyframeCount > previousKeyframeCount)
+        {
+            // Get the newly added keyframe (last in list)
+            var keyframes = driftCorrectionData.GetAllKeyframes();
+            if (keyframes.Count > 0)
+            {
+                BvhKeyframe newKeyframe = keyframes[keyframes.Count - 1];
+
+                // Get current timeline time
+                PlayableDirector timeline = FindFirstObjectByType<PlayableDirector>();
+                double currentTime = timeline != null ? timeline.time : 0.0;
+
+                // Get BVH playable asset and current frame
+                var bvhAsset = Resources.FindObjectsOfTypeAll<BvhPlayableAsset>().FirstOrDefault();
+                int currentFrame = 0;
+                Vector3 currentPosition = Vector3.zero;
+                Vector3 currentRotation = Vector3.zero;
+
+                if (bvhAsset != null)
+                {
+                    // Get current frame from BvhPlayableBehaviour
+                    var bvhBehaviour = bvhAsset.GetBvhPlayableBehaviour();
+                    if (bvhBehaviour != null)
+                    {
+                        currentFrame = bvhBehaviour.GetCurrentFrame();
+                    }
+
+                    // If frame is -1 (uninitialized), calculate from time
+                    if (currentFrame == -1)
+                    {
+                        BvhData bvhData = bvhAsset.GetBvhData();
+                        float bvhFrameRate = bvhData != null ? bvhData.FrameRate : 30f;
+                        currentFrame = Mathf.FloorToInt((float)(currentTime * bvhFrameRate));
+                    }
+
+                    // Get current position and rotation from BVH_Character
+                    currentPosition = bvhAsset.GetBvhCharacterPosition();
+                    currentRotation = bvhAsset.GetBvhCharacterRotation();
+                }
+
+                // Update the new keyframe with current values
+                newKeyframe.timelineTime = currentTime;
+                newKeyframe.bvhFrameNumber = currentFrame;
+                newKeyframe.anchorPositionRelative = currentPosition;
+                newKeyframe.anchorRotationRelative = currentRotation;
+
+                // Mark as dirty to save changes
+                EditorUtility.SetDirty(driftCorrectionData);
+
+                Debug.Log($"[BvhPlaybackCorrectionKeyframesEditor] Auto-filled new keyframe: " +
+                          $"time={currentTime:F2}s, frame={currentFrame}, pos={currentPosition}, rot={currentRotation}");
+            }
+
+            // Update the previous count
+            previousKeyframeCount = currentKeyframeCount;
+
+            // Refresh caches
+            RefreshKeyframePositionCache();
+            RefreshKeyframeRotationCache();
+        }
+        // Check if keyframe was removed
+        else if (currentKeyframeCount < previousKeyframeCount)
+        {
+            previousKeyframeCount = currentKeyframeCount;
+            RefreshKeyframePositionCache();
+            RefreshKeyframeRotationCache();
+        }
     }
 }
 #endif

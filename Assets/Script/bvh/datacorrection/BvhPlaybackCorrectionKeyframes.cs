@@ -105,9 +105,9 @@ public class BvhPlaybackCorrectionKeyframes : ScriptableObject
     /// <summary>
     /// キーフレーム追加
     /// </summary>
-    public void AddKeyframe(double time, int frameNumber, Vector3 positionRelative)
+    public void AddKeyframe(double time, int frameNumber, Vector3 positionRelative, Vector3 rotationRelative = default)
     {
-        var newKeyframe = new BvhKeyframe(time, frameNumber, positionRelative);
+        var newKeyframe = new BvhKeyframe(time, frameNumber, positionRelative, rotationRelative);
         keyframes.Add(newKeyframe);
         lastEditedKeyframe = newKeyframe;  // 最後編集フレームを記録
         SortKeyframes();
@@ -116,7 +116,7 @@ public class BvhPlaybackCorrectionKeyframes : ScriptableObject
         UnityEditor.EditorUtility.SetDirty(this);
         #endif
 
-        Debug.Log($"Keyframe added: time={time}s, frame={frameNumber}, pos={positionRelative}");
+        Debug.Log($"Keyframe added: time={time}s, frame={frameNumber}, pos={positionRelative}, rot={rotationRelative}");
     }
 
     /// <summary>
@@ -144,7 +144,7 @@ public class BvhPlaybackCorrectionKeyframes : ScriptableObject
     /// <summary>
     /// キーフレーム更新
     /// </summary>
-    public bool UpdateKeyframe(BvhKeyframe keyframe, float time, int frameNumber, Vector3 positionRelative)
+    public bool UpdateKeyframe(BvhKeyframe keyframe, float time, int frameNumber, Vector3 positionRelative, Vector3 rotationRelative = default)
     {
         if (keyframe == null)
             return false;
@@ -159,6 +159,7 @@ public class BvhPlaybackCorrectionKeyframes : ScriptableObject
             kf.timelineTime = time;
             kf.bvhFrameNumber = frameNumber;
             kf.anchorPositionRelative = positionRelative;
+            kf.anchorRotationRelative = rotationRelative;
             lastEditedKeyframe = kf;  // 最後編集フレームを記録
             SortKeyframes();
 

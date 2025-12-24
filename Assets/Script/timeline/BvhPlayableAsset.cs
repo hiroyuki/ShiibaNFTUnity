@@ -242,6 +242,27 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
         return Vector3.zero;
     }
 
+    /// <summary>
+    /// BVH_Character の現在の localEulerAngles を取得（キーフレーム記録用）
+    /// </summary>
+    public Vector3 GetBvhCharacterRotation()
+    {
+        if (cachedBehaviour != null && cachedBehaviour.BvhCharacterTransform != null)
+        {
+            return cachedBehaviour.BvhCharacterTransform.localEulerAngles;
+        }
+
+        // キャッシュがない場合、シーンから探す
+        string searchName = string.IsNullOrEmpty(targetGameObjectName) ? "BVH_Character" : targetGameObjectName;
+        GameObject targetGO = GameObject.Find(searchName);
+        if (targetGO != null)
+        {
+            return targetGO.transform.localEulerAngles;
+        }
+
+        return Vector3.zero;
+    }
+
 #if UNITY_EDITOR
     /// <summary>
     /// Validate settings in editor
