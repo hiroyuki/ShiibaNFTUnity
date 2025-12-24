@@ -20,8 +20,11 @@ public class TimelineController : MonoBehaviour
 
     [Header("Debug")]
     [SerializeField] private bool showDebugLogs = true;
-    
+
     private bool wasPlayingLastFrame = false;
+
+    // BVH frame mapper for frame-by-frame navigation
+    private BvhPlaybackFrameMapper frameMapper = new BvhPlaybackFrameMapper();
     
     void Start()
     {
@@ -122,6 +125,18 @@ public class TimelineController : MonoBehaviour
         {
             ResetTimeline();
         }
+
+        // Right Arrow: Step forward one BVH frame
+        if (Keyboard.current.rightArrowKey.wasPressedThisFrame)
+        {
+            StepBvhFrameForward();
+        }
+
+        // Left Arrow: Step backward one BVH frame
+        if (Keyboard.current.leftArrowKey.wasPressedThisFrame)
+        {
+            StepBvhFrameBackward();
+        }
     }
     
     [ContextMenu("Toggle Play/Pause")]
@@ -183,6 +198,207 @@ public class TimelineController : MonoBehaviour
         {
             Debug.Log("Timeline: RESET to frame 0");
         }
+    }
+
+    /// <summary>
+    /// Ensure Timeline is initialized by rebuilding the graph if needed
+    /// This triggers OnGraphStart() in BvhPlayableBehaviour to create the joint hierarchy
+    /// Without this, arrow key navigation won't work until you play/pause the timeline first
+    /// </summary>
+    private void EnsureTimelineInitialized()
+    {
+        if (timeline == null || bvhPlayableAsset == null) return;
+
+        // Check if BvhPlayableBehaviour has been created
+        // If not, we need to rebuild the graph to trigger OnGraphStart()
+        BvhPlayableBehaviour behaviour = bvhPlayableAsset.GetBvhPlayableBehaviour();
+        if (behaviour == null)
+        {
+            if (showDebugLogs)
+            {
+                Debug.Log("TimelineController: Initializing timeline graph for BVH navigation");
+            }
+            timeline.RebuildGraph();
+            timeline.Evaluate();
+        }
+    }
+
+    /// <summary>
+    /// Step forward one BVH frame using frame mapping
+    /// Similar to PlyModeHandler's LoadNextPlyFrame()
+    /// </summary>
+    [ContextMenu("Step BVH Frame Forward")]
+    public void StepBvhFrameForward()
+    {
+        if (timeline == null || bvhPlayableAsset == null)
+        {
+            Debug.LogWarning("TimelineController: Cannot step forward - timeline or BVH asset not found");
+            return;
+        }
+
+        // Ensure timeline graph is built (initializes BVH behaviour)
+        EnsureTimelineInitialized();
+
+        BvhData bvhData = bvhPlayableAsset.GetBvhData();
+        if (bvhData == null)
+        {
+            Debug.LogWarning("TimelineController: BVH data not available");
+            return;
+        }
+
+        BvhPlaybackCorrectionKeyframes correctionData = bvhPlayableAsset.GetDriftCorrectionData();
+
+        // Get current timeline time and map to BVH frame
+        float currentTime = (float)timeline.time;
+        int currentFrame = frameMapper.GetTargetFrameForTime(currentTime, bvhData, correctionData);
+        int nextFrame = currentFrame + 1;
+
+        // Check bounds
+        if (nextFrame >= bvhData.FrameCount)
+        {
+            if (showDebugLogs)
+            {
+                Debug.Log($"TimelineController: Already at last frame ({bvhData.FrameCount - 1})");
+            }
+            return;
+        }
+
+        // Calculate timeline time for next frame
+        float nextTime = CalculateTimelineTimeForFrame(nextFrame, bvhData, correctionData);
+
+        // Seek to that time
+        SeekToTimelineTime(nextTime);
+
+        if (showDebugLogs)
+        {
+            Debug.Log($"TimelineController: Stepped forward from frame {currentFrame} to {nextFrame} (time: {nextTime:F3}s)");
+        }
+    }
+
+    /// <summary>
+    /// Step backward one BVH frame using frame mapping
+    /// Similar to PlyModeHandler's LoadPreviousPlyFrame()
+    /// </summary>
+    [ContextMenu("Step BVH Frame Backward")]
+    public void StepBvhFrameBackward()
+    {
+        if (timeline == null || bvhPlayableAsset == null)
+        {
+            Debug.LogWarning("TimelineController: Cannot step backward - timeline or BVH asset not found");
+            return;
+        }
+
+        // Ensure timeline graph is built (initializes BVH behaviour)
+        EnsureTimelineInitialized();
+
+        BvhData bvhData = bvhPlayableAsset.GetBvhData();
+        if (bvhData == null)
+        {
+            Debug.LogWarning("TimelineController: BVH data not available");
+            return;
+        }
+
+        BvhPlaybackCorrectionKeyframes correctionData = bvhPlayableAsset.GetDriftCorrectionData();
+
+        // Get current timeline time and map to BVH frame
+        float currentTime = (float)timeline.time;
+        int currentFrame = frameMapper.GetTargetFrameForTime(currentTime, bvhData, correctionData);
+        int previousFrame = currentFrame - 1;
+
+        // Check bounds
+        if (previousFrame < 0)
+        {
+            if (showDebugLogs)
+            {
+                Debug.Log("TimelineController: Already at first frame (0)");
+            }
+            return;
+        }
+
+        // Calculate timeline time for previous frame
+        float previousTime = CalculateTimelineTimeForFrame(previousFrame, bvhData, correctionData);
+
+        // Seek to that time
+        SeekToTimelineTime(previousTime);
+
+        if (showDebugLogs)
+        {
+            Debug.Log($"TimelineController: Stepped backward from frame {currentFrame} to {previousFrame} (time: {previousTime:F3}s)");
+        }
+    }
+
+    /// <summary>
+    /// Calculate timeline time for a given BVH frame index
+    /// Inverse operation of BvhPlaybackFrameMapper.GetTargetFrameForTime()
+    /// </summary>
+    private float CalculateTimelineTimeForFrame(int targetFrame, BvhData bvhData, BvhPlaybackCorrectionKeyframes correctionData)
+    {
+        // If no correction keyframes, use simple linear mapping
+        if (correctionData == null || correctionData.GetKeyframeCount() == 0)
+        {
+            return targetFrame * bvhData.FrameTime;
+        }
+
+        // With correction keyframes, we need to find the timeline time that maps to targetFrame
+        // Strategy: Find surrounding keyframes and interpolate timeline time
+
+        var keyframes = correctionData.GetAllKeyframes();
+        BvhKeyframe prevKeyframe = null;
+        BvhKeyframe nextKeyframe = null;
+
+        // Find keyframes surrounding target frame
+        foreach (var kf in keyframes)
+        {
+            if (kf.bvhFrameNumber <= targetFrame)
+                prevKeyframe = kf;
+            else if (nextKeyframe == null)
+                nextKeyframe = kf;
+        }
+
+        // Case 1: Between two keyframes - interpolate timeline time
+        if (prevKeyframe != null && nextKeyframe != null)
+        {
+            int frameDelta = nextKeyframe.bvhFrameNumber - prevKeyframe.bvhFrameNumber;
+            if (frameDelta > 0)
+            {
+                float frameProgress = (float)(targetFrame - prevKeyframe.bvhFrameNumber) / frameDelta;
+                double timeDelta = nextKeyframe.timelineTime - prevKeyframe.timelineTime;
+                return (float)(prevKeyframe.timelineTime + (timeDelta * frameProgress));
+            }
+            return (float)prevKeyframe.timelineTime;
+        }
+
+        // Case 2: Before first keyframe - interpolate from (0, 0)
+        if (prevKeyframe == null && nextKeyframe != null)
+        {
+            if (nextKeyframe.bvhFrameNumber > 0)
+            {
+                float frameProgress = (float)targetFrame / nextKeyframe.bvhFrameNumber;
+                return (float)(nextKeyframe.timelineTime * frameProgress);
+            }
+            return 0f;
+        }
+
+        // Case 3: After last keyframe - extrapolate using BVH frame rate
+        if (prevKeyframe != null && nextKeyframe == null)
+        {
+            int frameDelta = targetFrame - prevKeyframe.bvhFrameNumber;
+            return (float)(prevKeyframe.timelineTime + (frameDelta * bvhData.FrameTime));
+        }
+
+        // Case 4: No keyframes (shouldn't happen due to earlier check)
+        return targetFrame * bvhData.FrameTime;
+    }
+
+    /// <summary>
+    /// Seek timeline to specific time and evaluate
+    /// </summary>
+    private void SeekToTimelineTime(float timeInSeconds)
+    {
+        if (timeline == null) return;
+
+        timeline.time = timeInSeconds;
+        timeline.Evaluate();
     }
 
     /// <summary>
