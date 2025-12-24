@@ -45,6 +45,56 @@ public class DatasetConfigEditor : Editor
         {
             EditorGUILayout.HelpBox("Export buttons are only available during Play mode.", MessageType.Warning);
         }
+
+        // Downsampled PLY Export Controls
+        EditorGUILayout.Space(15);
+        EditorGUILayout.LabelField("Downsampled PLY Export Controls", EditorStyles.boldLabel);
+        EditorGUILayout.HelpBox(
+            "Export downsampled point cloud data. Requires PointCloudDownsampler component in the scene.\n" +
+            "Works in Play mode (Timeline playback) or Edit mode (load from PLY files).",
+            MessageType.Info);
+
+        EditorGUI.BeginDisabledGroup(!Application.isPlaying);
+
+        // Export Current Frame Downsampled button
+        if (GUILayout.Button("Export Current Frame (Downsampled)", GUILayout.Height(30)))
+        {
+            Debug.Log("Export Current Frame (Downsampled) button clicked!");
+            ExportCurrentFrameDownsampled();
+        }
+
+        EditorGUILayout.Space(5);
+
+        // Export All Frames Downsampled button (Play Mode)
+        if (GUILayout.Button("Export All Frames (Downsampled - Play Mode)", GUILayout.Height(30)))
+        {
+            Debug.Log("Export All Frames (Downsampled - Play Mode) button clicked!");
+            ExportAllFramesDownsampledPlayMode();
+        }
+
+        EditorGUI.EndDisabledGroup();
+
+        // Export All Frames Downsampled button (Edit Mode - Load PLYs)
+        EditorGUI.BeginDisabledGroup(Application.isPlaying);
+
+        EditorGUILayout.Space(5);
+
+        if (GUILayout.Button("Export All Frames (Downsampled - Load PLYs)", GUILayout.Height(30)))
+        {
+            Debug.Log("Export All Frames (Downsampled - Load PLYs) button clicked!");
+            ExportAllFramesDownsampledFromPLY();
+        }
+
+        EditorGUI.EndDisabledGroup();
+
+        if (!Application.isPlaying)
+        {
+            EditorGUILayout.HelpBox("Play Mode export buttons are only available during Play mode.\nEdit Mode PLY loading is available now.", MessageType.Info);
+        }
+        else
+        {
+            EditorGUILayout.HelpBox("Edit Mode PLY loading is only available in Edit mode.\nPlay Mode export buttons are available now.", MessageType.Info);
+        }
     }
 
     private void ExportCurrentFrame()
@@ -264,6 +314,104 @@ public class DatasetConfigEditor : Editor
                     "PLY export system not initialized.\n" +
                     "Make sure Timeline is playing and export has been set up.", "OK");
             }
+        }
+    }
+
+    // Downsampled PLY Export Methods
+    private void ExportCurrentFrameDownsampled()
+    {
+        if (!Application.isPlaying)
+        {
+            EditorUtility.DisplayDialog("Not Playing", "Please enter Play mode before exporting downsampled PLY files.", "OK");
+            return;
+        }
+
+        // Find PointCloudDownsampler in scene
+        PointCloudDownsampler downsampler = FindFirstObjectByType<PointCloudDownsampler>();
+        if (downsampler == null)
+        {
+            Debug.LogError("PointCloudDownsampler not found in scene. Cannot export downsampled PLY.");
+            EditorUtility.DisplayDialog("Export Failed",
+                "PointCloudDownsampler not found in scene.\n\n" +
+                "Make sure:\n" +
+                "1. PointCloudDownsampler component exists in the scene\n" +
+                "2. Downsampling has been applied (enable Preview in Inspector)",
+                "OK");
+            return;
+        }
+
+        // Call the export method
+        downsampler.ExportDownsampledPLYManual();
+        Debug.Log("Current frame downsampled PLY export triggered from DatasetConfig editor.");
+    }
+
+    private void ExportAllFramesDownsampledPlayMode()
+    {
+        if (!Application.isPlaying)
+        {
+            EditorUtility.DisplayDialog("Not Playing", "Please enter Play mode before exporting downsampled PLY files.", "OK");
+            return;
+        }
+
+        // Find PointCloudDownsampler in scene
+        PointCloudDownsampler downsampler = FindFirstObjectByType<PointCloudDownsampler>();
+        if (downsampler == null)
+        {
+            Debug.LogError("PointCloudDownsampler not found in scene. Cannot export downsampled PLY.");
+            EditorUtility.DisplayDialog("Export Failed",
+                "PointCloudDownsampler not found in scene.\n\n" +
+                "Make sure:\n" +
+                "1. PointCloudDownsampler component exists in the scene\n" +
+                "2. Downsampling has been applied (enable Preview in Inspector)",
+                "OK");
+            return;
+        }
+
+        // Show confirmation dialog
+        bool confirmed = EditorUtility.DisplayDialog("Export All Frames (Downsampled)",
+            "This will export all frames to downsampled PLY files using Timeline playback.\n" +
+            "This operation may take a long time depending on the number of frames.\n\n" +
+            "Continue?",
+            "Export All", "Cancel");
+
+        if (confirmed)
+        {
+            downsampler.BatchExportAllFramesPlayMode();
+            Debug.Log("All frames downsampled PLY export (Play Mode) triggered from DatasetConfig editor.");
+        }
+    }
+
+    private void ExportAllFramesDownsampledFromPLY()
+    {
+        if (Application.isPlaying)
+        {
+            EditorUtility.DisplayDialog("Exit Play Mode", "Please exit Play mode before using PLY loading export.", "OK");
+            return;
+        }
+
+        // Find PointCloudDownsampler in scene
+        PointCloudDownsampler downsampler = FindFirstObjectByType<PointCloudDownsampler>();
+        if (downsampler == null)
+        {
+            Debug.LogError("PointCloudDownsampler not found in scene. Cannot export downsampled PLY.");
+            EditorUtility.DisplayDialog("Export Failed",
+                "PointCloudDownsampler not found in scene.\n\n" +
+                "Make sure PointCloudDownsampler component exists in the scene.",
+                "OK");
+            return;
+        }
+
+        // Show confirmation dialog
+        bool confirmed = EditorUtility.DisplayDialog("Export All Frames (Downsampled - Load PLYs)",
+            "This will load each PLY file, downsample it, and export the result.\n" +
+            "This operation may take a long time depending on the number of PLY files.\n\n" +
+            "Continue?",
+            "Export All", "Cancel");
+
+        if (confirmed)
+        {
+            downsampler.BatchExportAllFramesFromPLY();
+            Debug.Log("All frames downsampled PLY export (Load PLYs) triggered from DatasetConfig editor.");
         }
     }
 }

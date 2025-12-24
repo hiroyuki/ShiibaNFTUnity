@@ -51,7 +51,7 @@ MonoBehaviour:
   - timelineTime: 31.166666
     bvhFrameNumber: 940
     anchorPositionRelative: {x: 0.39, y: 0, z: -0.15}
-    anchorRotationRelative: {x: 0, y: -10.23, z: 4.05}
+    anchorRotationRelative: {x: 0, y: -9.74, z: 4.05}
     note: 
   - timelineTime: 64.26667
     bvhFrameNumber: 1930

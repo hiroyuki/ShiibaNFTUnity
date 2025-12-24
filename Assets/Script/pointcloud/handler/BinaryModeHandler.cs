@@ -269,7 +269,7 @@ public class BinaryModeHandler : BaseProcessingModeHandler
 
         if (Keyboard.current.leftArrowKey.wasPressedThisFrame)
         {
-            // Backward navigation not supported. Use timeline controls.
+            NavigateToPreviousSynchronizedFrame();
         }
     }
 
@@ -284,6 +284,61 @@ public class BinaryModeHandler : BaseProcessingModeHandler
         }
 
         ProcessFrame(frameProcessingManager.CurrentFrameIndex + 1, nextTimestamp);
+    }
+
+    private void NavigateToPreviousSynchronizedFrame()
+    {
+        if (processingType == ProcessingType.GPU && singlePointCloudViews.Count == 0) return;
+
+        int previousFrameIndex = frameProcessingManager.CurrentFrameIndex - 1;
+        if (previousFrameIndex < 0)
+        {
+            Debug.Log("Already at first frame");
+            return;
+        }
+
+        // For backward navigation, we need to seek to the timestamp for the previous frame
+        // This requires seeking in the binary stream or using timeline sync
+        ulong previousTimestamp = GetTimestampForFrameIndex(previousFrameIndex);
+        if (previousTimestamp == 0)
+        {
+            Debug.LogWarning("Cannot determine timestamp for previous frame");
+            return;
+        }
+
+        ProcessFrame(previousFrameIndex, previousTimestamp);
+    }
+
+    private ulong GetTimestampForFrameIndex(int frameIndex)
+    {
+        try
+        {
+            if (processingType == ProcessingType.ONESHADER)
+            {
+                if (leadingCameraIndex >= cameraControllers.Count) return 0;
+                var leadingController = cameraControllers[leadingCameraIndex];
+                if (leadingController != null)
+                {
+                    return leadingController.GetTimestampForFrame(frameIndex);
+                }
+                return 0;
+            }
+            else
+            {
+                if (leadingCameraIndex >= singlePointCloudViews.Count) return 0;
+                var leadingView = singlePointCloudViews[leadingCameraIndex];
+                if (leadingView != null)
+                {
+                    return leadingView.GetTimestampForFrame(frameIndex);
+                }
+                return 0;
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"Error getting timestamp for frame {frameIndex}: {ex.Message}");
+            return 0;
+        }
     }
 
     private ulong FindNextSynchronizedTimestamp()

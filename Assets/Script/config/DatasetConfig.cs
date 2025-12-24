@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Playables;
 using System.IO;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -27,8 +28,6 @@ public class DatasetConfig : ScriptableObject
     [Header("Processing Mode")]
     [SerializeField] private ProcessingType processingType = ProcessingType.PLY;
     [Tooltip("PLY: Use PLY files from PLY/ folder, PLY_WITH_MOTION: Use PLY files with motion vectors from PLY_WithMotion/ folder, CPU/GPU/ONESHADER: Use raw sensor data")]
-    [SerializeField] private bool enablePlyExport = false;
-    [Tooltip("When using binary mode, export frames as PLY files")]
 
     [Header("Binary Data Configuration")]
     [SerializeField] private string binaryDataRootPath = "";
@@ -37,6 +36,10 @@ public class DatasetConfig : ScriptableObject
     [Header("BVH Drift Correction")]
     [SerializeField] private BvhPlaybackCorrectionKeyframes bvhDriftCorrectionData;
     [Tooltip("Reference to BVH drift correction data (contains keyframes for manual drift correction)")]
+
+    [Header("Point Cloud Downsampling")]
+    [SerializeField] private bool showDownsampledPointCloud = false;
+    [Tooltip("Show downsampled point cloud visualization (requires PointCloudDownsampler component in scene)")]
 
     // Properties
     /// <summary>
@@ -65,9 +68,10 @@ public class DatasetConfig : ScriptableObject
     public Vector3 BvhRotationOffset => bvhRotationOffset;
     public Vector3 BvhScale => bvhScale;
     public ProcessingType ProcessingType => processingType;
-    public bool EnablePlyExport => enablePlyExport;
+    public bool EnablePlyExport => true; // Always enabled
     public string BinaryDataRootPath => binaryDataRootPath;
     public BvhPlaybackCorrectionKeyframes BvhPlaybackCorrectionKeyframes => bvhDriftCorrectionData;
+    public bool ShowDownsampledPointCloud => showDownsampledPointCloud;
 
     /// <summary>
     /// Get the BVH folder path (relative to project)
@@ -189,4 +193,82 @@ public class DatasetConfig : ScriptableObject
     {
         return ConfigManager.GetDatasetConfig();
     }
+
+    /// <summary>
+    /// Event triggered when BVH transform values change in Inspector
+    /// </summary>
+    public static event System.Action OnBvhTransformChanged;
+
+    /// <summary>
+    /// Event triggered when downsampled point cloud visibility toggle changes
+    /// </summary>
+    public static event System.Action<bool> OnShowDownsampledPointCloudChanged;
+
+#if UNITY_EDITOR
+    private bool previousShowDownsampledPointCloud = false;
+
+    private void OnValidate()
+    {
+        OnBvhTransformChanged?.Invoke();
+
+        if (showDownsampledPointCloud != previousShowDownsampledPointCloud)
+        {
+            OnShowDownsampledPointCloudChanged?.Invoke(showDownsampledPointCloud);
+            previousShowDownsampledPointCloud = showDownsampledPointCloud;
+            UpdateDownsampledPointCloudVisibility();
+        }
+
+        UpdateBvhCharacterTransform();
+    }
+
+    private void UpdateDownsampledPointCloudVisibility()
+    {
+        PointCloudDownsampler downsampler = FindFirstObjectByType<PointCloudDownsampler>();
+        if (downsampler == null)
+        {
+            if (showDownsampledPointCloud)
+            {
+                Debug.LogWarning("[DatasetConfig] PointCloudDownsampler not found in scene.");
+            }
+            return;
+        }
+
+        if (!showDownsampledPointCloud)
+        {
+            downsampler.ResetToOriginal();
+        }
+    }
+
+    /// <summary>
+    /// Directly update BVH_Character transform when config changes in Edit mode
+    /// </summary>
+    private void UpdateBvhCharacterTransform()
+    {
+        if (Application.isPlaying) return;
+
+        GameObject bvhCharacterGO = GameObject.Find("BVH_Character");
+        if (bvhCharacterGO == null)
+            return;
+
+        var timeline = FindFirstObjectByType<PlayableDirector>();
+        double timelineTime = timeline != null ? timeline.time : 0.0;
+
+        Vector3 correctedPos = BvhPlaybackTransformCorrector.GetCorrectedRootPosition(
+            timelineTime,
+            BvhPlaybackCorrectionKeyframes,
+            bvhPositionOffset
+        );
+
+        Quaternion correctedRot = BvhPlaybackTransformCorrector.GetCorrectedRootRotation(
+            timelineTime,
+            BvhPlaybackCorrectionKeyframes,
+            bvhRotationOffset
+        );
+
+        bvhCharacterGO.transform.SetLocalPositionAndRotation(correctedPos, correctedRot);
+        bvhCharacterGO.transform.localScale = bvhScale;
+
+        EditorUtility.SetDirty(bvhCharacterGO);
+    }
+#endif
 }

@@ -12,51 +12,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0c449915df17d43a280588ba7849e3d9, type: 3}
   m_Name: ShibahikiBVHAdjustData
   m_EditorClassIdentifier: 
-  keyframes:
-  - timelineTime: 0
-    bvhFrameNumber: 10
-    anchorPositionRelative: {x: 0, y: 0, z: 0}
-    anchorRotationRelative: {x: 0, y: 0, z: 0}
-    note: 
-  - timelineTime: 5.633333
-    bvhFrameNumber: 179
-    anchorPositionRelative: {x: 0, y: 0, z: 0}
-    anchorRotationRelative: {x: 0, y: 0, z: 0}
-    note: 
-  - timelineTime: 10.733334
-    bvhFrameNumber: 332
-    anchorPositionRelative: {x: 0.15, y: 0, z: 0.11}
-    anchorRotationRelative: {x: 0, y: 0, z: 0}
-    note: 
-  - timelineTime: 12.566667
-    bvhFrameNumber: 382
-    anchorPositionRelative: {x: -0.07, y: 0, z: -0.1}
-    anchorRotationRelative: {x: 0, y: 0, z: 0}
-    note: 
-  - timelineTime: 13.4
-    bvhFrameNumber: 410
-    anchorPositionRelative: {x: 0.11, y: 0, z: 0}
-    anchorRotationRelative: {x: 0, y: 0, z: 0}
-    note: 
-  - timelineTime: 21.033333
-    bvhFrameNumber: 641
-    anchorPositionRelative: {x: 0.22600375, y: 0, z: -0.13748592}
-    anchorRotationRelative: {x: 0, y: 0, z: 0}
-    note: 
-  - timelineTime: 27.266666
-    bvhFrameNumber: 828
-    anchorPositionRelative: {x: 0.17, y: -0.03, z: -0.16}
-    anchorRotationRelative: {x: 0, y: 3.8, z: 0}
-    note: 
-  - timelineTime: 31.166666
-    bvhFrameNumber: 940
-    anchorPositionRelative: {x: 0.39, y: 0, z: -0.15}
-    anchorRotationRelative: {x: 0, y: -10.23, z: 4.05}
-    note: 
-  - timelineTime: 64.26667
-    bvhFrameNumber: 1930
-    anchorPositionRelative: {x: 0.87, y: 0, z: -2.07}
-    anchorRotationRelative: {x: 0, y: 0, z: 0}
-    note: 
+  keyframes: []
   interpolationType: 0
   isEnabled: 1

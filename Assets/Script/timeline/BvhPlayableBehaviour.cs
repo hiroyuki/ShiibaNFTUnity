@@ -40,6 +40,9 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     {
         if (bvhData != null && BvhCharacterTransform != null)
         {
+            // Update transform settings from DatasetConfig first
+            UpdateTransformSettingsFromConfig();
+
             // Save the initial position of BVH_Character as baseline for drift correction
             // This allows us to restore or reference the original position during correction
             BvhCharacterTransform.localPosition = positionOffset;
@@ -63,6 +66,9 @@ public class BvhPlayableBehaviour : PlayableBehaviour
     {
         if (bvhData == null || BvhCharacterTransform == null) return;
 
+        // Update transform settings from DatasetConfig in real-time
+        UpdateTransformSettingsFromConfig();
+
         float timelineTime = (float)playable.GetTime();
 
         // Use BvhPlaybackFrameMapper to calculate target frame (handles keyframe interpolation)
@@ -80,6 +86,22 @@ public class BvhPlayableBehaviour : PlayableBehaviour
         Quaternion correctedRot = BvhPlaybackTransformCorrector.GetCorrectedRootRotation(timelineTime, driftCorrectionData, rotationOffset);
         BvhCharacterTransform.SetLocalPositionAndRotation(correctedPos, correctedRot);
         BvhCharacterTransform.localScale = scale;
+    }
+
+    /// <summary>
+    /// Update transform settings from DatasetConfig in real-time
+    /// </summary>
+    private void UpdateTransformSettingsFromConfig()
+    {
+        var config = DatasetConfig.GetInstance();
+        if (config != null)
+        {
+            positionOffset = config.BvhPositionOffset;
+            rotationOffset = config.BvhRotationOffset;
+            scale = config.BvhScale;
+
+            Debug.Log($"[BvhPlayableBehaviour] UpdateTransformSettings: pos={positionOffset}, rot={rotationOffset}, scale={scale}");
+        }
     }
 
     /// <summary>

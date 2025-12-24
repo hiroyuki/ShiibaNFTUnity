@@ -124,7 +124,8 @@ public abstract class BaseProcessingModeHandler : IProcessingModeHandler
     protected GameObject CreateMultiPointCloudViewObject(string name)
     {
         GameObject viewObj = new GameObject(name);
-        viewObj.transform.parent = parentTransform;
+        viewObj.transform.SetParent(parentTransform, worldPositionStays: false);
+        viewObj.transform.localScale = Vector3.one; // Explicitly set to (1,1,1)
         return viewObj;
     }
 }

@@ -15,10 +15,6 @@ public class PointCloudDownsampler : MonoBehaviour
     [Range(1f, 100f)]
     private float targetVertexPercentage = 20f;
 
-    [SerializeField]
-    [Tooltip("Enable real-time preview during Play mode")]
-    private bool enablePreview = true;
-
     [Header("Visualization")]
     [SerializeField]
     [Tooltip("Point size for downsampled vertices (overrides global setting)")]
@@ -41,18 +37,9 @@ public class PointCloudDownsampler : MonoBehaviour
     [Tooltip("Color for discarded vertices (optional visualization)")]
     private Color discardedVertexColor = new Color(1f, 0f, 0f, 0.2f);
 
-    [Header("PLY Export")]
-    [SerializeField]
-    [Tooltip("Enable automatic PLY export")]
-    private bool enablePlyExport = false;
-
-    [SerializeField]
+    [Header("PLY Export (Internal)")]
     [Tooltip("Subdirectory name for filtered PLY files")]
     private string plyExportSubdirectory = "PLY_Filtered";
-
-    [SerializeField]
-    [Tooltip("Export every frame during playback")]
-    private bool exportPerFrame = false;
 
     [Header("Debug Info")]
     [SerializeField]
@@ -328,7 +315,7 @@ public class PointCloudDownsampler : MonoBehaviour
     [ContextMenu("Reset to Original")]
     public void ResetToOriginal()
     {
-        // Hide downsampled visualizer (original point cloud remains visible in UnifiedPointCloudViewer)
+        // Hide downsampled visualizer
         if (downsampledVisualizerObject != null)
         {
             downsampledVisualizerObject.SetActive(false);
@@ -340,10 +327,26 @@ public class PointCloudDownsampler : MonoBehaviour
             discardedVisualizerObject.SetActive(false);
         }
 
+        // Show original UnifiedPointCloudViewer
+        ShowOriginalPointCloud(true);
+
         isDownsamplingActive = false;
 
         if (showDebugInfo)
             Debug.Log("[PointCloudDownsampler] Reset to original visualization (downsampled viewer hidden)");
+    }
+
+    private void ShowOriginalPointCloud(bool show)
+    {
+        MultiPointCloudView view = FindFirstObjectByType<MultiPointCloudView>();
+        if (view == null)
+            return;
+
+        Transform unifiedViewer = view.transform.Find("UnifiedPointCloudViewer");
+        if (unifiedViewer != null)
+        {
+            unifiedViewer.gameObject.SetActive(show);
+        }
     }
 
     #endregion
@@ -364,8 +367,19 @@ public class PointCloudDownsampler : MonoBehaviour
 
     void Update()
     {
-        if (!enablePreview || !Application.isPlaying)
+        if (!Application.isPlaying)
             return;
+
+        DatasetConfig config = DatasetConfig.GetInstance();
+        if (config == null || !config.ShowDownsampledPointCloud)
+        {
+            if (downsampledVisualizerObject != null && downsampledVisualizerObject.activeSelf)
+            {
+                downsampledVisualizerObject.SetActive(false);
+                ShowOriginalPointCloud(true);
+            }
+            return;
+        }
 
         // Poll for mesh changes
         Mesh currentMesh = GetCurrentUnifiedMesh();
@@ -395,13 +409,6 @@ public class PointCloudDownsampler : MonoBehaviour
             lastProcessedMesh = currentMesh;
             lastMeshVertexCount = currentMesh.vertexCount;
             hasAppliedInitialDownsampling = true;
-
-            // Optional: per-frame export
-            if (enablePlyExport && exportPerFrame)
-            {
-                int frameIndex = GetCurrentFrameIndex();
-                ExportDownsampledPLY(cachedDownsampledMesh, frameIndex);
-            }
         }
     }
 
@@ -424,6 +431,10 @@ public class PointCloudDownsampler : MonoBehaviour
 
     private void ApplyDownsampling()
     {
+        DatasetConfig config = DatasetConfig.GetInstance();
+        if (config == null || !config.ShowDownsampledPointCloud)
+            return;
+
         Mesh sourceMesh = GetCurrentUnifiedMesh();
         if (sourceMesh == null || sourceMesh.vertexCount == 0)
         {
@@ -534,7 +545,8 @@ public class PointCloudDownsampler : MonoBehaviour
         if (downsampledVisualizerObject == null)
         {
             downsampledVisualizerObject = new GameObject("DownsampledPointCloudViewer");
-            downsampledVisualizerObject.transform.SetParent(transform, false);
+            downsampledVisualizerObject.transform.SetParent(transform, worldPositionStays: false);
+            downsampledVisualizerObject.transform.localScale = Vector3.one; // Explicitly set to (1,1,1)
 
             MeshFilter meshFilter = downsampledVisualizerObject.AddComponent<MeshFilter>();
             meshFilter.mesh = downsampledMesh;
@@ -569,6 +581,9 @@ public class PointCloudDownsampler : MonoBehaviour
         }
 
         downsampledVisualizerObject.SetActive(true);
+
+        // Optionally hide the original point cloud to avoid rendering both
+        // ShowOriginalPointCloud(false);
     }
 
     private void VisualizeDiscardedVertices(Vector3[] originalVertices, Color32[] originalColors, DownsampledMeshData downsampledData)
@@ -594,7 +609,8 @@ public class PointCloudDownsampler : MonoBehaviour
         if (discardedVisualizerObject == null)
         {
             discardedVisualizerObject = new GameObject("DiscardedVerticesVisualizer");
-            discardedVisualizerObject.transform.SetParent(transform, false);
+            discardedVisualizerObject.transform.SetParent(transform, worldPositionStays: false);
+            discardedVisualizerObject.transform.localScale = Vector3.one; // Explicitly set to (1,1,1)
             discardedVisualizerObject.AddComponent<MeshFilter>();
             MeshRenderer renderer = discardedVisualizerObject.AddComponent<MeshRenderer>();
 
