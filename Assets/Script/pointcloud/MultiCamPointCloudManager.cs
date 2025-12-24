@@ -68,7 +68,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
         }
         else if (processingType == ProcessingType.CPU || processingType == ProcessingType.GPU || processingType == ProcessingType.ONESHADER)
         {
-            if (TryInitializeHandler(new BinaryModeHandler(processingType, GetDatasetConfig().EnablePlyExport)))
+            if (TryInitializeHandler(new BinaryModeHandler(processingType)))
             {
                 Debug.Log($"Binary mode ({processingType}) initialized successfully");
                 SetupTimelineDuration();
@@ -104,6 +104,14 @@ public class MultiCameraPointCloudManager : MonoBehaviour
     void Update()
     {
         currentHandler?.Update();
+    }
+
+    /// <summary>
+    /// Get the current processing mode handler (for editor access)
+    /// </summary>
+    public IProcessingModeHandler GetCurrentHandler()
+    {
+        return currentHandler;
     }
 
     private void DisableTimelineAutoPlay()

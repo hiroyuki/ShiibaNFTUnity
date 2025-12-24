@@ -18,6 +18,8 @@ public class DatasetConfig : ScriptableObject
     [Header("BVH Configuration")]
     [SerializeField] private bool enableBvh = true;
     [Tooltip("Enable/disable BVH skeleton loading and playback")]
+    [SerializeField] private DefaultAsset bvhFile;
+    [Tooltip("Drag and drop the BVH file here (or leave empty to auto-detect from BVH/ folder)")]
     [SerializeField] private Vector3 bvhPositionOffset = Vector3.zero;
     [SerializeField] private Vector3 bvhRotationOffset = Vector3.zero;
     [SerializeField] private Vector3 bvhScale = Vector3.one;
@@ -77,7 +79,7 @@ public class DatasetConfig : ScriptableObject
     }
 
     /// <summary>
-    /// Get the first BVH file found in the BVH folder
+    /// Get the BVH file path. If bvhFile is set, use that. Otherwise, auto-detect from BVH folder
     /// </summary>
     public string GetBvhFilePath()
     {
@@ -86,6 +88,19 @@ public class DatasetConfig : ScriptableObject
             return "";
         }
 
+        // Priority 1: Use manually assigned BVH file
+        if (bvhFile != null)
+        {
+#if UNITY_EDITOR
+            string bvhFilePath = AssetDatabase.GetAssetPath(bvhFile);
+            if (!string.IsNullOrEmpty(bvhFilePath) && File.Exists(bvhFilePath))
+            {
+                return bvhFilePath;
+            }
+#endif
+        }
+
+        // Priority 2: Auto-detect from BVH folder
         string bvhFolder = GetBvhFolderPath();
         if (!Directory.Exists(bvhFolder))
         {

@@ -100,6 +100,13 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
             behaviour.bvhData = cachedBvhData;
         }
 
+        // Check if BVH data is available
+        if (behaviour.bvhData == null)
+        {
+            Debug.LogWarning($"BvhPlayableAsset: BVH data not loaded. Path: {bvhFilePath}. Returning null playable.");
+            return Playable.Null;
+        }
+
         // Get transform settings from DatasetConfig or overrides
         GetTransformSettings(out Vector3 position, out Vector3 rotation, out Vector3 scaleVal);
 
@@ -117,11 +124,6 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
         if (config != null && config.BvhPlaybackCorrectionKeyframes != null)
         {
             behaviour.driftCorrectionData = config.BvhPlaybackCorrectionKeyframes;
-        }
-
-        if (behaviour.bvhData == null)
-        {
-            Debug.LogWarning($"BvhPlayableAsset: BVH data not loaded. Path: {bvhFilePath}");
         }
 
         return playable;
@@ -241,23 +243,6 @@ public class BvhPlayableAsset : PlayableAsset, ITimelineClipAsset
     }
 
 #if UNITY_EDITOR
-    /// <summary>
-    /// Editor-only: Update clip duration to match BVH file duration
-    /// </summary>
-    [ContextMenu("Update Clip Duration from BVH")]
-    public void UpdateClipDurationFromBvh()
-    {
-        var data = GetBvhData();
-        if (data != null)
-        {
-            Debug.Log($"BVH Duration: {data.Duration}s ({data.FrameCount} frames at {data.FrameRate} fps)");
-        }
-        else
-        {
-            Debug.LogWarning("Failed to load BVH data");
-        }
-    }
-
     /// <summary>
     /// Validate settings in editor
     /// </summary>

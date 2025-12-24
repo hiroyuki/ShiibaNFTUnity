@@ -7,11 +7,10 @@ using YamlDotNet.Serialization;
 
 /// <summary>
 /// Handler for Binary mode - processes raw sensor data from binary files
-/// Supports ONESHADER, GPU, and CPU processing types with optional PLY export
+/// Supports ONESHADER, GPU, and CPU processing types with PLY export
 /// </summary>
 public class BinaryModeHandler : BaseProcessingModeHandler
 {
-    private List<IFrameController> frameControllers = new();
     private List<CameraFrameController> cameraControllers = new();
     private ProcessingType processingType;
 
@@ -20,15 +19,13 @@ public class BinaryModeHandler : BaseProcessingModeHandler
     private FrameProcessingManager frameProcessingManager;
     private PlyExportManager plyExportManager;
 
-    private bool enablePlyExport;
     private int leadingCameraIndex = 0;
 
     public override ProcessingType ProcessingType => processingType;
 
-    public BinaryModeHandler(ProcessingType processingType = ProcessingType.ONESHADER, bool enablePlyExport = false)
+    public BinaryModeHandler(ProcessingType processingType = ProcessingType.ONESHADER)
     {
         this.processingType = processingType;
-        this.enablePlyExport = enablePlyExport;
     }
 
     protected override bool InitializeInternal()
@@ -40,12 +37,6 @@ public class BinaryModeHandler : BaseProcessingModeHandler
 
         InitializeBinaryManagers();
         InitializeViews();
-
-        // Optionally setup PLY export
-        if (enablePlyExport)
-        {
-            SetupPlyExport();
-        }
 
         return true;
     }
@@ -100,7 +91,6 @@ public class BinaryModeHandler : BaseProcessingModeHandler
                     deviceDirName
                 );
                 cameraControllers.Add(cameraController);
-                frameControllers.Add(cameraController);
             }
             else
             {
@@ -110,12 +100,28 @@ public class BinaryModeHandler : BaseProcessingModeHandler
 
         SetupStatusUI.SetProgress(1f);
         SetupStatusUI.ShowStatus($"Loaded {cameraControllers.Count} camera controllers");
+
+        // Initialize total frame count immediately after loading controllers
+        if (cameraControllers.Count > 0)
+        {
+            int totalFrames = CalculateTotalFrameCount(cameraControllers[0].Device);
+            if (totalFrames > 0)
+            {
+                foreach (var controller in cameraControllers)
+                {
+                    controller.SetTotalFrameCount(totalFrames);
+                }
+                Debug.Log($"Set total frame count to {totalFrames} for {cameraControllers.Count} cameras");
+            }
+        }
+
         return cameraControllers.Count > 0;
     }
 
     private void InitializeBinaryManagers()
     {
-        frameProcessingManager = new FrameProcessingManager(frameControllers);
+        // FrameProcessingManager accepts IFrameController list, cameraControllers implements IFrameController
+        frameProcessingManager = new FrameProcessingManager(cameraControllers.Cast<IFrameController>().ToList());
         frameProcessingManager.SetDisplayName(displayName);
     }
 
@@ -138,9 +144,9 @@ public class BinaryModeHandler : BaseProcessingModeHandler
 
     private PlyFrameController CreatePlyFrameController()
     {
-        // Get FPS and total frames from first camera
+        // Get FPS and total frames from first camera (already initialized in LoadCameraControllers)
         int fps = cameraControllers[0].GetFps();
-        int totalFrames = CalculateTotalFrameCount(cameraControllers[0].Device);
+        int totalFrames = cameraControllers[0].GetTotalFrameCount();
 
         // Create PLY frame controller
         var plyController = new PlyFrameController(rootDirectory, displayName);
@@ -237,7 +243,7 @@ public class BinaryModeHandler : BaseProcessingModeHandler
         ProcessFirstFramesIfNeeded();
         HandleSynchronizedFrameNavigation();
 
-        if (enablePlyExport && plyExportManager != null)
+        if (plyExportManager != null)
         {
             plyExportManager.HandlePlyExportInput(processingType, frameProcessingManager.CurrentFrameIndex);
             plyExportManager.ProcessBatchExport(
@@ -286,8 +292,8 @@ public class BinaryModeHandler : BaseProcessingModeHandler
         {
             if (processingType == ProcessingType.ONESHADER)
             {
-                if (leadingCameraIndex >= frameControllers.Count) return 0;
-                var leadingController = frameControllers[leadingCameraIndex];
+                if (leadingCameraIndex >= cameraControllers.Count) return 0;
+                var leadingController = cameraControllers[leadingCameraIndex];
                 if (leadingController != null && leadingController.PeekNextTimestamp(out ulong timestamp))
                 {
                     return timestamp;
@@ -319,9 +325,9 @@ public class BinaryModeHandler : BaseProcessingModeHandler
 
         if (processingType == ProcessingType.ONESHADER)
         {
-            for (int i = 0; i < frameControllers.Count; i++)
+            for (int i = 0; i < cameraControllers.Count; i++)
             {
-                var controller = frameControllers[i];
+                var controller = cameraControllers[i];
                 if (controller == null) continue;
 
                 ulong timestamp = controller.CurrentTimestamp;
@@ -368,21 +374,21 @@ public class BinaryModeHandler : BaseProcessingModeHandler
 
     public override int GetTotalFrameCount()
     {
-        if (frameControllers.Count == 0) return -1;
-        return frameControllers[0].GetTotalFrameCount();
+        if (cameraControllers.Count == 0) return -1;
+        return cameraControllers[0].GetTotalFrameCount();
     }
 
     public override int GetFps()
     {
-        if (frameControllers.Count == 0) return -1;
-        return frameControllers[0].GetFps();
+        if (cameraControllers.Count == 0) return -1;
+        return cameraControllers[0].GetFps();
     }
 
     public override ulong GetTargetTimestamp(int frameIndex)
     {
-        if (frameControllers.Count > 0)
+        if (cameraControllers.Count > 0)
         {
-            return frameControllers[0].GetTimestampForFrame(frameIndex);
+            return cameraControllers[0].GetTimestampForFrame(frameIndex);
         }
 
         // Fall back to base implementation
@@ -392,6 +398,12 @@ public class BinaryModeHandler : BaseProcessingModeHandler
     public override void SetupTimelineDuration(TimelineController timelineController)
     {
         base.SetupTimelineDuration(timelineController);
+
+        // Setup PLY export if not already set up
+        if (plyExportManager == null)
+        {
+            SetupPlyExport();
+        }
 
         if (plyExportManager != null)
         {
@@ -440,10 +452,10 @@ public class BinaryModeHandler : BaseProcessingModeHandler
             singlePointCloudViews.Clear();
         }
 
-        foreach (var controller in frameControllers)
+        foreach (var controller in cameraControllers)
         {
             controller?.Dispose();
         }
-        frameControllers.Clear();
+        cameraControllers.Clear();
     }
 }

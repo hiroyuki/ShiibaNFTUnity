@@ -164,6 +164,14 @@ public class CameraFrameController : IFrameController
     }
 
     /// <summary>
+    /// Set total frame count (calculated externally).
+    /// </summary>
+    public void SetTotalFrameCount(int count)
+    {
+        totalFrameCount = count;
+    }
+
+    /// <summary>
     /// Dispose of resources.
     /// </summary>
     public void Dispose()
