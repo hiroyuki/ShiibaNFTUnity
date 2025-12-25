@@ -39,6 +39,15 @@ public class DatasetConfigEditor : Editor
             ExportAllFrames();
         }
 
+        EditorGUILayout.Space(5);
+
+        // Export All Frames with Scene Flow button
+        if (GUILayout.Button("Export All Frames with Scene Flow", GUILayout.Height(30)))
+        {
+            Debug.Log("Export All Frames with Scene Flow button clicked!");
+            ExportAllFramesWithSceneFlow();
+        }
+
         EditorGUI.EndDisabledGroup();
 
         if (!Application.isPlaying)
@@ -232,6 +241,78 @@ public class DatasetConfigEditor : Editor
             EditorUtility.DisplayDialog("Export Not Available",
                 "PLY export is only supported in Binary mode (CPU/GPU/ONESHADER).\n" +
                 "Current mode: " + (handler != null ? handler.GetType().Name : "None"), "OK");
+        }
+    }
+
+    private void ExportAllFramesWithSceneFlow()
+    {
+        if (!Application.isPlaying)
+        {
+            EditorUtility.DisplayDialog("Not Playing", "Please enter Play mode before exporting PLY files with scene flow.", "OK");
+            return;
+        }
+
+        // Find SceneFlowBatchExporter in scene using reflection
+        MonoBehaviour exporter = null;
+        var allObjects = FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
+
+        foreach (var obj in allObjects)
+        {
+            if (obj.GetType().Name == "SceneFlowBatchExporter")
+            {
+                exporter = obj;
+                break;
+            }
+        }
+
+        if (exporter == null)
+        {
+            Debug.LogError("SceneFlowBatchExporter not found in scene. Cannot export PLY with scene flow.");
+            EditorUtility.DisplayDialog("Export Failed",
+                "SceneFlowBatchExporter not found in scene.\n\n" +
+                "Make sure:\n" +
+                "1. SceneFlowBatchExporter component exists in the scene\n" +
+                "2. SceneFlowCalculator is properly configured\n" +
+                "3. MultiPointCloudView is available",
+                "OK");
+            return;
+        }
+
+        // Check if already exporting using reflection
+        var exporterType = exporter.GetType();
+        var isExportingProperty = exporterType.GetProperty("IsExporting");
+        bool isExporting = (bool)isExportingProperty.GetValue(exporter);
+
+        if (isExporting)
+        {
+            EditorUtility.DisplayDialog("Export in Progress",
+                "Scene flow export is already in progress.\n" +
+                "Please wait for it to complete.",
+                "OK");
+            return;
+        }
+
+        // Show confirmation dialog
+        bool confirmed = EditorUtility.DisplayDialog("Export All Frames with Scene Flow",
+            "This will export all frames to PLY files with motion vector data.\n" +
+            "Motion vectors are calculated from BVH skeletal motion.\n\n" +
+            "This operation may take a long time depending on the number of frames.\n\n" +
+            "Continue?",
+            "Export All", "Cancel");
+
+        if (confirmed)
+        {
+            // Call StartBatchExport using reflection
+            var startExportMethod = exporterType.GetMethod("StartBatchExport");
+            if (startExportMethod != null)
+            {
+                startExportMethod.Invoke(exporter, null);
+                Debug.Log("All frames PLY export with scene flow triggered from DatasetConfig editor.");
+            }
+            else
+            {
+                Debug.LogError("StartBatchExport method not found on SceneFlowBatchExporter.");
+            }
         }
     }
 

@@ -31,6 +31,27 @@ public class SceneFlowCalculator : MonoBehaviour
         public bool isEndSiteChild;  // True if childJoint is an EndSite
     }
 
+    /// <summary>
+    /// Tracks nearest bone segments for K-NN interpolation.
+    /// Stores segment index, squared distance, and motion vector for weighted averaging.
+    /// </summary>
+    private struct NearestSegment
+    {
+        public int segmentIndex;
+        public float distanceSq;
+        public Vector3 motionVector;
+    }
+
+    /// <summary>
+    /// Stores K-nearest segments info for a single point for visualization.
+    /// Includes segment positions and weights for debugging.
+    /// </summary>
+    private struct KNearestInfo
+    {
+        public Vector3[] segmentPositions;  // K segment positions
+        public float[] weights;              // K weights (normalized to sum to 1.0)
+    }
+
     [Header("Configuration")]
 
     /// <summary>Number of uniformly distributed points per bone (default: 100)</summary>
@@ -63,6 +84,20 @@ public class SceneFlowCalculator : MonoBehaviour
     [SerializeField]
     [Tooltip("Draw lines from points to their matched bone segments")]
     private bool showMatchingLines = false;
+
+    [Header("Motion Vector Calculation")]
+    [SerializeField]
+    [Tooltip("Number of nearest bone segments to interpolate (3-10 recommended)")]
+    [Range(1, 20)]
+    private int kNearestNeighbors = 5;
+
+    [SerializeField]
+    [Tooltip("Normalize motion vector magnitudes to [0,1] range for export")]
+    private bool normalizeMotionMagnitudes = true;
+
+    [SerializeField]
+    [Tooltip("Use weighted K-NN interpolation (false = original nearest-neighbor)")]
+    private bool useWeightedInterpolation = true;
 
     /// <summary>Cached BVH data obtained from BvhDataCache</summary>
     private BvhData bvhData;
@@ -109,12 +144,28 @@ public class SceneFlowCalculator : MonoBehaviour
     /// <summary>Matched bone segment positions for each point</summary>
     private Vector3[] matchedSegmentPositions = null;
 
+    /// <summary>K-nearest segments info for each point (for visualization)</summary>
+    private KNearestInfo[] kNearestInfoPerPoint = null;
+
     // Frame tracking
     private double currentFrameTime = 0f;
 
     /// <summary>
+    /// Clear all cached frame data
+    /// </summary>
+    private void ClearCachedData()
+    {
+        currentFrameContainer = null;
+        previousFrameContainer = null;
+        currentFrameBones.Clear();
+        previousFrameBones.Clear();
+        cachedCurrentFrameSegments = null;
+        cachedPreviousFrameSegments = null;
+        cachedSegmentMotionVectors = null;
+    }
+
+    /// <summary>
     /// Try to auto-initialize BVH data from BvhDataCache (centralized data source)
-    /// This is clean and independent from Timeline
     /// </summary>
     private void TryAutoInitializeBvhData()
     {
@@ -124,36 +175,21 @@ public class SceneFlowCalculator : MonoBehaviour
         // Get BVH data from BvhDataCache cache (initialized by MultiCameraPointCloudManager)
         bvhData = BvhDataCache.GetBvhData();
 
-        if (bvhData != null)
-        {
-            if (debugMode)
-                Debug.Log("[SceneFlowCalculator] BvhData loaded from BvhDataCache cache");
-            return;
-        }
+        if (bvhData != null && debugMode)
+            Debug.Log("[SceneFlowCalculator] BvhData loaded from BvhDataCache");
 
-        // If not available, clear error message
-        Debug.LogError(
-            "[SceneFlowCalculator] BvhData not initialized.\n" +
-            "MultiCameraPointCloudManager must be in scene to initialize BvhDataCache.\n" +
-            "Or manually call: sceneFlowCalculator.SetBvhData(bvhData);");
+        if (bvhData == null)
+            Debug.LogError("[SceneFlowCalculator] BvhData not initialized. MultiCameraPointCloudManager must be in scene to initialize BvhDataCache.");
     }
 
     /// <summary>
     /// Show scene flow for the current BVH frame.
     /// Called when "Show Scene Flow" button is pressed in the Inspector.
-    /// Tests root node position calculation using two methods.
     /// Applies same position offset and drift correction as BVH_Visuals for alignment.
     /// </summary>
     public void OnShowSceneFlow()
     {
-        // 前回の実行時のコンテナをクリア
-        currentFrameContainer = null;
-        previousFrameContainer = null;
-        currentFrameBones.Clear();
-        previousFrameBones.Clear();
-        cachedCurrentFrameSegments = null;
-        cachedPreviousFrameSegments = null;
-        cachedSegmentMotionVectors = null;
+        ClearCachedData();
 
         // Validate BVH data
         if (bvhData == null)
@@ -220,7 +256,7 @@ public class SceneFlowCalculator : MonoBehaviour
         // Calculate and cache bone segment data for visualization
         CacheSegmentDataForVisualization();
 
-        // NEW: Calculate point cloud motion vectors
+        // Calculate point cloud motion vectors
         CalculatePointCloudMotionVectors();
     }
 
@@ -306,38 +342,70 @@ public class SceneFlowCalculator : MonoBehaviour
             return;
         }
 
-        // Calculate motion vectors (CPU nearest-neighbor search)
+        // Calculate motion vectors using K-NN or nearest-neighbor algorithm
         pointCloudPositions = vertices;
-        pointCloudMotionVectors = new Vector3[vertices.Length];
-        matchedSegmentPositions = new Vector3[vertices.Length];
 
-        for (int i = 0; i < vertices.Length; i++)
+        if (useWeightedInterpolation)
         {
-            Vector3 point = vertices[i];
-            float minDistSq = float.MaxValue;
-            int nearestIdx = -1;
+            // K-NN interpolation with visualization data
+            pointCloudMotionVectors = new Vector3[vertices.Length];
+            kNearestInfoPerPoint = new KNearestInfo[vertices.Length];
+            matchedSegmentPositions = new Vector3[vertices.Length];
 
-            // Brute-force nearest neighbor search
-            for (int s = 0; s < segments.Length; s++)
+            for (int i = 0; i < vertices.Length; i++)
             {
-                float distSq = (point - segments[s].currentPosition).sqrMagnitude;
-                if (distSq < minDistSq)
+                pointCloudMotionVectors[i] = CalculateKNNMotionVectorForPoint(
+                    vertices[i],
+                    segments,
+                    kNearestNeighbors,
+                    out kNearestInfoPerPoint[i]
+                );
+
+                // Also track nearest for legacy visualization
+                int nearestIdx = FindNearestSegmentIndex(vertices[i], segments);
+                if (nearestIdx >= 0)
                 {
-                    minDistSq = distSq;
-                    nearestIdx = s;
+                    matchedSegmentPositions[i] = segments[nearestIdx].currentPosition;
                 }
             }
 
-            // Assign motion vector and segment position from nearest segment
-            if (nearestIdx >= 0)
+            // Apply normalization if enabled
+            if (normalizeMotionMagnitudes)
             {
-                pointCloudMotionVectors[i] = segments[nearestIdx].motionVector;
-                matchedSegmentPositions[i] = segments[nearestIdx].currentPosition;
+                NormalizeMotionVectorMagnitudes(pointCloudMotionVectors);
             }
+        }
+        else
+        {
+            // Original nearest-neighbor (no K-nearest info needed)
+            pointCloudMotionVectors = CalculateWeightedKNNMotionVectors(
+                vertices,
+                segments,
+                kNearestNeighbors,
+                normalizeMotionMagnitudes
+            );
+
+            // Update matched segment positions for visualization
+            matchedSegmentPositions = new Vector3[vertices.Length];
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                int nearestIdx = FindNearestSegmentIndex(vertices[i], segments);
+                if (nearestIdx >= 0)
+                {
+                    matchedSegmentPositions[i] = segments[nearestIdx].currentPosition;
+                }
+            }
+
+            // Clear K-nearest info when not using K-NN
+            kNearestInfoPerPoint = null;
         }
 
         if (debugMode)
-            Debug.Log($"[SceneFlowCalculator] Calculated motion vectors for {vertices.Length} points using {segments.Length} bone segments");
+        {
+            string algorithmName = useWeightedInterpolation ? $"K-NN (K={kNearestNeighbors})" : "nearest-neighbor";
+            string normalizationStatus = normalizeMotionMagnitudes ? " with normalization" : "";
+            Debug.Log($"[SceneFlowCalculator] Calculated motion vectors for {vertices.Length} points using {segments.Length} bone segments ({algorithmName}{normalizationStatus})");
+        }
     }
 
     /// <summary>
@@ -347,14 +415,11 @@ public class SceneFlowCalculator : MonoBehaviour
     {
         DatasetConfig config = DatasetConfig.GetInstance();
         if (config != null)
-        {
             return config.BvhPositionOffset;
-        }
 
         Debug.LogWarning("[SceneFlowCalculator] Could not find BvhPositionOffset from config, using zero");
         return Vector3.zero;
     }
-
 
     /// <summary>
     /// Get BVH rotation offset from DatasetConfig
@@ -363,14 +428,11 @@ public class SceneFlowCalculator : MonoBehaviour
     {
         DatasetConfig config = DatasetConfig.GetInstance();
         if (config != null)
-        {
             return config.BvhRotationOffset;
-        }
 
         Debug.LogWarning("[SceneFlowCalculator] Could not find BvhRotationOffset from config, using zero");
         return Vector3.zero;
     }
-
 
     /// <summary>
     /// Get BVH scale from DatasetConfig
@@ -379,9 +441,7 @@ public class SceneFlowCalculator : MonoBehaviour
     {
         DatasetConfig config = DatasetConfig.GetInstance();
         if (config != null)
-        {
             return config.BvhScale;
-        }
 
         Debug.LogWarning("[SceneFlowCalculator] Could not find BvhScale from config, using identity");
         return Vector3.one;
@@ -441,7 +501,6 @@ public class SceneFlowCalculator : MonoBehaviour
         if (existingContainer != null)
         {
             DestroyImmediate(existingContainer.gameObject);
-            // 参照をnullにして、OnDrawGizmosで破棄前のGameObjectを使わないようにする
             if (containerName == "CurrentFrameBVH")
                 currentFrameContainer = null;
             else if (containerName == "PreviousFrameBVH")
@@ -486,11 +545,8 @@ public class SceneFlowCalculator : MonoBehaviour
         // Get drift correction data
         BvhPlaybackCorrectionKeyframes driftCorrectionData = GetDriftCorrectionData();
 
-        var config = DatasetConfig.GetInstance();
-        // Use BvhPlaybackFrameMapper to calculate frame index from timeline time
         int frameIndex = frameMapper.GetTargetFrameForTime(timelineTime, bvhData, driftCorrectionData);
-        Debug.Log($"[OnShowSceneFlow] Calculated frame index from Timeline time {timelineTime}s: {frameIndex}");
-        // SetFrameInfo(frameIndex, timelineTime);
+        Debug.Log($"[SceneFlowCalculator] Calculated frame index from Timeline time {timelineTime}s: {frameIndex}");
         return frameIndex;
     }
 
@@ -529,21 +585,16 @@ public class SceneFlowCalculator : MonoBehaviour
         templateBones.Clear();
         int boneIndex = 0;
 
-        // Iterate through all joints and create bone definitions for parent-child pairs
         foreach (BvhJoint joint in bvhJoints)
         {
-            // Process ALL children including EndSites (removed skip condition)
-            // This ensures leaf bones with only EndSite children are included
             foreach (BvhJoint childJoint in joint.Children)
             {
-                // Create bone definition for all children, including EndSite nodes
                 BoneDefinition boneDef = new BoneDefinition
                 {
                     index = boneIndex,
                     parentJoint = joint,
                     childJoint = childJoint,
-                    isEndSiteChild = childJoint.IsEndSite  // Mark if this is an EndSite child
-                    // parentTransform and childTransform will be set per-frame
+                    isEndSiteChild = childJoint.IsEndSite
                 };
 
                 templateBones.Add(boneDef);
@@ -552,7 +603,7 @@ public class SceneFlowCalculator : MonoBehaviour
         }
 
         if (debugMode)
-            Debug.Log($"[SceneFlowCalculator] Created {templateBones.Count} template bone definitions from BVH hierarchy (including EndSite children)");
+            Debug.Log($"[SceneFlowCalculator] Created {templateBones.Count} template bone definitions from BVH hierarchy");
     }
 
     /// <summary>
@@ -598,54 +649,37 @@ public class SceneFlowCalculator : MonoBehaviour
             return new SegmentedBoneMotionData[0];
         }
 
-        // Get parent position in world space
         Vector3 parentPos = boneDef.parentTransform.position;
-
-        // Calculate child position
-        // For EndSite children, childTransform is null, so we calculate the virtual position
         Vector3 childPos;
+
         if (boneDef.isEndSiteChild && boneDef.childTransform == null)
         {
-            // EndSite: calculate position from parent + offset
-            // Use TransformDirection to apply parent's rotation to the offset
             childPos = boneDef.parentTransform.position + boneDef.parentTransform.TransformDirection(boneDef.childJoint.Offset);
-
-            if (debugMode)
-                Debug.Log($"[SceneFlowCalculator] EndSite child: {boneDef.childJoint.Name}, calculated pos: {childPos}");
         }
         else if (boneDef.childTransform != null)
         {
-            // Regular bone: use actual transform position
             childPos = boneDef.childTransform.position;
         }
         else
         {
-            Debug.LogWarning($"[SceneFlowCalculator] CalculateSegmentPositionsForBone: Child transform not available for bone {boneIndex} (not EndSite)");
+            Debug.LogWarning($"[SceneFlowCalculator] Child transform not available for bone {boneIndex}");
             return new SegmentedBoneMotionData[0];
         }
 
-        // Create array for segment positions
         SegmentedBoneMotionData[] segments = new SegmentedBoneMotionData[segmentsPerBone];
 
-        // Calculate segment positions using linear interpolation
         for (int i = 0; i < segmentsPerBone; i++)
         {
-            // Calculate interpolation parameter (0.0 at parent, 1.0 at child)
             float t = segmentsPerBone > 1 ? (float)i / (segmentsPerBone - 1) : 0f;
-
-            // Interpolate position
             Vector3 segmentPos = Vector3.Lerp(parentPos, childPos, t);
 
-            // Create bone segment data
-            SegmentedBoneMotionData segmentData = new SegmentedBoneMotionData(
+            segments[i] = new SegmentedBoneMotionData(
                 boneIndex,
                 i,
                 segmentPos,
                 t,
                 $"{boneDef.parentJoint.Name}->{boneDef.childJoint.Name}"
             );
-
-            segments[i] = segmentData;
         }
 
         return segments;
@@ -709,41 +743,20 @@ public class SceneFlowCalculator : MonoBehaviour
 
     /// <summary>
     /// Draw skeleton visualization in Scene view using Gizmos
-    /// - Current frame (blue)
-    /// - Previous frame (yellow)
-    /// - Motion vectors (red arrows)
     /// </summary>
     private void OnDrawGizmos()
     {
-        Debug.Log("[SceneFlowCalculator] OnDrawGizmos called");
-        // Draw current frame BVH (blue)
-        // 参照がnullまたは破棄されていないかチェック
         if (currentFrameContainer != null && currentFrameContainer.gameObject != null)
-        {
             DrawBvhContainerStructure(currentFrameContainer, Color.blue, 0.02f);
-        }
 
-        // Draw previous frame BVH (yellow)
-        // 参照がnullまたは破棄されていないかチェック
         if (previousFrameContainer != null && previousFrameContainer.gameObject != null)
-        {
             DrawBvhContainerStructure(previousFrameContainer, Color.yellow, 0.015f);
-        }
 
-        // Draw bone segment positions (white/gray spheres)
         DrawBoneSegmentPositions();
-
-        // Draw bone segment motion vectors (blue→red arrows)
         DrawBoneSegmentMotionVectors();
 
-        // NEW: Draw point cloud motion vectors (with frustum culling)
         if (showPointCloudMotionVectors && pointCloudMotionVectors != null)
-        {
             DrawPointCloudMotionVectors();
-        }
-
-        // Draw joint motion vectors (red arrows)
-        // DrawMotionVectors();
     }
 
     /// <summary>
@@ -785,52 +798,33 @@ public class SceneFlowCalculator : MonoBehaviour
     /// Link bone definitions to a specific frame skeleton transforms
     /// Creates a new list of BoneDefinition objects with transforms linked to the given frame
     /// </summary>
-    /// <param name="frameContainer">The frame container (CurrentFrameBVH or PreviousFrameBVH)</param>
-    /// <returns>New list of BoneDefinition objects with transforms linked to the frame</returns>
     private List<BoneDefinition> LinkBoneDefinitionsToFrame(Transform frameContainer)
     {
         var linkedBones = new List<BoneDefinition>();
 
         if (frameContainer == null || templateBones.Count == 0)
-        {
-            if (debugMode)
-                Debug.LogWarning($"[SceneFlowCalculator] LinkBoneDefinitionsToFrame: frameContainer={frameContainer}, templateBones.Count={templateBones.Count}");
             return linkedBones;
-        }
 
-        // Get the actual BVH root (skip TempBvhSkeleton container)
         if (frameContainer.childCount == 0)
-        {
-            if (debugMode)
-                Debug.LogWarning("[SceneFlowCalculator] LinkBoneDefinitionsToFrame: frameContainer has no children");
             return linkedBones;
-        }
 
         Transform tempSkeleton = frameContainer.GetChild(0);
         if (tempSkeleton.childCount == 0)
-        {
-            if (debugMode)
-                Debug.LogWarning("[SceneFlowCalculator] LinkBoneDefinitionsToFrame: TempBvhSkeleton has no children");
             return linkedBones;
-        }
 
         Transform bvhRoot = tempSkeleton.GetChild(0);
-
-        // Create new bone definitions with transforms from this frame
         int linkedCount = 0;
+
         foreach (var templateBone in templateBones)
         {
-            // Create new BoneDefinition object for this frame
             var boneDef = new BoneDefinition
             {
-                //初期化子でコピー
                 index = templateBone.index,
                 parentJoint = templateBone.parentJoint,
                 childJoint = templateBone.childJoint,
                 isEndSiteChild = templateBone.isEndSiteChild
             };
 
-            // Find parent transform
             Transform parentTransform = FindJointTransformByName(bvhRoot, boneDef.parentJoint.Name);
             if (parentTransform != null)
             {
@@ -838,15 +832,12 @@ public class SceneFlowCalculator : MonoBehaviour
                 linkedCount++;
             }
 
-            // Find child transform
-            // For EndSite children, childTransform will remain null (handled in CalculateSegmentPositionsForBone)
             if (!boneDef.isEndSiteChild)
             {
                 Transform childTransform = FindJointTransformByName(bvhRoot, boneDef.childJoint.Name);
                 if (childTransform != null)
                     boneDef.childTransform = childTransform;
             }
-            // else: isEndSiteChild = true, leave childTransform = null
 
             linkedBones.Add(boneDef);
         }
@@ -1024,7 +1015,6 @@ public class SceneFlowCalculator : MonoBehaviour
                         currentSeg.interpolationT,
                         currentSeg.boneName
                     );
-                    // Debug.Log($"[SceneFlowCalculator] Segment Motion: BoneIndex={segmentWithMotion.boneIndex}, SegmentIndex={segmentWithMotion.segmentIndex}, CurrentPos={segmentWithMotion.position}, PreviousPos={segmentWithMotion.previousPosition}, MotionVector={segmentWithMotion.motionVector}, Magnitude={segmentWithMotion.motionMagnitude}");    
                     cachedSegmentMotionVectors.Add(segmentWithMotion);
                 }
             }
@@ -1173,11 +1163,80 @@ public class SceneFlowCalculator : MonoBehaviour
             Gizmos.color = Color.Lerp(Color.blue, Color.red, t);
 
             Gizmos.DrawLine(start, end);
-            Gizmos.DrawSphere(end, 0.005f);
+            Gizmos.DrawSphere(end, 0.002f);
 
-            // Draw line to matched bone segment
-            if (showMatchingLines && matchedSegmentPositions != null && i < matchedSegmentPositions.Length)
+            // Draw lines to K-nearest bone segments (with color intensity based on weight)
+            if (showMatchingLines && useWeightedInterpolation && kNearestInfoPerPoint != null && i < kNearestInfoPerPoint.Length)
             {
+                KNearestInfo knnInfo = kNearestInfoPerPoint[i];
+                if (knnInfo.segmentPositions != null && knnInfo.weights != null)
+                {
+                    // Debug: Log weights for first visualized point
+                    if (visibleCount == 0 && debugMode)
+                    {
+                        string weightsDebug = string.Join(", ", System.Array.ConvertAll(knnInfo.weights, w => w.ToString("F3")));
+                        Debug.Log($"[Gizmo Debug] First point K-nearest weights: [{weightsDebug}], K={knnInfo.weights.Length}");
+
+                        // Also log relative weights and colors for debugging
+                        float avgWeight = 1f / knnInfo.weights.Length;
+                        for (int debugK = 0; debugK < knnInfo.weights.Length; debugK++)
+                        {
+                            float relWeight = knnInfo.weights[debugK] / avgWeight;
+                            Debug.Log($"  Segment {debugK}: weight={knnInfo.weights[debugK]:F3}, relativeWeight={relWeight:F3}");
+                        }
+                    }
+
+                    for (int k = 0; k < knnInfo.segmentPositions.Length; k++)
+                    {
+                        Vector3 segmentPos = knnInfo.segmentPositions[k];
+                        float weight = knnInfo.weights[k];
+
+                        // Use rank-based coloring for better visual differentiation
+                        // K nearest segments are sorted by distance (index 0 = nearest)
+                        // Color scheme: Red (nearest) → Orange → Yellow → Green → Cyan (farthest)
+                        float rankNormalized = k / (float)Mathf.Max(1, knnInfo.weights.Length - 1);  // 0.0 = nearest, 1.0 = farthest
+
+                        Color lineColor;
+                        float colorT;
+                        if (rankNormalized < 0.25f)
+                        {
+                            // Nearest 25%: Red → Orange
+                            colorT = rankNormalized / 0.25f;
+                            lineColor = Color.Lerp(Color.red, new Color(1f, 0.5f, 0f), colorT);  // red to orange
+                        }
+                        else if (rankNormalized < 0.5f)
+                        {
+                            // 25-50%: Orange → Yellow
+                            colorT = (rankNormalized - 0.25f) / 0.25f;
+                            lineColor = Color.Lerp(new Color(1f, 0.5f, 0f), Color.yellow, colorT);  // orange to yellow
+                        }
+                        else if (rankNormalized < 0.75f)
+                        {
+                            // 50-75%: Yellow → Green
+                            colorT = (rankNormalized - 0.5f) / 0.25f;
+                            lineColor = Color.Lerp(Color.yellow, Color.green, colorT);  // yellow to green
+                        }
+                        else
+                        {
+                            // Farthest 25%: Green → Cyan
+                            colorT = (rankNormalized - 0.75f) / 0.25f;
+                            lineColor = Color.Lerp(Color.green, Color.cyan, colorT);  // green to cyan
+                        }
+
+                        // Alpha varies by weight magnitude (stronger influence = more opaque)
+                        lineColor.a = Mathf.Lerp(0.3f, 1.0f, weight * knnInfo.weights.Length);  // weight * K to amplify differences
+                        Gizmos.color = lineColor;
+                        Gizmos.DrawLine(start, segmentPos);
+
+                        // Draw small sphere at segment position with size proportional to weight
+                        float sphereSize = Mathf.Lerp(0.003f, 0.008f, weight);
+                        Gizmos.DrawSphere(segmentPos, sphereSize);
+                    }
+                }
+            }
+            else if (showMatchingLines && matchedSegmentPositions != null && i < matchedSegmentPositions.Length)
+            {
+                // Fallback: draw single line to nearest segment (original behavior)
                 Vector3 segmentPos = matchedSegmentPositions[i];
                 Gizmos.color = Color.yellow;
                 Gizmos.DrawLine(start, segmentPos);
@@ -1197,18 +1256,12 @@ public class SceneFlowCalculator : MonoBehaviour
 #endif
     }
 
-    // ============================================================================
-    // PUBLIC METHODS FOR BATCH PROCESSING (Phase 3: Offline Pre-computation Tool)
-    // ============================================================================
-
     /// <summary>
     /// Calculate bone segments for a specific frame pair
-    /// PUBLIC METHOD for batch processing
-    /// Automatically applies drift correction from DatasetConfig
+    /// Public method for batch processing - automatically applies drift correction from DatasetConfig
     /// </summary>
     public void CalculateBoneSegmentsForFramePair(int currentFrame, int previousFrame)
     {
-        // Initialize BVH data from cache if not already loaded
         if (bvhData == null)
         {
             TryAutoInitializeBvhData();
@@ -1219,42 +1272,33 @@ public class SceneFlowCalculator : MonoBehaviour
             }
         }
 
-        // Get config data (includes drift correction keyframes)
         Vector3 positionOffset = GetBvhPositionOffset();
         Vector3 rotationOffset = GetBvhRotationOffset();
         Vector3 bvhScale = GetBvhScale();
         BvhPlaybackCorrectionKeyframes driftData = GetDriftCorrectionData();
 
-        // Calculate frame times (for drift correction interpolation)
         float currentFrameTime = currentFrame * bvhData.FrameTime;
         float previousFrameTime = previousFrame * bvhData.FrameTime;
 
         Debug.Log($"[SceneFlowCalculator] Calculating bone segments for frame pair ({previousFrame}, {currentFrame}) at times ({previousFrameTime}s, {currentFrameTime}s)");
 
-        // Prepare template bones from BVH hierarchy (if not already done)
         if (templateBones.Count == 0)
         {
             GatherBoneHierarchyFromBvhData();
             GatherBoneDefinitionsFromBvhData();
         }
 
-        // Create BVH skeletons using existing DisplayBvhFrame()
-        // IMPORTANT: DisplayBvhFrame() applies drift correction internally
-        //   via BvhPlaybackTransformCorrector (lines 457-458)
         DisplayBvhFrame("CurrentFrameBVH", currentFrame, currentFrameTime,
                         positionOffset, rotationOffset, bvhScale, driftData);
         DisplayBvhFrame("PreviousFrameBVH", previousFrame, previousFrameTime,
                         positionOffset, rotationOffset, bvhScale, driftData);
 
-        // Get container references
         currentFrameContainer = transform.Find("CurrentFrameBVH");
         previousFrameContainer = transform.Find("PreviousFrameBVH");
 
-        // Link bone definitions to frame transforms (CRITICAL STEP - was missing!)
         currentFrameBones = LinkBoneDefinitionsToFrame(currentFrameContainer);
         previousFrameBones = LinkBoneDefinitionsToFrame(previousFrameContainer);
 
-        // Calculate bone segments using existing method
         CacheSegmentDataForVisualization();
 
         if (debugMode)
@@ -1263,8 +1307,7 @@ public class SceneFlowCalculator : MonoBehaviour
 
     /// <summary>
     /// Calculate motion vectors for a given mesh using current bone segment data
-    /// PUBLIC METHOD for batch processing
-    /// Must call CalculateBoneSegmentsForFramePair() first to populate bone segment data
+    /// Public method for batch processing - must call CalculateBoneSegmentsForFramePair() first
     /// </summary>
     public Vector3[] CalculateMotionVectorsForMesh(Mesh mesh)
     {
@@ -1276,10 +1319,6 @@ public class SceneFlowCalculator : MonoBehaviour
 
         Vector3[] vertices = mesh.vertices;
         BoneSegmentGPUData[] segments = GetBoneSegmentGPUData();
-        // for (int i = 0; i < segments.Length; i++)
-        // {
-        //     Debug.Log($"[SceneFlowCalculator] Segment {i}: BoneIndex={segments[i].boneIndex}, SegmentIndex={segments[i].segmentIndex}, CurrentPos={segments[i].currentPosition}, PreviousPos={segments[i].previousPosition}, MotionVector={segments[i].motionVector}, Magnitude={segments[i].motionMagnitude}");
-        // }
 
         if (segments.Length == 0)
         {
@@ -1287,8 +1326,391 @@ public class SceneFlowCalculator : MonoBehaviour
             return new Vector3[vertices.Length]; // Return zero vectors
         }
 
+        // Use unified K-NN or nearest-neighbor calculation
+        Vector3[] motionVectors = CalculateWeightedKNNMotionVectors(
+            vertices,
+            segments,
+            kNearestNeighbors,
+            normalizeMotionMagnitudes
+        );
+
+        if (debugMode)
+        {
+            string algorithmName = useWeightedInterpolation ? $"K-NN (K={kNearestNeighbors})" : "nearest-neighbor";
+            string normalizationStatus = normalizeMotionMagnitudes ? " with normalization" : "";
+            Debug.Log($"[SceneFlowCalculator] Calculated motion vectors for {vertices.Length} points using {segments.Length} bone segments ({algorithmName}{normalizationStatus})");
+        }
+
+        return motionVectors;
+    }
+
+    #region K-NN Motion Vector Interpolation
+
+    /// <summary>
+    /// Calculate K-nearest neighbor weighted motion vector for a single point.
+    /// Uses distance-ratio weighting: closer segments have higher influence.
+    /// </summary>
+    /// <param name="point">Point cloud vertex position</param>
+    /// <param name="segments">Array of bone segment data with motion vectors</param>
+    /// <param name="K">Number of nearest neighbors to consider</param>
+    /// <returns>Weighted interpolated motion vector</returns>
+    private Vector3 CalculateKNNMotionVectorForPoint(Vector3 point, BoneSegmentGPUData[] segments, int K)
+    {
+        if (segments.Length == 0)
+            return Vector3.zero;
+
+        // Handle case where K is larger than available segments
+        int actualK = Mathf.Min(K, segments.Length);
+
+        // Initialize K-nearest tracking array
+        NearestSegment[] nearest = new NearestSegment[actualK];
+        for (int k = 0; k < actualK; k++)
+        {
+            nearest[k] = new NearestSegment { segmentIndex = -1, distanceSq = float.MaxValue };
+        }
+
+        // K-NN search with insertion sort
+        for (int s = 0; s < segments.Length; s++)
+        {
+            float distSq = (point - segments[s].currentPosition).sqrMagnitude;
+
+            // Early exit for zero distance - point exactly on segment
+            if (distSq < 0.0001f)
+            {
+                return segments[s].motionVector;
+            }
+
+            // Check if this segment is closer than the farthest in top-K
+            if (distSq < nearest[actualK - 1].distanceSq)
+            {
+                // Find insertion position (keep array sorted by distance)
+                int insertPos = actualK - 1;
+                for (int k = 0; k < actualK - 1; k++)
+                {
+                    if (distSq < nearest[k].distanceSq)
+                    {
+                        insertPos = k;
+                        break;
+                    }
+                }
+
+                // Shift elements right to make space
+                for (int k = actualK - 1; k > insertPos; k--)
+                {
+                    nearest[k] = nearest[k - 1];
+                }
+
+                // Insert new segment
+                nearest[insertPos] = new NearestSegment
+                {
+                    segmentIndex = s,
+                    distanceSq = distSq,
+                    motionVector = segments[s].motionVector
+                };
+            }
+        }
+
+        // Count valid segments found
+        int validCount = 0;
+        for (int k = 0; k < actualK; k++)
+        {
+            if (nearest[k].segmentIndex >= 0)
+                validCount++;
+        }
+
+        if (validCount == 0)
+            return Vector3.zero;
+
+        // Calculate distance sum (convert from squared to actual distance)
+        float sumDistances = 0f;
+        for (int k = 0; k < validCount; k++)
+        {
+            sumDistances += Mathf.Sqrt(nearest[k].distanceSq);
+        }
+
+        // Calculate weights using user's formula: weight[i] = (sumDistances - dist[i]) / sumDistances
+        float[] weights = new float[validCount];
+
+        if (sumDistances < 0.0001f)
+        {
+            // All segments at identical distance - use uniform weights
+            for (int k = 0; k < validCount; k++)
+            {
+                weights[k] = 1f / validCount;
+            }
+        }
+        else
+        {
+            // Apply distance-ratio formula
+            float normFactor = 0f;
+            for (int k = 0; k < validCount; k++)
+            {
+                float dist = Mathf.Sqrt(nearest[k].distanceSq);
+                weights[k] = (sumDistances - dist) / sumDistances;
+                normFactor += weights[k];
+            }
+
+            // Normalize weights to sum to 1.0
+            if (normFactor > 0.0001f)
+            {
+                for (int k = 0; k < validCount; k++)
+                {
+                    weights[k] /= normFactor;
+                }
+            }
+            else
+            {
+                // Fallback to uniform weights
+                for (int k = 0; k < validCount; k++)
+                {
+                    weights[k] = 1f / validCount;
+                }
+            }
+        }
+
+        // Weighted interpolation
+        Vector3 result = Vector3.zero;
+        for (int k = 0; k < validCount; k++)
+        {
+            result += weights[k] * nearest[k].motionVector;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Calculate K-nearest neighbor weighted motion vector for a single point.
+    /// Overloaded version that also returns K-nearest segment info for visualization.
+    /// </summary>
+    /// <param name="point">Point cloud vertex position</param>
+    /// <param name="segments">Array of bone segment data with motion vectors</param>
+    /// <param name="K">Number of nearest neighbors to consider</param>
+    /// <param name="kNearestInfo">Output: K-nearest segments positions and weights</param>
+    /// <returns>Weighted interpolated motion vector</returns>
+    private Vector3 CalculateKNNMotionVectorForPoint(Vector3 point, BoneSegmentGPUData[] segments, int K, out KNearestInfo kNearestInfo)
+    {
+        // Initialize output
+        kNearestInfo = new KNearestInfo
+        {
+            segmentPositions = new Vector3[0],
+            weights = new float[0]
+        };
+
+        if (segments.Length == 0)
+            return Vector3.zero;
+
+        // Handle case where K is larger than available segments
+        int actualK = Mathf.Min(K, segments.Length);
+
+        // Initialize K-nearest tracking array
+        NearestSegment[] nearest = new NearestSegment[actualK];
+        for (int k = 0; k < actualK; k++)
+        {
+            nearest[k] = new NearestSegment { segmentIndex = -1, distanceSq = float.MaxValue };
+        }
+
+        // K-NN search with insertion sort
+        for (int s = 0; s < segments.Length; s++)
+        {
+            float distSq = (point - segments[s].currentPosition).sqrMagnitude;
+
+            // Early exit for zero distance - point exactly on segment
+            if (distSq < 0.0001f)
+            {
+                // Return single segment info
+                kNearestInfo = new KNearestInfo
+                {
+                    segmentPositions = new Vector3[] { segments[s].currentPosition },
+                    weights = new float[] { 1.0f }
+                };
+                return segments[s].motionVector;
+            }
+
+            // Check if this segment is closer than the farthest in top-K
+            if (distSq < nearest[actualK - 1].distanceSq)
+            {
+                // Find insertion position (keep array sorted by distance)
+                int insertPos = actualK - 1;
+                for (int k = 0; k < actualK - 1; k++)
+                {
+                    if (distSq < nearest[k].distanceSq)
+                    {
+                        insertPos = k;
+                        break;
+                    }
+                }
+
+                // Shift elements right to make space
+                for (int k = actualK - 1; k > insertPos; k--)
+                {
+                    nearest[k] = nearest[k - 1];
+                }
+
+                // Insert new segment
+                nearest[insertPos] = new NearestSegment
+                {
+                    segmentIndex = s,
+                    distanceSq = distSq,
+                    motionVector = segments[s].motionVector
+                };
+            }
+        }
+
+        // Count valid segments found
+        int validCount = 0;
+        for (int k = 0; k < actualK; k++)
+        {
+            if (nearest[k].segmentIndex >= 0)
+                validCount++;
+        }
+
+        if (validCount == 0)
+            return Vector3.zero;
+
+        // Calculate distance sum (convert from squared to actual distance)
+        float sumDistances = 0f;
+        for (int k = 0; k < validCount; k++)
+        {
+            sumDistances += Mathf.Sqrt(nearest[k].distanceSq);
+        }
+
+        // Calculate weights using user's formula: weight[i] = (sumDistances - dist[i]) / sumDistances
+        float[] weights = new float[validCount];
+        Vector3[] segmentPositions = new Vector3[validCount];
+
+        if (sumDistances < 0.0001f)
+        {
+            // All segments at identical distance - use uniform weights
+            for (int k = 0; k < validCount; k++)
+            {
+                weights[k] = 1f / validCount;
+                segmentPositions[k] = segments[nearest[k].segmentIndex].currentPosition;
+            }
+        }
+        else
+        {
+            // Apply distance-ratio formula
+            float normFactor = 0f;
+            for (int k = 0; k < validCount; k++)
+            {
+                float dist = Mathf.Sqrt(nearest[k].distanceSq);
+                weights[k] = (sumDistances - dist) / sumDistances;
+                normFactor += weights[k];
+                segmentPositions[k] = segments[nearest[k].segmentIndex].currentPosition;
+            }
+
+            // Normalize weights to sum to 1.0
+            if (normFactor > 0.0001f)
+            {
+                for (int k = 0; k < validCount; k++)
+                {
+                    weights[k] /= normFactor;
+                }
+            }
+            else
+            {
+                // Fallback to uniform weights
+                for (int k = 0; k < validCount; k++)
+                {
+                    weights[k] = 1f / validCount;
+                }
+            }
+        }
+
+        // Store K-nearest info for visualization
+        kNearestInfo = new KNearestInfo
+        {
+            segmentPositions = segmentPositions,
+            weights = weights
+        };
+
+        // Debug: Log weights for first few points
+        if (debugMode && UnityEngine.Random.value < 0.001f) // Log 0.1% of points
+        {
+            string weightsStr = string.Join(", ", System.Array.ConvertAll(weights, w => w.ToString("F3")));
+            Debug.Log($"[K-NN Debug] Point weights: [{weightsStr}], sum={System.Linq.Enumerable.Sum(weights):F3}");
+        }
+
+        // Weighted interpolation
+        Vector3 result = Vector3.zero;
+        for (int k = 0; k < validCount; k++)
+        {
+            result += weights[k] * nearest[k].motionVector;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Normalize motion vector magnitudes to [0, 1] range.
+    /// Largest magnitude becomes 1.0, smallest becomes 0.0.
+    /// Preserves direction of each vector while scaling magnitudes.
+    /// </summary>
+    /// <param name="motionVectors">Motion vector array to normalize in-place</param>
+    private void NormalizeMotionVectorMagnitudes(Vector3[] motionVectors)
+    {
+        if (motionVectors == null || motionVectors.Length == 0)
+            return;
+
+        // Find min and max magnitudes
+        float minMagnitude = float.MaxValue;
+        float maxMagnitude = 0f;
+
+        for (int i = 0; i < motionVectors.Length; i++)
+        {
+            float mag = motionVectors[i].magnitude;
+            if (mag < minMagnitude)
+                minMagnitude = mag;
+            if (mag > maxMagnitude)
+                maxMagnitude = mag;
+        }
+
+        // Calculate range
+        float range = maxMagnitude - minMagnitude;
+
+        // Skip normalization if all vectors have same magnitude
+        if (range < 0.0001f)
+        {
+            if (debugMode)
+                Debug.Log($"[SceneFlowCalculator] Skipping magnitude normalization - all vectors have similar magnitude ({maxMagnitude:F6})");
+            return;
+        }
+
+        // Normalize each vector
+        for (int i = 0; i < motionVectors.Length; i++)
+        {
+            float originalMag = motionVectors[i].magnitude;
+
+            // Handle zero vectors
+            if (originalMag < 0.0001f)
+            {
+                motionVectors[i] = Vector3.zero;
+                continue;
+            }
+
+            // Calculate normalized magnitude [0, 1]
+            float normalizedMag = (originalMag - minMagnitude) / range;
+
+            // Preserve direction, apply normalized magnitude
+            Vector3 direction = motionVectors[i] / originalMag;  // Normalize direction
+            motionVectors[i] = direction * normalizedMag;
+        }
+
+        if (debugMode)
+            Debug.Log($"[SceneFlowCalculator] Normalized motion vector magnitudes: [{minMagnitude:F6}, {maxMagnitude:F6}] → [0.0, 1.0]");
+    }
+
+    /// <summary>
+    /// Original nearest-neighbor algorithm (preserved for comparison and fallback).
+    /// Each point is assigned the motion vector of its single nearest bone segment.
+    /// </summary>
+    /// <param name="vertices">Point cloud vertex positions</param>
+    /// <param name="segments">Bone segment data with motion vectors</param>
+    /// <returns>Motion vector array (one per vertex)</returns>
+    private Vector3[] CalculateNearestNeighborMotionVectors(Vector3[] vertices, BoneSegmentGPUData[] segments)
+    {
         Vector3[] motionVectors = new Vector3[vertices.Length];
-        // Reuse existing nearest-neighbor logic from CalculatePointCloudMotionVectors()
+
         for (int i = 0; i < vertices.Length; i++)
         {
             Vector3 point = vertices[i];
@@ -1308,15 +1730,81 @@ public class SceneFlowCalculator : MonoBehaviour
 
             // Assign motion vector from nearest segment
             if (nearestIdx >= 0)
-            {
                 motionVectors[i] = segments[nearestIdx].motionVector;
-            }
         }
-
-        if (debugMode)
-            Debug.Log($"[SceneFlowCalculator] Calculated motion vectors for {vertices.Length} points using {segments.Length} bone segments");
 
         return motionVectors;
     }
+
+    /// <summary>
+    /// Unified method for calculating motion vectors with configurable algorithm.
+    /// Supports both K-NN weighted interpolation and original nearest-neighbor.
+    /// </summary>
+    /// <param name="vertices">Point cloud vertex positions</param>
+    /// <param name="segments">Bone segment data with motion vectors</param>
+    /// <param name="kNearest">Number of nearest neighbors for K-NN (ignored if using nearest-neighbor)</param>
+    /// <param name="applyGlobalNormalization">Normalize magnitudes to [0,1] range</param>
+    /// <returns>Motion vector array (one per vertex)</returns>
+    private Vector3[] CalculateWeightedKNNMotionVectors(
+        Vector3[] vertices,
+        BoneSegmentGPUData[] segments,
+        int kNearest,
+        bool applyGlobalNormalization)
+    {
+        Vector3[] motionVectors;
+
+        // Choose algorithm based on configuration
+        if (!useWeightedInterpolation)
+        {
+            // Use original nearest-neighbor algorithm
+            motionVectors = CalculateNearestNeighborMotionVectors(vertices, segments);
+        }
+        else
+        {
+            // Use K-NN weighted interpolation
+            motionVectors = new Vector3[vertices.Length];
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                motionVectors[i] = CalculateKNNMotionVectorForPoint(vertices[i], segments, kNearest);
+            }
+        }
+
+        // Apply global magnitude normalization if enabled
+        if (applyGlobalNormalization)
+        {
+            NormalizeMotionVectorMagnitudes(motionVectors);
+        }
+
+        return motionVectors;
+    }
+
+    /// <summary>
+    /// Find the nearest segment index for a single point (used for visualization).
+    /// </summary>
+    /// <param name="point">Point cloud vertex position</param>
+    /// <param name="segments">Bone segment data</param>
+    /// <returns>Index of nearest segment, or -1 if none found</returns>
+    private int FindNearestSegmentIndex(Vector3 point, BoneSegmentGPUData[] segments)
+    {
+        if (segments.Length == 0)
+            return -1;
+
+        float minDistSq = float.MaxValue;
+        int nearestIdx = -1;
+
+        for (int s = 0; s < segments.Length; s++)
+        {
+            float distSq = (point - segments[s].currentPosition).sqrMagnitude;
+            if (distSq < minDistSq)
+            {
+                minDistSq = distSq;
+                nearestIdx = s;
+            }
+        }
+
+        return nearestIdx;
+    }
+
+    #endregion
 
 }

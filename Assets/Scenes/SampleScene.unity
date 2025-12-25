@@ -737,7 +737,7 @@ Transform:
   m_GameObject: {fileID: 459501812}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 1, z: 0, w: -0.00000004371139}
-  m_LocalPosition: {x: -0.17999999, y: 0.01, z: 0.21}
+  m_LocalPosition: {x: -0.21, y: 0.01, z: 0.21}
   m_LocalScale: {x: 0.01, y: 0.01, z: 0.01}
   m_ConstrainProportionsScale: 1
   m_Children:
@@ -1747,10 +1747,13 @@ MonoBehaviour:
   segmentsPerBone: 10
   debugMode: 1
   showPointCloudMotionVectors: 1
-  pointCloudArrowScale: 0.01
+  pointCloudArrowScale: 0.1
   maxPointsToVisualize: 10000
   useFrustumCulling: 1
   showMatchingLines: 1
+  kNearestNeighbors: 5
+  normalizeMotionMagnitudes: 1
+  useWeightedInterpolation: 1
 --- !u!1 &1690879701
 GameObject:
   m_ObjectHideFlags: 0
