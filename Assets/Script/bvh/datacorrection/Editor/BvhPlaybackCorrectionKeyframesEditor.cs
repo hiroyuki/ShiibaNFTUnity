@@ -274,7 +274,7 @@ public class BvhPlaybackCorrectionKeyframesEditor : Editor
 
     /// <summary>
     /// Updates the BVH_Character position based on keyframe position change
-    /// Sets position to DatasetConfig.BvhPositionOffset + keyframe correction value
+    /// Uses interpolation between keyframes based on current timeline time
     /// </summary>
     private void UpdateBvhCharacterPosition(Vector3 newPosition, Vector3 oldPosition, BvhKeyframe keyframe)
     {
@@ -301,19 +301,25 @@ public class BvhPlaybackCorrectionKeyframesEditor : Editor
             return;
         }
 
-        // Calculate the correct position: BaseOffset + KeyframeCorrection
+        // Get current timeline time
+        PlayableDirector timeline = FindFirstObjectByType<PlayableDirector>();
+        double currentTime = timeline != null ? timeline.time : 0.0;
+
+        // Get interpolated position at current time (interpolates between keyframes)
+        Vector3 interpolatedPosition = driftCorrectionData.GetAnchorPositionAtTime(currentTime);
+
+        // Calculate the correct position: BaseOffset + InterpolatedCorrection
         Transform bvhTransform = bvhCharacter.transform;
         Vector3 baseOffset = datasetConfig.BvhPositionOffset;
-        Vector3 updatedPosition = baseOffset + newPosition;
+        Vector3 updatedPosition = baseOffset + interpolatedPosition;
 
         // Update the BVH_Character position
         bvhTransform.localPosition = updatedPosition;
 
-        Debug.Log($"[BVH Position Updated] Keyframe {keyframe.timelineTime}s:\n" +
+        Debug.Log($"[BVH Position Updated] Current Time: {currentTime:F2}s:\n" +
                   $"  Base Offset (DatasetConfig): {baseOffset}\n" +
-                  $"  Old Correction: {oldPosition}\n" +
-                  $"  New Correction: {newPosition}\n" +
-                  $"  Final Position: {baseOffset} + {newPosition} = {updatedPosition}");
+                  $"  Interpolated Correction: {interpolatedPosition}\n" +
+                  $"  Final Position: {baseOffset} + {interpolatedPosition} = {updatedPosition}");
 
         // Mark the transform as dirty to ensure changes are saved
         EditorUtility.SetDirty(bvhTransform);
@@ -321,7 +327,7 @@ public class BvhPlaybackCorrectionKeyframesEditor : Editor
 
     /// <summary>
     /// Updates the BVH_Character rotation based on keyframe rotation change
-    /// Sets rotation to DatasetConfig.BvhRotationOffset + keyframe correction value
+    /// Uses interpolation between keyframes based on current timeline time
     /// </summary>
     private void UpdateBvhCharacterRotation(Vector3 newRotation, Vector3 oldRotation, BvhKeyframe keyframe)
     {
@@ -348,19 +354,25 @@ public class BvhPlaybackCorrectionKeyframesEditor : Editor
             return;
         }
 
-        // Calculate the correct rotation: BaseOffset + KeyframeCorrection
+        // Get current timeline time
+        PlayableDirector timeline = FindFirstObjectByType<PlayableDirector>();
+        double currentTime = timeline != null ? timeline.time : 0.0;
+
+        // Get interpolated rotation at current time (interpolates between keyframes)
+        Vector3 interpolatedRotation = driftCorrectionData.GetAnchorRotationAtTime(currentTime);
+
+        // Calculate the correct rotation: BaseOffset + InterpolatedCorrection
         Transform bvhTransform = bvhCharacter.transform;
         Vector3 baseOffset = datasetConfig.BvhRotationOffset;
-        Vector3 updatedEuler = baseOffset + newRotation;
+        Vector3 updatedEuler = baseOffset + interpolatedRotation;
 
         // Update the BVH_Character rotation
         bvhTransform.localEulerAngles = updatedEuler;
 
-        Debug.Log($"[BVH Rotation Updated] Keyframe {keyframe.timelineTime}s:\n" +
+        Debug.Log($"[BVH Rotation Updated] Current Time: {currentTime:F2}s:\n" +
                   $"  Base Offset (DatasetConfig): {baseOffset}\n" +
-                  $"  Old Correction: {oldRotation}\n" +
-                  $"  New Correction: {newRotation}\n" +
-                  $"  Final Rotation: {baseOffset} + {newRotation} = {updatedEuler}");
+                  $"  Interpolated Correction: {interpolatedRotation}\n" +
+                  $"  Final Rotation: {baseOffset} + {interpolatedRotation} = {updatedEuler}");
 
         // Mark the transform as dirty to ensure changes are saved
         EditorUtility.SetDirty(bvhTransform);
@@ -394,6 +406,29 @@ public class BvhPlaybackCorrectionKeyframesEditor : Editor
     }
 
     /// <summary>
+    /// Sorts keyframes array by timeline time
+    /// </summary>
+    private void SortKeyframesByTime()
+    {
+        var keyframes = driftCorrectionData.GetAllKeyframes();
+        var sortedKeyframes = keyframes.OrderBy(k => k.timelineTime).ToList();
+
+        // Clear and repopulate the serialized array
+        keyframesProperty.ClearArray();
+        for (int i = 0; i < sortedKeyframes.Count; i++)
+        {
+            keyframesProperty.InsertArrayElementAtIndex(i);
+            SerializedProperty element = keyframesProperty.GetArrayElementAtIndex(i);
+
+            element.FindPropertyRelative("timelineTime").doubleValue = sortedKeyframes[i].timelineTime;
+            element.FindPropertyRelative("bvhFrameNumber").intValue = sortedKeyframes[i].bvhFrameNumber;
+            element.FindPropertyRelative("anchorPositionRelative").vector3Value = sortedKeyframes[i].anchorPositionRelative;
+            element.FindPropertyRelative("anchorRotationRelative").vector3Value = sortedKeyframes[i].anchorRotationRelative;
+            element.FindPropertyRelative("note").stringValue = sortedKeyframes[i].note;
+        }
+    }
+
+    /// <summary>
     /// Detects when a new keyframe is added via the "+" button in the Inspector
     /// Automatically fills in current timeline time, BVH frame, position, and rotation
     /// </summary>
@@ -417,8 +452,6 @@ public class BvhPlaybackCorrectionKeyframesEditor : Editor
                 // Get BVH playable asset and current frame
                 var bvhAsset = Resources.FindObjectsOfTypeAll<BvhPlayableAsset>().FirstOrDefault();
                 int currentFrame = 0;
-                Vector3 currentPosition = Vector3.zero;
-                Vector3 currentRotation = Vector3.zero;
 
                 if (bvhAsset != null)
                 {
@@ -436,23 +469,24 @@ public class BvhPlaybackCorrectionKeyframesEditor : Editor
                         float bvhFrameRate = bvhData != null ? bvhData.FrameRate : 30f;
                         currentFrame = Mathf.FloorToInt((float)(currentTime * bvhFrameRate));
                     }
-
-                    // Get current position and rotation from BVH_Character
-                    currentPosition = bvhAsset.GetBvhCharacterPosition();
-                    currentRotation = bvhAsset.GetBvhCharacterRotation();
                 }
 
-                // Update the new keyframe with current values
+                // Update the new keyframe with current time and frame only
+                // Position and rotation remain at default (0,0,0) for manual adjustment
                 newKeyframe.timelineTime = currentTime;
                 newKeyframe.bvhFrameNumber = currentFrame;
-                newKeyframe.anchorPositionRelative = currentPosition;
-                newKeyframe.anchorRotationRelative = currentRotation;
 
                 // Mark as dirty to save changes
                 EditorUtility.SetDirty(driftCorrectionData);
 
+                // Sort keyframes array by timeline time
+                // Must apply first to save current changes, then sort, then update
+                serializedObject.ApplyModifiedPropertiesWithoutUndo();
+                SortKeyframesByTime();
+                serializedObject.ApplyModifiedPropertiesWithoutUndo();
+
                 Debug.Log($"[BvhPlaybackCorrectionKeyframesEditor] Auto-filled new keyframe: " +
-                          $"time={currentTime:F2}s, frame={currentFrame}, pos={currentPosition}, rot={currentRotation}");
+                          $"time={currentTime:F2}s, frame={currentFrame}");
             }
 
             // Update the previous count

@@ -15,9 +15,9 @@ MonoBehaviour:
   datasetFolder: {fileID: 102900000, guid: d6ba913dee2914d2cbbdf74ba82f1a12, type: 3}
   enableBvh: 1
   bvhFile: {fileID: 102900000, guid: 346380265387748cd974665327993f71, type: 3}
-  bvhPositionOffset: {x: -0.18, y: 0.01, z: 0.21}
+  bvhPositionOffset: {x: -0.21, y: 0.01, z: 0.21}
   bvhRotationOffset: {x: 0, y: 180, z: 0}
-  bvhScale: {x: 0.0085, y: 0.0085, z: 0.0085}
+  bvhScale: {x: 0.01, y: 0.01, z: 0.01}
   processingType: 4
   binaryDataRootPath: /Volumes/horristicSSD2T/Dropbox/projects/shiiba/20251130/Shibahiki_2025-11-30_10-00-33_video
   bvhDriftCorrectionData: {fileID: 11400000, guid: feba45d7131cb4119b5870894918530f, type: 2}

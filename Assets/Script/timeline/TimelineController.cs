@@ -440,16 +440,12 @@ public class TimelineController : MonoBehaviour
             currentFrame = Mathf.FloorToInt((float)(currentTime * bvhFrameRate));
         }
 
-        // 現在のBVH_Characterの位置と回転を取得
-        Vector3 currentPosition = bvhPlayableAsset.GetBvhCharacterPosition();
-        Vector3 currentRotation = bvhPlayableAsset.GetBvhCharacterRotation();
-
-        // キーフレームを追加（現在の位置と回転を保存）
-        driftCorrectionData.AddKeyframe(currentTime, currentFrame, currentPosition, currentRotation);
+        // キーフレームを追加（時刻とフレーム番号のみ、位置と回転は手動調整用にゼロのまま）
+        driftCorrectionData.AddKeyframe(currentTime, currentFrame, Vector3.zero, Vector3.zero);
 
         if (showDebugLogs)
         {
-            Debug.Log($"TimelineController: Keyframe added at time={currentTime}s, frame={currentFrame}, pos={currentPosition}, rot={currentRotation}");
+            Debug.Log($"TimelineController: Keyframe added at time={currentTime}s, frame={currentFrame}");
         }
     }
 
