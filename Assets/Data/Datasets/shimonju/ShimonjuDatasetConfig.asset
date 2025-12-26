@@ -15,7 +15,7 @@ MonoBehaviour:
   datasetFolder: {fileID: 102900000, guid: d6ba913dee2914d2cbbdf74ba82f1a12, type: 3}
   enableBvh: 1
   bvhFile: {fileID: 102900000, guid: d49c4b4996ee17a4eb8f07b093a9083f, type: 3}
-  bvhPositionOffset: {x: 0.08, y: 0.01, z: -0.19}
+  bvhPositionOffset: {x: 0.08, y: 0.01, z: -0.25}
   bvhRotationOffset: {x: 0, y: 180, z: 0}
   bvhScale: {x: 0.01, y: 0.01, z: 0.01}
   processingType: 2
