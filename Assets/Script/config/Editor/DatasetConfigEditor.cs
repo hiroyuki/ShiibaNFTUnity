@@ -41,6 +41,15 @@ public class DatasetConfigEditor : Editor
 
         EditorGUILayout.Space(5);
 
+        // Export Current Frame with Scene Flow button
+        if (GUILayout.Button("Export Current Frame with Scene Flow", GUILayout.Height(30)))
+        {
+            Debug.Log("Export Current Frame with Scene Flow button clicked!");
+            ExportCurrentFrameWithSceneFlow();
+        }
+
+        EditorGUILayout.Space(5);
+
         // Export All Frames with Scene Flow button
         if (GUILayout.Button("Export All Frames with Scene Flow", GUILayout.Height(30)))
         {
@@ -242,6 +251,177 @@ public class DatasetConfigEditor : Editor
                 "PLY export is only supported in Binary mode (CPU/GPU/ONESHADER).\n" +
                 "Current mode: " + (handler != null ? handler.GetType().Name : "None"), "OK");
         }
+    }
+
+    private void ExportCurrentFrameWithSceneFlow()
+    {
+        if (!Application.isPlaying)
+        {
+            EditorUtility.DisplayDialog("Not Playing", "Please enter Play mode before exporting PLY files with scene flow.", "OK");
+            return;
+        }
+
+        // Find SceneFlowCalculator in scene
+        SceneFlowCalculator sceneFlowCalculator = FindFirstObjectByType<SceneFlowCalculator>();
+        if (sceneFlowCalculator == null)
+        {
+            Debug.LogError("SceneFlowCalculator not found in scene. Cannot export PLY with scene flow.");
+            EditorUtility.DisplayDialog("Export Failed",
+                "SceneFlowCalculator not found in scene.\n\n" +
+                "Make sure:\n" +
+                "1. SceneFlowCalculator component exists in the scene\n" +
+                "2. SceneFlowCalculator is properly configured",
+                "OK");
+            return;
+        }
+
+        // Find MultiCameraPointCloudManager to get current frame info
+        MonoBehaviour manager = null;
+        var allObjects = FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
+
+        foreach (var obj in allObjects)
+        {
+            if (obj.GetType().Name == "MultiCameraPointCloudManager")
+            {
+                manager = obj;
+                break;
+            }
+        }
+
+        if (manager == null)
+        {
+            Debug.LogError("MultiCameraPointCloudManager not found in scene. Cannot determine current frame.");
+            EditorUtility.DisplayDialog("Export Failed",
+                "MultiCameraPointCloudManager not found in scene.\n\n" +
+                "Make sure the point cloud system is initialized.", "OK");
+            return;
+        }
+
+        // Get MultiPointCloudView
+        var managerType = manager.GetType();
+        var getViewMethod = managerType.GetMethod("GetMultiPointCloudView");
+        var multiPointCloudView = getViewMethod?.Invoke(manager, null);
+
+        if (multiPointCloudView == null)
+        {
+            Debug.LogError("MultiPointCloudView not available. Cannot export PLY.");
+            EditorUtility.DisplayDialog("Export Failed",
+                "MultiPointCloudView not available.\n" +
+                "Make sure Timeline is playing and point cloud is loaded.", "OK");
+            return;
+        }
+
+        // Get current mesh
+        var viewType = multiPointCloudView.GetType();
+        var getMeshMethod = viewType.GetMethod("GetUnifiedMesh");
+        UnityEngine.Mesh mesh = (UnityEngine.Mesh)getMeshMethod?.Invoke(multiPointCloudView, null);
+
+        if (mesh == null || mesh.vertexCount == 0)
+        {
+            Debug.LogError("No mesh available to export.");
+            EditorUtility.DisplayDialog("Export Failed",
+                "No point cloud mesh available.\n" +
+                "Make sure a frame is loaded in the Timeline.", "OK");
+            return;
+        }
+
+        // Get current frame index from Timeline
+        var timelineController = FindFirstObjectByType<TimelineController>();
+        if (timelineController == null)
+        {
+            Debug.LogError("TimelineController not found in scene.");
+            EditorUtility.DisplayDialog("Export Failed",
+                "TimelineController not found in scene.", "OK");
+            return;
+        }
+
+        // Get PlayableDirector
+        var controllerType = timelineController.GetType();
+        var directorField = controllerType.GetField("timeline",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        UnityEngine.Playables.PlayableDirector director = (UnityEngine.Playables.PlayableDirector)directorField?.GetValue(timelineController);
+
+        if (director == null)
+        {
+            Debug.LogError("PlayableDirector not found. Attempting to find it automatically...");
+
+            // Fallback: Try to find PlayableDirector in the scene
+            director = UnityEngine.Object.FindFirstObjectByType<UnityEngine.Playables.PlayableDirector>();
+
+            if (director == null)
+            {
+                EditorUtility.DisplayDialog("Export Failed",
+                    "PlayableDirector not found.\n" +
+                    "Make sure Timeline is properly set up in the scene.", "OK");
+                return;
+            }
+        }
+
+        // Get current Timeline time
+        double currentTime = director.time;
+        BvhData bvhData = BvhDataCache.GetBvhData();
+        if (bvhData == null)
+        {
+            Debug.LogError("BVH data not loaded. Cannot calculate frame index.");
+            EditorUtility.DisplayDialog("Export Failed",
+                "BVH data not loaded.\n" +
+                "Make sure BVH file is configured in DatasetConfig.", "OK");
+            return;
+        }
+
+        // Use BvhPlaybackFrameMapper to map Timeline time to BVH frame
+        DatasetConfig config = (DatasetConfig)target;
+        BvhPlaybackCorrectionKeyframes driftData = null;
+
+        // Get drift correction data from config using reflection
+        var configType = config.GetType();
+        var driftField = configType.GetField("bvhDriftCorrectionData",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        if (driftField != null)
+        {
+            driftData = (BvhPlaybackCorrectionKeyframes)driftField.GetValue(config);
+        }
+
+        // Map Timeline time directly to BVH frame indices using frame mapper
+        BvhPlaybackFrameMapper frameMapper = new BvhPlaybackFrameMapper();
+        float timelineTime = (float)currentTime;
+        float previousTimelineTime = Mathf.Max(0f, timelineTime - bvhData.FrameTime);
+
+        int currentBvhFrame = frameMapper.GetTargetFrameForTime(timelineTime, bvhData, driftData);
+        int previousBvhFrame = frameMapper.GetTargetFrameForTime(previousTimelineTime, bvhData, driftData);
+
+        // Calculate point cloud frame number from Timeline time (assuming 30fps for point cloud)
+        // TODO: Get actual point cloud frame rate from config
+        float pointCloudFps = 30f;  // Adjust this if your point cloud has a different frame rate
+        int currentFrame = Mathf.RoundToInt(timelineTime * pointCloudFps);
+
+        Debug.Log($"[DatasetConfigEditor] Exporting frame {currentFrame}: Mapped to BVH frames ({previousBvhFrame}, {currentBvhFrame})");
+
+        // Calculate bone segments for the frame pair
+        sceneFlowCalculator.CalculateBoneSegmentsForFramePair(currentBvhFrame, previousBvhFrame);
+
+        // Calculate motion vectors using SceneFlowCalculator
+        Vector3[] motionVectors = sceneFlowCalculator.CalculateMotionVectorsForMesh(mesh);
+
+        // Generate output file path (use point cloud frame number for filename)
+        string outputDir = System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "ExportedPLY_SceneFlow_Single");
+        System.IO.Directory.CreateDirectory(outputDir);
+        string filename = $"frame_{currentFrame:D6}_sceneflow.ply";  // currentFrame is point cloud frame
+        string filePath = System.IO.Path.Combine(outputDir, filename);
+
+        // Get torso_7 position comments (filename uses point cloud frame, position uses BVH frame)
+        string[] headerComments = BvhJointUtility.GetJointPositionComments(currentFrame, currentBvhFrame);
+
+        // Export to PLY
+        PlyExporter.ExportToPLY(mesh, motionVectors, filePath, headerComments);
+
+        Debug.Log($"Current frame PLY with scene flow exported to: {filePath}");
+        EditorUtility.DisplayDialog("Export Complete",
+            $"Current frame exported successfully!\n\n" +
+            $"Frame: {currentFrame}\n" +
+            $"File: {filename}\n" +
+            $"Location: {outputDir}",
+            "OK");
     }
 
     private void ExportAllFramesWithSceneFlow()
@@ -495,4 +675,5 @@ public class DatasetConfigEditor : Editor
             Debug.Log("All frames downsampled PLY export (Load PLYs) triggered from DatasetConfig editor.");
         }
     }
+
 }

@@ -79,7 +79,8 @@ public static class PlyExporter
     /// <param name="mesh">The mesh to export</param>
     /// <param name="motionVectors">Motion vectors for each vertex (vx, vy, vz)</param>
     /// <param name="filePath">Output file path</param>
-    public static void ExportToPLY_ASCII(Mesh mesh, Vector3[] motionVectors, string filePath)
+    /// <param name="headerComments">Optional header comments (each line will be prefixed with "comment ")</param>
+    public static void ExportToPLY_ASCII(Mesh mesh, Vector3[] motionVectors, string filePath, string[] headerComments = null)
     {
         if (mesh == null)
         {
@@ -111,6 +112,18 @@ public static class PlyExporter
                 // Write PLY header
                 writer.WriteLine("ply");
                 writer.WriteLine("format ascii 1.0");
+
+                // Write header comments if provided
+                if (headerComments != null && headerComments.Length > 0)
+                {
+                    foreach (string comment in headerComments)
+                    {
+                        if (!string.IsNullOrEmpty(comment))
+                        {
+                            writer.WriteLine($"comment {comment}");
+                        }
+                    }
+                }
                 writer.WriteLine($"element vertex {vertices.Length}");
                 writer.WriteLine("property float x");
                 writer.WriteLine("property float y");
@@ -164,7 +177,8 @@ public static class PlyExporter
     /// <param name="mesh">The mesh to export</param>
     /// <param name="motionVectors">Motion vectors for each vertex (vx, vy, vz)</param>
     /// <param name="filePath">Output file path</param>
-    public static void ExportToPLY(Mesh mesh, Vector3[] motionVectors, string filePath)
+    /// <param name="headerComments">Optional header comments (each line will be prefixed with "comment ")</param>
+    public static void ExportToPLY(Mesh mesh, Vector3[] motionVectors, string filePath, string[] headerComments = null)
     {
         if (mesh == null)
         {
@@ -197,8 +211,21 @@ public static class PlyExporter
                 // Write PLY header as ASCII
                 string header =
                     "ply\n" +
-                    "format binary_little_endian 1.0\n" +
-                    $"element vertex {vertices.Length}\n" +
+                    "format binary_little_endian 1.0\n";
+
+                // Add header comments if provided
+                if (headerComments != null && headerComments.Length > 0)
+                {
+                    foreach (string comment in headerComments)
+                    {
+                        if (!string.IsNullOrEmpty(comment))
+                        {
+                            header += $"comment {comment}\n";
+                        }
+                    }
+                }
+
+                header += $"element vertex {vertices.Length}\n" +
                     "property float x\n" +
                     "property float y\n" +
                     "property float z\n" +
