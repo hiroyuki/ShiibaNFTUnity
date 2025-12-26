@@ -280,14 +280,17 @@ public class SceneFlowBatchExporter : MonoBehaviour
             // Calculate motion vectors
             Vector3[] motionVectors = sceneFlowCalculator.CalculateMotionVectorsForMesh(mesh);
 
+            // Get Joint_torso_7 position if available (filename uses frameIndex, position uses currentBvhFrame)
+            string[] headerComments = BvhJointUtility.GetJointPositionComments(frameIndex, currentBvhFrame);
+
             // Export to PLY
             if (exportAsAscii)
             {
-                PlyExporter.ExportToPLY_ASCII(mesh, motionVectors, filePath);
+                PlyExporter.ExportToPLY_ASCII(mesh, motionVectors, filePath, headerComments);
             }
             else
             {
-                PlyExporter.ExportToPLY(mesh, motionVectors, filePath);
+                PlyExporter.ExportToPLY(mesh, motionVectors, filePath, headerComments);
             }
 
             // Log progress
@@ -380,4 +383,5 @@ public class SceneFlowBatchExporter : MonoBehaviour
 
         return avgTimePerFrame * framesRemaining;
     }
+
 }
