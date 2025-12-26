@@ -58,7 +58,7 @@ public class SegmentedBoneMotionData
         previousPosition = previous;
         interpolationT = t;
         boneName = name;
-        motionVector = current - previous;
+        motionVector =  previous - current;
         motionMagnitude = motionVector.magnitude;
     }
 }
