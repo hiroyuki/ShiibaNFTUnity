@@ -107,6 +107,18 @@ public abstract class BaseProcessingModeHandler : IProcessingModeHandler
     }
 
     /// <summary>
+    /// Step forward one frame (arrow key navigation)
+    /// Default implementation - can be overridden
+    /// </summary>
+    public abstract void StepFrameForward();
+
+    /// <summary>
+    /// Step backward one frame (arrow key navigation)
+    /// Default implementation - can be overridden
+    /// </summary>
+    public abstract void StepFrameBackward();
+
+    /// <summary>
     /// Cleanup resources - can be overridden for mode-specific cleanup
     /// </summary>
     public virtual void Dispose()

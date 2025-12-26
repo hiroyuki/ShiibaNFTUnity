@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.Playables;
 
 /// <summary>
@@ -69,7 +68,6 @@ public class PlyModeHandler : BaseProcessingModeHandler
     public override void Update()
     {
         ProcessFirstFramesIfNeeded();
-        HandleArrowKeyNavigation();
     }
 
     public override void ProcessFirstFramesIfNeeded()
@@ -82,28 +80,9 @@ public class PlyModeHandler : BaseProcessingModeHandler
     }
 
     /// <summary>
-    /// Handle arrow key navigation for frame seeking
-    /// Updates both PLY point cloud and BVH skeleton via timeline synchronization
+    /// Step forward one frame (called by TimelineController on arrow key)
     /// </summary>
-    private void HandleArrowKeyNavigation()
-    {
-        if (Keyboard.current == null) return;
-
-        if (Keyboard.current.rightArrowKey.wasPressedThisFrame)
-        {
-            LoadNextPlyFrame();
-        }
-
-        if (Keyboard.current.leftArrowKey.wasPressedThisFrame)
-        {
-            LoadPreviousPlyFrame();
-        }
-    }
-
-    /// <summary>
-    /// Seek to next frame via arrow key
-    /// </summary>
-    private void LoadNextPlyFrame()
+    public override void StepFrameForward()
     {
         int currentFrame = GetCurrentFrameIndex();
         int nextFrame = currentFrame + 1;
@@ -117,9 +96,9 @@ public class PlyModeHandler : BaseProcessingModeHandler
     }
 
     /// <summary>
-    /// Seek to previous frame via arrow key
+    /// Step backward one frame (called by TimelineController on arrow key)
     /// </summary>
-    private void LoadPreviousPlyFrame()
+    public override void StepFrameBackward()
     {
         int currentFrame = GetCurrentFrameIndex();
         int previousFrame = currentFrame - 1;
@@ -169,6 +148,13 @@ public class PlyModeHandler : BaseProcessingModeHandler
         {
             int fps = plyFrameController.GetFps();
             double timelineTimeInSeconds = (double)frameIndex / fps;
+
+            // Ensure timeline graph is built before seeking
+            if (timelinePlayableDirector.playableGraph.IsValid() == false)
+            {
+                timelinePlayableDirector.RebuildGraph();
+            }
+
             timelinePlayableDirector.time = timelineTimeInSeconds;
             timelinePlayableDirector.Evaluate();
         }

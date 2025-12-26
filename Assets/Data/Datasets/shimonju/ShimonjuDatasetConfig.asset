@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 06dfa56e5e30e4709b823699238b9701, type: 3}
+  m_Name: ShimonjuDatasetConfig
+  m_EditorClassIdentifier: 
+  datasetFolder: {fileID: 102900000, guid: d6ba913dee2914d2cbbdf74ba82f1a12, type: 3}
+  enableBvh: 1
+  bvhFile: {fileID: 102900000, guid: d49c4b4996ee17a4eb8f07b093a9083f, type: 3}
+  bvhPositionOffset: {x: 0.08, y: 0.01, z: -0.19}
+  bvhRotationOffset: {x: 0, y: 180, z: 0}
+  bvhScale: {x: 0.01, y: 0.01, z: 0.01}
+  processingType: 2
+  binaryDataRootPath: D:\Dropbox\projects\shiiba\20251130\Shimonju_2025-11-30_10-35-52_video
+  bvhDriftCorrectionData: {fileID: 11400000, guid: 2bff627e8c5d2724aab3b5e67033027a, type: 2}
+  showDownsampledPointCloud: 0

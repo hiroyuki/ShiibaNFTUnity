@@ -64,11 +64,10 @@ Rendering/View Layer (SinglePointCloudView, MultiPointCloudView)
 ```
 Assets/Script/
 ├── bvh/                                 # Skeletal animation (BVH format)
-│   ├── BvhData.cs                       # Core BVH data structures
+│   ├── BvhData.cs                       # Core BVH data structures & frame application
 │   ├── BvhImporter.cs                   # BVH file import
-│   ├── BvhDataReader.cs                 # Parses channel data from frame arrays
+│   ├── BvhDataReader.cs                 # Parses channel data from frame arrays (static utility)
 │   ├── BvhDataCache.cs                  # Centralized BVH data management
-│   ├── BvhMotionApplier.cs               # Applies frame data to joint hierarchy (extensible)
 │   ├── BvhKeyframe.cs                   # Keyframe data structure
 │   ├── BvhJointHierarchyBuilder.cs      # Creates joint hierarchies (frame-agnostic, idempotent)
 │   ├── BvhSkeletonVisualizer.cs         # Skeleton joint/bone rendering
@@ -116,12 +115,15 @@ Assets/Script/
 │   │   ├── MultiCameraGPUProcessor.cs
 │   │   └── PointCloudProcessorFactory.cs
 │   └── view/                            # Rendering & visualization
-│       ├── SinglePointCloudView.cs
-│       ├── MultiPointCloudView.cs
+│       ├── SinglePointCloudView.cs      # Single camera point cloud viewer
+│       ├── MultiPointCloudView.cs       # Multi-camera unified viewer
+│       ├── RuntimeMotionVectorVisualizer.cs # Runtime motion vector visualization
 │       └── PointCloudSettings.cs
 │
 ├── sceneflow/                           # Scene flow calculation
 │   ├── SceneFlowCalculator.cs           # Scene flow computation
+│   ├── SceneFlowBatchExporter.cs        # Batch PLY export with scene flow vectors
+│   ├── BoneSegmentData.cs               # Bone segmentation data structures
 │   └── Editor/
 │       └── SceneFlowCalculatorEditor.cs # Custom editor UI
 │
@@ -131,6 +133,7 @@ Assets/Script/
 │   ├── PointCloudPlayableBehaviour.cs
 │   ├── BvhPlayableAsset.cs              # Playable asset for skeleton
 │   ├── BvhPlayableBehaviour.cs
+│   ├── BvhTransformSync.cs              # Syncs BVH_Character transform with DatasetConfig
 │   └── BVH_TIMELINE_USAGE.md            # Comprehensive BVH timeline guide
 │
 └── utils/                               # Utility functions
@@ -146,8 +149,15 @@ Assets/Script/
     ├── MouseOrbitCamera.cs              # Camera orbit control
     ├── CameraPositionGizmo.cs           # Camera position visualization
     ├── SetupStatusUI.cs                 # Setup status UI
+    ├── DebugImageExporter.cs            # Debug image export utility
+    ├── TimelineUtil.cs                  # Timeline utility functions
     └── Editor/
         └── (empty)
+
+Assets/Script/Editor/                   # Editor-only tools
+├── MotionVectorPLYGenerator.cs          # Generate PLY files with motion vectors
+├── MotionVectorPLYValidator.cs          # Validate motion vector PLY files
+└── PlyMotionVectorTest.cs               # Test motion vector calculations
 ```
 
 ## Scene Hierarchy Structure
@@ -220,6 +230,241 @@ SampleScene (or your scene name)
 - WebGL: Available in Build Settings
 - Mobile: Android/iOS configured in PackageManager
 
+## Data Setup Guide
+
+This section explains how to configure point cloud data and BVH skeletal animation data for playback in Unity.
+
+### Dataset Folder Structure
+
+All datasets should follow this standardized folder structure:
+
+```
+Assets/Data/Datasets/{DatasetName}/
+├── BVH/                      # BVH skeletal animation files
+│   └── motion.bvh            # BVH file (auto-detected)
+├── PLY/                      # Pre-exported PLY point cloud files
+│   ├── frame_0000.ply
+│   ├── frame_0001.ply
+│   └── ...
+├── PLY_WithMotion/           # PLY files with embedded motion vectors (optional)
+│   ├── frame_0000.ply        # Contains motion vector data
+│   ├── frame_0001.ply
+│   └── ...
+└── Config/                   # Dataset-specific configuration (optional)
+    └── camera_extrinsics.yaml
+```
+
+**For Binary Data (External Datasets):**
+Binary sensor data can be stored **outside** the Unity project (e.g., on external drives):
+```
+{ExternalPath}/Datasets/{DatasetName}/
+├── depth/                    # Raw depth data (.rcst files)
+│   ├── camera_0/
+│   ├── camera_1/
+│   └── ...
+├── color/                    # Raw color data (.rcsv files)
+│   ├── camera_0/
+│   ├── camera_1/
+│   └── ...
+└── Config/                   # Camera calibration
+    └── camera_extrinsics.yaml
+```
+
+### Creating a DatasetConfig ScriptableObject
+
+1. **Create a new DatasetConfig asset:**
+   - Right-click in the Project window
+   - Select `Create > Shiiba > DatasetConfig`
+   - Name it descriptively (e.g., `TotoriDatasetConfig`)
+
+2. **Configure the DatasetConfig in Inspector:**
+
+   **Dataset Folder:**
+   - Drag the dataset folder from `Assets/Data/Datasets/{DatasetName}/` into the **Dataset Folder** field
+   - This automatically sets up relative paths for BVH and PLY data
+
+   **BVH Configuration:**
+   - **Enable BVH**: Check this to enable skeletal animation playback
+   - **BVH File**: (Optional) Drag a specific `.bvh` file, or leave empty for auto-detection from `BVH/` folder
+   - **BVH Position Offset**: Offset to align skeleton with point cloud (e.g., `(0.614, -4.747, 4.811)`)
+   - **BVH Rotation Offset**: Rotation correction (e.g., `(0, 180, 0)` to flip facing direction)
+   - **BVH Scale**: Scale factor for skeleton size (default: `(1, 1, 1)`)
+
+   **Processing Mode:**
+   Select one of the following processing types:
+
+   | Processing Type | Description | Use Case | Data Location |
+   |----------------|-------------|----------|---------------|
+   | **PLY** | Use pre-exported PLY files from `PLY/` folder | Fastest playback; recommended for visualization | `{DatasetFolder}/PLY/` |
+   | **PLY_WITH_MOTION** | Use PLY files with embedded motion vectors from `PLY_WithMotion/` folder | Scene flow visualization and analysis | `{DatasetFolder}/PLY_WithMotion/` |
+   | **CPU** | Process raw binary sensor data on CPU | Development/debugging; slower | External binary path |
+   | **GPU** | Process raw binary sensor data on GPU | Real-time multi-camera fusion | External binary path |
+   | **ONESHADER** | GPU processing with unified shader | Experimental high-performance mode | External binary path |
+
+   **Binary Data Configuration** (only for CPU/GPU/ONESHADER modes):
+   - **Binary Data Root Path**: Full path to external binary dataset (e.g., `D:/Datasets/Totori/`)
+   - This path is NOT inside the Unity Assets folder and can be on external drives
+
+   **BVH Drift Correction** (optional):
+   - **BVH Drift Correction Data**: Reference to `BvhPlaybackCorrectionKeyframes` ScriptableObject
+   - Used to manually correct skeleton position/rotation drift over time via keyframes
+   - Create via `Create > Shiiba > BvhPlaybackCorrectionKeyframes`
+
+   **Point Cloud Downsampling** (optional):
+   - **Show Downsampled Point Cloud**: Toggle to visualize downsampled point cloud
+   - Requires `PointCloudDownsampler` component in the scene
+
+### Setting Up Point Cloud Data
+
+#### Option 1: PLY Mode (Recommended)
+
+**Requirements:**
+- Pre-exported PLY files in `{DatasetFolder}/PLY/` directory
+- Files named sequentially: `frame_0000.ply`, `frame_0001.ply`, etc.
+
+**Setup Steps:**
+1. Export point cloud frames to PLY format using the `PlyExportManager`
+2. Place PLY files in `Assets/Data/Datasets/{DatasetName}/PLY/`
+3. In DatasetConfig Inspector, set **Processing Mode** to `PLY`
+4. Set **Dataset Folder** to point to your dataset folder
+
+**Advantages:**
+- Fastest playback (no real-time processing)
+- Works entirely within Unity Assets
+- Suitable for visualization and presentation
+
+#### Option 2: PLY_WITH_MOTION Mode
+
+**Requirements:**
+- PLY files with embedded motion vector data in `{DatasetFolder}/PLY_WithMotion/`
+- Files contain additional properties: `mvx`, `mvy`, `mvz` (motion vectors)
+
+**Setup Steps:**
+1. Generate PLY files with motion vectors using `SceneFlowBatchExporter` or `MotionVectorPLYGenerator`
+2. Place files in `Assets/Data/Datasets/{DatasetName}/PLY_WithMotion/`
+3. In DatasetConfig Inspector, set **Processing Mode** to `PLY_WITH_MOTION`
+4. Use `RuntimeMotionVectorVisualizer` component to visualize motion vectors
+
+**Use Cases:**
+- Scene flow analysis
+- Motion vector visualization
+- Optical flow research
+
+#### Option 3: Binary Mode (CPU/GPU/ONESHADER)
+
+**Requirements:**
+- Raw sensor data files (`.rcst` for depth, `.rcsv` for color)
+- Camera calibration files (`camera_extrinsics.yaml`, `camera_intrinsics.yaml`)
+- Multi-camera setup with synchronized frames
+
+**Setup Steps:**
+1. Place binary sensor data on external drive or local path (e.g., `D:/Datasets/Totori/`)
+2. Ensure folder structure contains `depth/camera_X/` and `color/camera_X/` directories
+3. In DatasetConfig Inspector:
+   - Set **Processing Mode** to `CPU`, `GPU`, or `ONESHADER`
+   - Set **Binary Data Root Path** to the full external path (e.g., `D:/Datasets/Totori/`)
+4. Ensure camera calibration files exist in `{BinaryDataRoot}/Config/`
+
+**Processor Selection:**
+- **CPU**: Single-threaded processing; good for debugging
+- **GPU**: Multi-camera GPU fusion; recommended for real-time playback
+- **ONESHADER**: Experimental unified shader approach
+
+**Advantages:**
+- Access to raw sensor data for custom processing
+- Multi-camera synchronization and fusion
+- Real-time undistortion and calibration
+
+**Disadvantages:**
+- Slower than PLY mode
+- Requires external storage for large datasets
+- More complex setup
+
+### Setting Up BVH Skeletal Animation Data
+
+#### Basic BVH Setup
+
+1. **Place BVH file in dataset:**
+   - Add your `.bvh` file to `Assets/Data/Datasets/{DatasetName}/BVH/`
+   - File will be auto-detected (or manually assign in DatasetConfig)
+
+2. **Enable BVH in DatasetConfig:**
+   - Check **Enable BVH** checkbox
+   - Optionally drag the BVH file into **BVH File** field (auto-detection is usually sufficient)
+
+3. **Adjust BVH Transform:**
+   - **Position Offset**: Align skeleton with point cloud origin
+   - **Rotation Offset**: Correct skeleton orientation (common: `(0, 180, 0)` to flip)
+   - **Scale**: Adjust skeleton size to match point cloud scale
+
+#### Advanced: BVH Drift Correction
+
+For long animations where the skeleton drifts from the point cloud over time:
+
+1. **Create a BvhPlaybackCorrectionKeyframes asset:**
+   - Right-click in Project window
+   - Select `Create > Shiiba > BvhPlaybackCorrectionKeyframes`
+   - Name it (e.g., `TotoriBVHAdjustData`)
+
+2. **Configure keyframes:**
+   - Use the custom inspector to add keyframes at specific timestamps
+   - Set position/rotation offsets for each keyframe
+   - The system interpolates between keyframes during playback
+
+3. **Reference in DatasetConfig:**
+   - Drag the `BvhPlaybackCorrectionKeyframes` asset into **BVH Drift Correction Data** field
+
+4. **Fine-tune in Timeline:**
+   - Play Timeline and observe skeleton alignment
+   - Add/adjust keyframes as needed to minimize drift
+   - Changes are applied in real-time during playback
+
+### Integrating DatasetConfig with Timeline
+
+1. **Add PointCloudPlayableAsset to Timeline:**
+   - Open Timeline window
+   - Create a new track or use existing Point Cloud track
+   - Add `PointCloudPlayableAsset` clip to the track
+
+2. **Assign DatasetConfig:**
+   - Select the `PointCloudPlayableAsset` clip in Timeline
+   - In Inspector, drag your `DatasetConfig` asset into the **Dataset Config** field
+
+3. **Add BvhPlayableAsset (if using BVH):**
+   - Create a BVH Animation track in Timeline
+   - Add `BvhPlayableAsset` clip
+   - The BVH file path is automatically retrieved from the same `DatasetConfig`
+
+4. **Synchronize Timing:**
+   - Align PointCloudPlayableAsset and BvhPlayableAsset clips to start at the same time
+   - Adjust clip durations to match your dataset frame count
+   - Use Timeline scrubbing to verify synchronization
+
+### Validation and Troubleshooting
+
+**Validate Configuration:**
+```csharp
+DatasetConfig config = // your config asset
+bool isValid = config.ValidatePaths();
+Debug.Log(config.GetSummary());
+```
+
+**Common Issues:**
+
+| Problem | Solution |
+|---------|----------|
+| "BVH file not found" | Check `BVH/` folder exists and contains `.bvh` file, or manually assign BVH file in DatasetConfig |
+| "PointCloud directory not found" | Verify Dataset Folder is correctly assigned in DatasetConfig |
+| "No PLY files detected" | Check `PLY/` or `PLY_WithMotion/` folder exists with `frame_XXXX.ply` files |
+| Skeleton misaligned with point cloud | Adjust BVH Position/Rotation Offset in DatasetConfig |
+| Skeleton drifts over time | Create BvhPlaybackCorrectionKeyframes asset and add keyframes to correct drift |
+| Binary mode not loading | Verify Binary Data Root Path points to valid external directory with depth/color folders |
+
+**Dataset Switching:**
+- Create multiple DatasetConfig assets for different datasets
+- Switch datasets by assigning different DatasetConfig to Timeline PointCloudPlayableAsset
+- All paths update automatically based on the selected config
+
 ## Important Implementation Patterns
 
 ### Adding a New Point Cloud Processor
@@ -270,22 +515,22 @@ The BVH frame application system is built on clear separation of concerns with s
 
 | Component | Responsibility | Key Methods | Used By |
 |-----------|-----------------|-------------|---------|
-| **BvhMotionApplier** | Convert BVH frame data to joint transforms | `ApplyFrameToJointHierarchy()` | BvhData, BvhPlayableBehaviour, SceneFlowCalculator |
-| **BvhFrameMapper** | Map Timeline time → BVH frame index (with drift correction) | `GetTargetFrameForTime()` | BvhPlayableBehaviour |
-| **BvhDataReader** | Parse channel data from frame arrays | `ReadChannelData()`, `GetRotationQuaternion()` | BvhMotionApplier |
-| **BvhData** | Store BVH structure + frame data; provide frame access | `GetFrame()`, `UpdateTransforms()` | BvhPlayableBehaviour, offline processing |
-| **BvhDriftCorrectionController** | Calculate drift-corrected root transform | `GetCorrectedRootPosition()`, `GetCorrectedRootRotation()` | BvhPlayableBehaviour |
-| **BvhDriftCorrectionData** | Store keyframes; interpolate position/rotation at time | `GetAnchorPositionAtTime()`, `GetAnchorRotationAtTime()` | BvhFrameMapper, BvhDriftCorrectionController |
+| **BvhData** | Store BVH structure + frame data; apply frames to transforms | `GetFrame()`, `ApplyFrameToTransforms()` | BvhPlayableBehaviour, SceneFlowCalculator, offline processing |
+| **BvhPlaybackFrameMapper** | Map Timeline time → BVH frame index (with drift correction) | `GetTargetFrameForTime()` | BvhPlayableBehaviour |
+| **BvhDataReader** | Parse channel data from frame arrays (static utility) | `ReadChannelData()`, `GetRotationQuaternion()` | BvhData |
+| **BvhPlaybackTransformCorrector** | Calculate drift-corrected root transform | `GetCorrectedRootPosition()`, `GetCorrectedRootRotation()` | BvhPlayableBehaviour |
+| **BvhPlaybackCorrectionKeyframes** | Store keyframes; interpolate position/rotation at time | `GetPositionOffsetAtTime()`, `GetRotationOffsetAtTime()` | BvhPlaybackFrameMapper, BvhPlaybackTransformCorrector |
+| **BvhJointHierarchyBuilder** | Create joint hierarchies from BVH data (static utility) | `CreateOrGetJointHierarchy()` | BvhPlayableBehaviour, SceneFlowCalculator |
 
 **Key Design Principles:**
 
-1. **BvhMotionApplier is concrete and extensible**: Can be instantiated directly for basic usage, or subclassed to override `AdjustPosition()` and `AdjustRotation()` for custom behavior (e.g., BvhPlayableBehaviour's PlayableFrameApplier adds scale and rotation offsets).
+1. **BvhData handles frame application**: The `ApplyFrameToTransforms()` method is the authoritative implementation of frame-to-transform conversion, eliminating duplication across the codebase.
 
-2. **BvhFrameMapper is stateless and reusable**: All parameters are passed explicitly; no hidden dependencies. Can be instantiated fresh or cached without side effects.
+2. **BvhPlaybackFrameMapper is stateless and reusable**: All parameters are passed explicitly; no hidden dependencies. Can be instantiated fresh or cached without side effects.
 
-3. **Timeline-independent utilities**: All core logic (BvhFrameMapper, BvhDriftCorrectionController, BvhMotionApplier) work outside Timeline context, enabling reuse in Scene Flow, offline processing, and other components.
+3. **Timeline-independent utilities**: All core logic (BvhPlaybackFrameMapper, BvhPlaybackTransformCorrector, BvhDataReader, BvhJointHierarchyBuilder) work outside Timeline context, enabling reuse in Scene Flow, offline processing, and other components.
 
-4. **Single frame application point**: BvhMotionApplier is the authoritative implementation of frame-to-transform conversion, eliminating duplication across the codebase.
+4. **Static utilities for shared operations**: BvhDataReader and BvhJointHierarchyBuilder are static utility classes providing reusable functionality across multiple consumers.
 
 ### Synchronizing Timeline with Point Cloud/Skeleton
 
@@ -334,9 +579,9 @@ The system handles multi-camera sensor fusion through:
 
 **Files Involved:**
 - [Assets/Script/timeline/BvhPlayableBehaviour.cs](Assets/Script/timeline/BvhPlayableBehaviour.cs) - Calls joint hierarchy builder in `OnGraphStart()`
-- [Assets/Script/bvh/BvhJointHierarchyBuilder.cs](Assets/Script/bvh/BvhJointHierarchyBuilder.cs) - Creates joint hierarchy (utility class)
+- [Assets/Script/bvh/BvhJointHierarchyBuilder.cs](Assets/Script/bvh/BvhJointHierarchyBuilder.cs) - Creates joint hierarchy (static utility class)
 - [Assets/Script/bvh/BvhSkeletonVisualizer.cs](Assets/Script/bvh/BvhSkeletonVisualizer.cs) - Visualization logic
-- [Assets/Script/bvh/BvhMotionApplier.cs](Assets/Script/bvh/BvhMotionApplier.cs) - Frame application (new component)
+- [Assets/Script/bvh/BvhData.cs](Assets/Script/bvh/BvhData.cs) - Frame application via `ApplyFrameToTransforms()`
 
 **Next Steps:**
 1. Test visualization after recent refactoring
@@ -359,11 +604,12 @@ The system handles multi-camera sensor fusion through:
 
 ### New BVH System (bvh/ directory)
 The BVH skeletal animation system has been significantly enhanced with new dedicated classes:
-- **BvhChannelReader.cs** - Parses BVH motion data channels
+- **BvhDataReader.cs** - Static utility for parsing BVH motion data channels
 - **BvhKeyframe.cs** - Represents individual animation keyframes
-- **BvhMotionApplier.cs** - Applies keyframe data to skeleton hierarchy
 - **BvhJointHierarchyBuilder.cs** - Static utility for creating and managing joint hierarchies (frame-agnostic, idempotent)
-- **BvhDriftCorrectionData.cs** - Corrects animation drift/misalignment issues
+- **BvhPlaybackCorrectionKeyframes.cs** - Corrects animation drift/misalignment issues via keyframe interpolation
+- **BvhPlaybackFrameMapper.cs** - Maps Timeline time to BVH frame indices with drift correction
+- **BvhPlaybackTransformCorrector.cs** - Calculates drift-corrected root transforms
 - Custom inspector editor for drift correction parameters
 
 This modular approach improves maintainability and allows fine-grained control over BVH animation playback.
@@ -371,7 +617,7 @@ This modular approach improves maintainability and allows fine-grained control o
 #### Joint Hierarchy Builder (New - 2025-12-03)
 **BvhJointHierarchyBuilder** is a new static utility class that extracts joint hierarchy creation logic from BvhPlayableBehaviour. Key features:
 - **Reusable**: Any component can create joint hierarchies without Timeline dependency
-- **Frame-agnostic**: Creates skeleton structure only; frame data applied separately via BvhMotionApplier
+- **Frame-agnostic**: Creates skeleton structure only; frame data applied separately via `BvhData.ApplyFrameToTransforms()`
 - **Idempotent**: Safe to call multiple times without duplicating GameObjects
 - **Usage**: `BvhJointHierarchyBuilder.CreateOrGetJointHierarchy(bvhData, parentTransform)`
 - **Benefits**: Decouples hierarchy creation from Timeline lifecycle; enables use in SceneFlowCalculator and other components
@@ -379,7 +625,9 @@ This modular approach improves maintainability and allows fine-grained control o
 ### Scene Flow System (sceneflow/ directory)
 New scene flow calculation system for optical flow/motion visualization:
 - **SceneFlowCalculator.cs** - Core computation engine
-- **SceneFlowCalculatorEditor.cs** - Custom editor UI for configuration
+- **SceneFlowBatchExporter.cs** - Batch export PLY files with embedded scene flow vectors
+- **BoneSegmentData.cs** - Data structures for bone segmentation and motion tracking
+- **SceneFlowCalculatorEditor.cs** - Custom editor UI for configuration and batch export
 - Provides "Show Scene Flow" button for debugging point cloud motion
 
 **Status:** Currently under development; bone segmentation component not yet fully functional.
@@ -389,6 +637,14 @@ Added new debugging and visualization components:
 - **BoundingVolumeDebugController.cs** - Runtime control of bounding volume display
 - **CameraPositionGizmo.cs** - Visual indicators for camera positions
 - **SetupStatusUI.cs** - Status display for project initialization
+- **DebugImageExporter.cs** - Export debug images from runtime
+- **TimelineUtil.cs** - Utility functions for Timeline operations
+
+### Editor Tools (Assets/Script/Editor/)
+Motion vector and point cloud testing tools:
+- **MotionVectorPLYGenerator.cs** - Generate PLY files with embedded motion vectors
+- **MotionVectorPLYValidator.cs** - Validate motion vector data in PLY files
+- **PlyMotionVectorTest.cs** - Test and verify motion vector calculations
 
 ### Timeline Documentation
 - **BVH_TIMELINE_USAGE.md** - Comprehensive guide for integrating BVH animation with Timeline system, including:

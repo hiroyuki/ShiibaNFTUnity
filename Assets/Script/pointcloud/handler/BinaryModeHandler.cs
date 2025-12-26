@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
-using UnityEngine.InputSystem;
+using UnityEngine.Playables;
 using YamlDotNet.Serialization;
 
 /// <summary>
@@ -241,7 +241,6 @@ public class BinaryModeHandler : BaseProcessingModeHandler
     public override void Update()
     {
         ProcessFirstFramesIfNeeded();
-        HandleSynchronizedFrameNavigation();
 
         if (plyExportManager != null)
         {
@@ -258,19 +257,20 @@ public class BinaryModeHandler : BaseProcessingModeHandler
         frameProcessingManager?.ProcessFirstFramesIfNeeded(processingType);
     }
 
-    private void HandleSynchronizedFrameNavigation()
+    /// <summary>
+    /// Step forward one frame (called by TimelineController on arrow key)
+    /// </summary>
+    public override void StepFrameForward()
     {
-        if (Keyboard.current == null) return;
+        NavigateToNextSynchronizedFrame();
+    }
 
-        if (Keyboard.current.rightArrowKey.wasPressedThisFrame)
-        {
-            NavigateToNextSynchronizedFrame();
-        }
-
-        if (Keyboard.current.leftArrowKey.wasPressedThisFrame)
-        {
-            NavigateToPreviousSynchronizedFrame();
-        }
+    /// <summary>
+    /// Step backward one frame (called by TimelineController on arrow key)
+    /// </summary>
+    public override void StepFrameBackward()
+    {
+        NavigateToPreviousSynchronizedFrame();
     }
 
     private void NavigateToNextSynchronizedFrame()
@@ -283,7 +283,9 @@ public class BinaryModeHandler : BaseProcessingModeHandler
             return;
         }
 
-        ProcessFrame(frameProcessingManager.CurrentFrameIndex + 1, nextTimestamp);
+        int nextFrameIndex = frameProcessingManager.CurrentFrameIndex + 1;
+        ProcessFrame(nextFrameIndex, nextTimestamp);
+        SyncTimelineToFrame(nextFrameIndex);
     }
 
     private void NavigateToPreviousSynchronizedFrame()
@@ -307,6 +309,30 @@ public class BinaryModeHandler : BaseProcessingModeHandler
         }
 
         ProcessFrame(previousFrameIndex, previousTimestamp);
+        SyncTimelineToFrame(previousFrameIndex);
+    }
+
+    /// <summary>
+    /// Synchronize Timeline to a specific frame index for BVH updates
+    /// </summary>
+    private void SyncTimelineToFrame(int frameIndex)
+    {
+        PlayableDirector timelinePlayableDirector = Object.FindFirstObjectByType<PlayableDirector>();
+
+        if (timelinePlayableDirector != null)
+        {
+            int fps = GetFps();
+            double timelineTimeInSeconds = (double)frameIndex / fps;
+
+            // Ensure timeline graph is built before seeking
+            if (timelinePlayableDirector.playableGraph.IsValid() == false)
+            {
+                timelinePlayableDirector.RebuildGraph();
+            }
+
+            timelinePlayableDirector.time = timelineTimeInSeconds;
+            timelinePlayableDirector.Evaluate();
+        }
     }
 
     private ulong GetTimestampForFrameIndex(int frameIndex)

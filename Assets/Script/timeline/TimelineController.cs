@@ -126,16 +126,16 @@ public class TimelineController : MonoBehaviour
             ResetTimeline();
         }
 
-        // Right Arrow: Step forward one BVH frame
+        // Right Arrow: Step forward one frame (delegates to processing mode handler)
         if (Keyboard.current.rightArrowKey.wasPressedThisFrame)
         {
-            StepBvhFrameForward();
+            StepFrameForward();
         }
 
-        // Left Arrow: Step backward one BVH frame
+        // Left Arrow: Step backward one frame (delegates to processing mode handler)
         if (Keyboard.current.leftArrowKey.wasPressedThisFrame)
         {
-            StepBvhFrameBackward();
+            StepFrameBackward();
         }
     }
     
@@ -224,11 +224,54 @@ public class TimelineController : MonoBehaviour
     }
 
     /// <summary>
-    /// Step forward one BVH frame using frame mapping
-    /// Similar to PlyModeHandler's LoadNextPlyFrame()
+    /// Step forward one frame - delegates to the active processing mode handler
+    /// </summary>
+    [ContextMenu("Step Frame Forward")]
+    public void StepFrameForward()
+    {
+        // Try to find and delegate to MultiCameraPointCloudManager's handler
+        var pointCloudManager = FindFirstObjectByType<MultiCameraPointCloudManager>();
+        if (pointCloudManager != null)
+        {
+            var handler = pointCloudManager.GetCurrentHandler();
+            if (handler != null)
+            {
+                handler.StepFrameForward();
+                return;
+            }
+        }
+
+        // Fallback: Use BVH-only navigation if no handler found
+        StepBvhFrameForward();
+    }
+
+    /// <summary>
+    /// Step backward one frame - delegates to the active processing mode handler
+    /// </summary>
+    [ContextMenu("Step Frame Backward")]
+    public void StepFrameBackward()
+    {
+        // Try to find and delegate to MultiCameraPointCloudManager's handler
+        var pointCloudManager = FindFirstObjectByType<MultiCameraPointCloudManager>();
+        if (pointCloudManager != null)
+        {
+            var handler = pointCloudManager.GetCurrentHandler();
+            if (handler != null)
+            {
+                handler.StepFrameBackward();
+                return;
+            }
+        }
+
+        // Fallback: Use BVH-only navigation if no handler found
+        StepBvhFrameBackward();
+    }
+
+    /// <summary>
+    /// Step forward one BVH frame using frame mapping (BVH-only fallback)
     /// </summary>
     [ContextMenu("Step BVH Frame Forward")]
-    public void StepBvhFrameForward()
+    private void StepBvhFrameForward()
     {
         if (timeline == null || bvhPlayableAsset == null)
         {
@@ -276,11 +319,10 @@ public class TimelineController : MonoBehaviour
     }
 
     /// <summary>
-    /// Step backward one BVH frame using frame mapping
-    /// Similar to PlyModeHandler's LoadPreviousPlyFrame()
+    /// Step backward one BVH frame using frame mapping (BVH-only fallback)
     /// </summary>
     [ContextMenu("Step BVH Frame Backward")]
-    public void StepBvhFrameBackward()
+    private void StepBvhFrameBackward()
     {
         if (timeline == null || bvhPlayableAsset == null)
         {

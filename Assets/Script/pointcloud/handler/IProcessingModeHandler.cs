@@ -62,6 +62,16 @@ public interface IProcessingModeHandler
     MultiPointCloudView GetMultiPointCloudView();
 
     /// <summary>
+    /// Step forward one frame (arrow key navigation)
+    /// </summary>
+    void StepFrameForward();
+
+    /// <summary>
+    /// Step backward one frame (arrow key navigation)
+    /// </summary>
+    void StepFrameBackward();
+
+    /// <summary>
     /// Cleanup resources
     /// </summary>
     void Dispose();
