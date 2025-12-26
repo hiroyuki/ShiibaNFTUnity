@@ -93,7 +93,7 @@ public class MultiCameraPointCloudManager : MonoBehaviour
             rootDirectory = GetDatasetConfig().GetPointCloudRootDirectory();
         }
 
-        if (handler.Initialize(rootDirectory, displayName, transform))
+        if (handler.Initialize(rootDirectory, displayName, transform, GetDatasetConfig()))
         {
             currentHandler = handler;
             return true;

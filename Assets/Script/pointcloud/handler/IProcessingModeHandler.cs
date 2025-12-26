@@ -14,7 +14,7 @@ public interface IProcessingModeHandler
     /// <summary>
     /// Initialize the handler with necessary components
     /// </summary>
-    bool Initialize(string rootDirectory, string displayName, Transform parentTransform);
+    bool Initialize(string rootDirectory, string displayName, Transform parentTransform, DatasetConfig config = null);
 
     /// <summary>
     /// Update called every frame

@@ -11,6 +11,7 @@ public abstract class BaseProcessingModeHandler : IProcessingModeHandler
     protected string displayName;
     protected Transform parentTransform;
     protected MultiPointCloudView multiPointCloudView;
+    protected DatasetConfig datasetConfig;
 
     // Interface implementation
     public abstract ProcessingType ProcessingType { get; }
@@ -18,11 +19,12 @@ public abstract class BaseProcessingModeHandler : IProcessingModeHandler
     /// <summary>
     /// Initialize the handler - calls template method for mode-specific initialization
     /// </summary>
-    public bool Initialize(string rootDirectory, string displayName, Transform parentTransform)
+    public bool Initialize(string rootDirectory, string displayName, Transform parentTransform, DatasetConfig config = null)
     {
         this.rootDirectory = rootDirectory;
         this.displayName = displayName;
         this.parentTransform = parentTransform;
+        this.datasetConfig = config;
 
         return InitializeInternal();
     }

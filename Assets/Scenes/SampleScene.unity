@@ -731,7 +731,7 @@ Transform:
   m_GameObject: {fileID: 459501812}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 1, z: 0, w: -0.00000004371139}
-  m_LocalPosition: {x: 0.08, y: 0.01, z: -0.19}
+  m_LocalPosition: {x: 0.08, y: 0.01, z: -0.25}
   m_LocalScale: {x: 0.01, y: 0.01, z: 0.01}
   m_ConstrainProportionsScale: 1
   m_Children:
@@ -1760,6 +1760,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SceneFlowBatchExporter
   datasetConfig: {fileID: 11400000, guid: cc9b1357605ec49de80a990fa3cd3085, type: 2}
   sceneFlowCalculator: {fileID: 1682045483}
+  multiCameraManager: {fileID: 0}
   outputDirectory: ExportedPLY_SceneFlow
   startFrame: 1
   endFrame: 0

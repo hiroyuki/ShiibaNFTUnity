@@ -139,6 +139,12 @@ public class BinaryModeHandler : BaseProcessingModeHandler
         plyExportManager = new PlyExportManager(plyController);
         plyExportManager.SetMultiPointCloudView(multiPointCloudView);
 
+        // Apply skip existing files setting from DatasetConfig
+        if (datasetConfig != null)
+        {
+            plyExportManager.SkipExistingFiles = datasetConfig.SkipExistingPlyFiles;
+        }
+
         SetupStatusUI.ShowStatus("PLY export enabled");
     }
 

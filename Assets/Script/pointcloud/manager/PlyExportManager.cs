@@ -13,8 +13,14 @@ public class PlyExportManager
     private bool isExportingAllFrames = false;
     private int exportFrameIndex = 0;
     private int exportTotalFrames = 0;
+    private bool skipExistingFiles = true;
 
     public bool IsExportingAllFrames => isExportingAllFrames;
+    public bool SkipExistingFiles
+    {
+        get => skipExistingFiles;
+        set => skipExistingFiles = value;
+    }
 
     public PlyExportManager(PlyFrameController plyFrameController)
     {
@@ -77,8 +83,8 @@ public class PlyExportManager
 
         string filepath = plyFrameController.GeneratePlyFilePath(exportFrameIndex);
 
-        // Skip if file already exists
-        if (File.Exists(filepath))
+        // Skip if file already exists and skip option is enabled
+        if (skipExistingFiles && File.Exists(filepath))
         {
             Debug.Log($"PLY file already exists, skipping frame {exportFrameIndex}: {filepath}");
             exportFrameIndex++;
@@ -109,8 +115,8 @@ public class PlyExportManager
             {
                 string filepath = plyFrameController.GeneratePlyFilePath(currentFrameIndex);
 
-                // Skip if file already exists
-                if (File.Exists(filepath))
+                // Skip if file already exists and skip option is enabled
+                if (skipExistingFiles && File.Exists(filepath))
                 {
                     Debug.Log($"PLY file already exists, skipping: {filepath}");
                     return;

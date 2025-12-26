@@ -18,7 +18,8 @@ MonoBehaviour:
   bvhPositionOffset: {x: 0.08, y: 0.01, z: -0.25}
   bvhRotationOffset: {x: 0, y: 180, z: 0}
   bvhScale: {x: 0.01, y: 0.01, z: 0.01}
-  processingType: 2
+  processingType: 3
   binaryDataRootPath: D:\Dropbox\projects\shiiba\20251130\Shimonju_2025-11-30_10-35-52_video
   bvhDriftCorrectionData: {fileID: 11400000, guid: 2bff627e8c5d2724aab3b5e67033027a, type: 2}
   showDownsampledPointCloud: 0
+  skipExistingPlyFiles: 1

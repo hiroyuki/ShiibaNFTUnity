@@ -41,6 +41,10 @@ public class DatasetConfig : ScriptableObject
     [SerializeField] private bool showDownsampledPointCloud = false;
     [Tooltip("Show downsampled point cloud visualization (requires PointCloudDownsampler component in scene)")]
 
+    [Header("PLY Export Settings")]
+    [SerializeField] private bool skipExistingPlyFiles = true;
+    [Tooltip("When exporting PLY files, skip frames that already have exported files")]
+
     // Properties
     /// <summary>
     /// Get dataset name from folder name
@@ -72,6 +76,7 @@ public class DatasetConfig : ScriptableObject
     public string BinaryDataRootPath => binaryDataRootPath;
     public BvhPlaybackCorrectionKeyframes BvhPlaybackCorrectionKeyframes => bvhDriftCorrectionData;
     public bool ShowDownsampledPointCloud => showDownsampledPointCloud;
+    public bool SkipExistingPlyFiles => skipExistingPlyFiles;
 
     /// <summary>
     /// Get the BVH folder path (relative to project)
